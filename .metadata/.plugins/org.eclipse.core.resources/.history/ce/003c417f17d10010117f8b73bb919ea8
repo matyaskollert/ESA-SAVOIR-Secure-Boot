@@ -94,15 +94,7 @@ int main(void)
   HAL_Delay(1000);
   uint8_t buffer1[] = "Bootloader loaded";
   CDC_Transmit_FS(buffer1,sizeof(buffer1));
-
-
-  /* FLASH LOAD START */
-
-  //uint32_t app_vector = FLASH_ARE_IMAGE;
-
-  /* FLASH LOAD END */
-
-  /* FLASH->RAM LOAD START */
+  uint8_t buffer2[] = "Bootloader loop";
 
   const uint8_t *src = (const uint8_t *)(FLASH_AREA_IMAGE);
   uint8_t *dst = (uint8_t *)RAM_AREA_IMAGE;
@@ -111,9 +103,6 @@ int main(void)
   uint32_t app_vector = RAM_AREA_IMAGE;
   SCB->VTOR = app_vector;
 
-  /* FLASH->RAM LOAD START */
-
-  //set the stack pointer and call the reset vector
   void (*app_reset_handler)(void);
   uint32_t msp_value = *(volatile uint32_t *)(app_vector);
   __set_MSP(msp_value);
@@ -121,9 +110,6 @@ int main(void)
 
   app_reset_handler = (void *)reset_handler_address;
   app_reset_handler();
-
-  // used for debugging
-  uint8_t buffer2[] = "Bootloader loop";
 
   /* USER CODE END 2 */
 

@@ -94,6 +94,7 @@ int main(void)
   HAL_Delay(1000);
   uint8_t buffer1[] = "Bootloader loaded";
   CDC_Transmit_FS(buffer1,sizeof(buffer1));
+  uint8_t buffer2[] = "Bootloader loop";
 
 
   /* FLASH LOAD START */
@@ -121,9 +122,6 @@ int main(void)
 
   app_reset_handler = (void *)reset_handler_address;
   app_reset_handler();
-
-  // used for debugging
-  uint8_t buffer2[] = "Bootloader loop";
 
   /* USER CODE END 2 */
 
