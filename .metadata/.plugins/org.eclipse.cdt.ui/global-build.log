@@ -448,3 +448,132 @@ Finished building: default.size.stdout
  
 Finished building: SecureBoot-1.list
  
+14:25:55 **** Incremental Build of configuration Debug for project SecureBoot-1-App ****
+make -j16 all 
+arm-none-eabi-gcc -o "SecureBoot-1-App.elf" @"objects.list"   -mcpu=cortex-m4 -T"C:\Users\Matyas\STM32CubeIDE\workspace_1.19.0\SecureBoot-1-App\STM32F401CDUX_FLASH.ld" --specs=nosys.specs -Wl,-Map="SecureBoot-1-App.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+C:/ST/STM32CubeIDE_1.19.0/STM32CubeIDE/plugins/com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.13.3.rel1.win32_1.0.0.202411081344/tools/bin/../lib/gcc/arm-none-eabi/13.3.1/../../../../arm-none-eabi/bin/ld.exe: warning: SecureBoot-1-App.elf has a LOAD segment with RWX permissions
+Finished building target: SecureBoot-1-App.elf
+ 
+arm-none-eabi-size  SecureBoot-1-App.elf 
+arm-none-eabi-objdump -h -S SecureBoot-1-App.elf  > "SecureBoot-1-App.list"
+   text	   data	    bss	    dec	    hex	filename
+  28008	    252	   8708	  36968	   9068	SecureBoot-1-App.elf
+Finished building: default.size.stdout
+ 
+Finished building: SecureBoot-1-App.list
+ 
+14:29:57 **** Incremental Build of configuration Debug for project SecureBoot-1 ****
+make -j16 all 
+arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m4 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F401xE -c -I../Core/Inc -I../Drivers/STM32F4xx_HAL_Driver/Inc -I../Drivers/STM32F4xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F4xx/Include -I../Drivers/CMSIS/Include -I../USB_DEVICE/App -I../USB_DEVICE/Target -I../Middlewares/ST/STM32_USB_Device_Library/Core/Inc -I../Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Inc -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -o "Core/Src/main.o"
+../Core/Src/main.c: In function 'main':
+../Core/Src/main.c:103:25: error: 'APP_RAM_ADDRESS' undeclared (first use in this function)
+  103 |   uint32_t app_vector = APP_RAM_ADDRESS;
+      |                         ^~~~~~~~~~~~~~~
+../Core/Src/main.c:103:25: note: each undeclared identifier is reported only once for each function it appears in
+make: *** [Core/Src/subdir.mk:34: Core/Src/main.o] Error 1
+"make -j16 all" terminated with exit code 2. Build might be incomplete.
+14:30:35 **** Incremental Build of configuration Debug for project SecureBoot-1 ****
+make -j16 all 
+arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m4 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F401xE -c -I../Core/Inc -I../Drivers/STM32F4xx_HAL_Driver/Inc -I../Drivers/STM32F4xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F4xx/Include -I../Drivers/CMSIS/Include -I../USB_DEVICE/App -I../USB_DEVICE/Target -I../Middlewares/ST/STM32_USB_Device_Library/Core/Inc -I../Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Inc -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -o "Core/Src/main.o"
+arm-none-eabi-gcc -o "SecureBoot-1.elf" @"objects.list"   -mcpu=cortex-m4 -T"C:\Users\Matyas\STM32CubeIDE\workspace_1.19.0\SecureBoot-1\STM32F401CDUX_FLASH.ld" --specs=nosys.specs -Wl,-Map="SecureBoot-1.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+Finished building target: SecureBoot-1.elf
+ 
+arm-none-eabi-size  SecureBoot-1.elf 
+arm-none-eabi-objdump -h -S SecureBoot-1.elf  > "SecureBoot-1.list"
+   text	   data	    bss	    dec	    hex	filename
+  28176	    252	   8708	  37136	   9110	SecureBoot-1.elf
+Finished building: default.size.stdout
+ 
+Finished building: SecureBoot-1.list
+ 
+14:30:36 **** Incremental Build of configuration Debug for project SecureBoot-1 ****
+make -j16 all 
+arm-none-eabi-size  SecureBoot-1.elf 
+   text	   data	    bss	    dec	    hex	filename
+  28176	    252	   8708	  37136	   9110	SecureBoot-1.elf
+Finished building: default.size.stdout
+ 
+14:34:11 **** Incremental Build of configuration Debug for project SecureBoot-1 ****
+make -j16 all 
+arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m4 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F401xE -c -I../Core/Inc -I../Drivers/STM32F4xx_HAL_Driver/Inc -I../Drivers/STM32F4xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F4xx/Include -I../Drivers/CMSIS/Include -I../USB_DEVICE/App -I../USB_DEVICE/Target -I../Middlewares/ST/STM32_USB_Device_Library/Core/Inc -I../Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Inc -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -o "Core/Src/main.o"
+../Core/Src/main.c: In function 'main':
+../Core/Src/main.c:100:12: warning: unused variable 'dst' [-Wunused-variable]
+  100 |   uint8_t *dst = (uint8_t *)RAM_AREA_IMAGE;
+      |            ^~~
+../Core/Src/main.c:99:18: warning: unused variable 'src' [-Wunused-variable]
+   99 |   const uint8_t *src = (const uint8_t *)(FLASH_AREA_IMAGE);
+      |                  ^~~
+arm-none-eabi-gcc -o "SecureBoot-1.elf" @"objects.list"   -mcpu=cortex-m4 -T"C:\Users\Matyas\STM32CubeIDE\workspace_1.19.0\SecureBoot-1\STM32F401CDUX_FLASH.ld" --specs=nosys.specs -Wl,-Map="SecureBoot-1.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+Finished building target: SecureBoot-1.elf
+ 
+arm-none-eabi-size  SecureBoot-1.elf 
+arm-none-eabi-objdump -h -S SecureBoot-1.elf  > "SecureBoot-1.list"
+   text	   data	    bss	    dec	    hex	filename
+  28136	    252	   8708	  37096	   90e8	SecureBoot-1.elf
+Finished building: default.size.stdout
+ 
+Finished building: SecureBoot-1.list
+ 
+14:35:49 **** Incremental Build of configuration Debug for project SecureBoot-1 ****
+make -j16 all 
+arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m4 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F401xE -c -I../Core/Inc -I../Drivers/STM32F4xx_HAL_Driver/Inc -I../Drivers/STM32F4xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F4xx/Include -I../Drivers/CMSIS/Include -I../USB_DEVICE/App -I../USB_DEVICE/Target -I../Middlewares/ST/STM32_USB_Device_Library/Core/Inc -I../Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Inc -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -o "Core/Src/main.o"
+arm-none-eabi-gcc -o "SecureBoot-1.elf" @"objects.list"   -mcpu=cortex-m4 -T"C:\Users\Matyas\STM32CubeIDE\workspace_1.19.0\SecureBoot-1\STM32F401CDUX_FLASH.ld" --specs=nosys.specs -Wl,-Map="SecureBoot-1.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+Finished building target: SecureBoot-1.elf
+ 
+arm-none-eabi-size  SecureBoot-1.elf 
+arm-none-eabi-objdump -h -S SecureBoot-1.elf  > "SecureBoot-1.list"
+   text	   data	    bss	    dec	    hex	filename
+  28176	    252	   8708	  37136	   9110	SecureBoot-1.elf
+Finished building: default.size.stdout
+ 
+Finished building: SecureBoot-1.list
+ 
+14:36:31 **** Incremental Build of configuration Debug for project SecureBoot-1 ****
+make -j16 all 
+arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m4 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F401xE -c -I../Core/Inc -I../Drivers/STM32F4xx_HAL_Driver/Inc -I../Drivers/STM32F4xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F4xx/Include -I../Drivers/CMSIS/Include -I../USB_DEVICE/App -I../USB_DEVICE/Target -I../Middlewares/ST/STM32_USB_Device_Library/Core/Inc -I../Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Inc -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -o "Core/Src/main.o"
+../Core/Src/main.c: In function 'main':
+../Core/Src/main.c:100:12: warning: unused variable 'dst' [-Wunused-variable]
+  100 |   uint8_t *dst = (uint8_t *)RAM_AREA_IMAGE;
+      |            ^~~
+../Core/Src/main.c:99:18: warning: unused variable 'src' [-Wunused-variable]
+   99 |   const uint8_t *src = (const uint8_t *)(FLASH_AREA_IMAGE);
+      |                  ^~~
+arm-none-eabi-gcc -o "SecureBoot-1.elf" @"objects.list"   -mcpu=cortex-m4 -T"C:\Users\Matyas\STM32CubeIDE\workspace_1.19.0\SecureBoot-1\STM32F401CDUX_FLASH.ld" --specs=nosys.specs -Wl,-Map="SecureBoot-1.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+Finished building target: SecureBoot-1.elf
+ 
+arm-none-eabi-size  SecureBoot-1.elf 
+arm-none-eabi-objdump -h -S SecureBoot-1.elf  > "SecureBoot-1.list"
+   text	   data	    bss	    dec	    hex	filename
+  28136	    252	   8708	  37096	   90e8	SecureBoot-1.elf
+Finished building: default.size.stdout
+ 
+Finished building: SecureBoot-1.list
+ 
+14:37:25 **** Incremental Build of configuration Debug for project SecureBoot-1 ****
+make -j16 all 
+arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m4 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F401xE -c -I../Core/Inc -I../Drivers/STM32F4xx_HAL_Driver/Inc -I../Drivers/STM32F4xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F4xx/Include -I../Drivers/CMSIS/Include -I../USB_DEVICE/App -I../USB_DEVICE/Target -I../Middlewares/ST/STM32_USB_Device_Library/Core/Inc -I../Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Inc -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -o "Core/Src/main.o"
+arm-none-eabi-gcc -o "SecureBoot-1.elf" @"objects.list"   -mcpu=cortex-m4 -T"C:\Users\Matyas\STM32CubeIDE\workspace_1.19.0\SecureBoot-1\STM32F401CDUX_FLASH.ld" --specs=nosys.specs -Wl,-Map="SecureBoot-1.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+Finished building target: SecureBoot-1.elf
+ 
+arm-none-eabi-size  SecureBoot-1.elf 
+arm-none-eabi-objdump -h -S SecureBoot-1.elf  > "SecureBoot-1.list"
+   text	   data	    bss	    dec	    hex	filename
+  28168	    252	   8708	  37128	   9108	SecureBoot-1.elf
+Finished building: default.size.stdout
+ 
+Finished building: SecureBoot-1.list
+ 
+14:38:03 **** Incremental Build of configuration Debug for project SecureBoot-1 ****
+make -j16 all 
+arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m4 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F401xE -c -I../Core/Inc -I../Drivers/STM32F4xx_HAL_Driver/Inc -I../Drivers/STM32F4xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F4xx/Include -I../Drivers/CMSIS/Include -I../USB_DEVICE/App -I../USB_DEVICE/Target -I../Middlewares/ST/STM32_USB_Device_Library/Core/Inc -I../Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Inc -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -o "Core/Src/main.o"
+arm-none-eabi-gcc -o "SecureBoot-1.elf" @"objects.list"   -mcpu=cortex-m4 -T"C:\Users\Matyas\STM32CubeIDE\workspace_1.19.0\SecureBoot-1\STM32F401CDUX_FLASH.ld" --specs=nosys.specs -Wl,-Map="SecureBoot-1.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+Finished building target: SecureBoot-1.elf
+ 
+arm-none-eabi-size  SecureBoot-1.elf 
+arm-none-eabi-objdump -h -S SecureBoot-1.elf  > "SecureBoot-1.list"
+   text	   data	    bss	    dec	    hex	filename
+  28176	    252	   8708	  37136	   9110	SecureBoot-1.elf
+Finished building: default.size.stdout
+ 
+Finished building: SecureBoot-1.list
+ 

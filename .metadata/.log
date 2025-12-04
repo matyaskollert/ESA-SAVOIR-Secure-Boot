@@ -478,3 +478,18 @@ java.lang.NullPointerException: Cannot invoke "org.eclipse.cdt.core.model.ICProj
 
 !ENTRY com.st.stm32cube.ide.mcu.debug.launch 2 0 2025-12-04 11:05:31.459
 !MESSAGE Won't launch debug session since we failed to locate the binary.
+!SESSION 2025-12-04 14:33:22.760 -----------------------------------------------
+eclipse.buildId=Version 1.19.0
+java.version=21.0.3
+java.vendor=Eclipse Adoptium
+BootLoader constants: OS=win32, ARCH=x86_64, WS=win32, NL=en_GB
+Command-line arguments:  -os win32 -ws win32 -arch x86_64
+
+!ENTRY com.st.stm32cube.ide.mcu.informationcenter 4 4 2025-12-04 14:33:38.513
+!MESSAGE CubeMX plugin appears to be active, Log4j initialization might be too late.
+
+!ENTRY com.st.stm32cube.ide.mcu.informationcenter 1 1 2025-12-04 14:33:38.513
+!MESSAGE Log4j2 initialized with config file C:\Users\Matyas\STM32CubeIDE\workspace_1.19.0\.metadata\.log4j2.xml
+
+!ENTRY com.st.stm32cube.ide.mcu.ide 1 1 2025-12-04 14:33:51.852
+!MESSAGE Started RMI Server, listening on port 41337
