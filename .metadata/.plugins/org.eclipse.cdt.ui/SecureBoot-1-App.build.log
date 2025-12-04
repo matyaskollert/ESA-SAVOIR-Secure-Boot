@@ -1,0 +1,10 @@
+10:58:48 **** Incremental Build of configuration Debug for project SecureBoot-1-App ****
+make -j16 all 
+arm-none-eabi-size  SecureBoot-1-App.elf 
+   text	   data	    bss	    dec	    hex	filename
+  28008	    252	   8708	  36968	   9068	SecureBoot-1-App.elf
+Finished building: default.size.stdout
+ 
+
+10:58:49 Build Finished. 0 errors, 0 warnings. (took 296ms)
+
