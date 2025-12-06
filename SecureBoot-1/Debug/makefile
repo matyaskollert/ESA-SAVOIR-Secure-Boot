@@ -64,8 +64,8 @@ all: main-build
 main-build: SecureBoot-1.elf secondary-outputs
 
 # Tool invocations
-SecureBoot-1.elf SecureBoot-1.map: $(OBJS) $(USER_OBJS) C:\Users\Matyas\STM32CubeIDE\workspace_1.19.0\SecureBoot-1\STM32F401CDUX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
-	arm-none-eabi-gcc -o "SecureBoot-1.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m4 -T"C:\Users\Matyas\STM32CubeIDE\workspace_1.19.0\SecureBoot-1\STM32F401CDUX_FLASH.ld" --specs=nosys.specs -Wl,-Map="SecureBoot-1.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+SecureBoot-1.elf SecureBoot-1.map: $(OBJS) $(USER_OBJS) C:\Users\Matyas\STM32CubeIDE\workspace_1.19.0\SecureBoot-1\STM32F401CDUX_FLASH_RAM.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
+	arm-none-eabi-gcc -o "SecureBoot-1.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m4 -T"C:\Users\Matyas\STM32CubeIDE\workspace_1.19.0\SecureBoot-1\STM32F401CDUX_FLASH_RAM.ld" --specs=nosys.specs -Wl,-Map="SecureBoot-1.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
 	@echo 'Finished building target: $@'
 	@echo ' '
 

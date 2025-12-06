@@ -55,7 +55,14 @@ static void MX_GPIO_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+int _write(int file, char *ptr, int len)
+{
+    // Wait until the USB CDC is ready
+    while (CDC_Transmit_FS((uint8_t*)ptr, len) == USBD_BUSY) {}
+	//CDC_Transmit_FS((uint8_t*)ptr, len);
 
+    return len;
+}
 /* USER CODE END 0 */
 
 /**
@@ -66,6 +73,8 @@ int main(void)
 {
 
   /* USER CODE BEGIN 1 */
+
+  __enable_irq();
 
   /* USER CODE END 1 */
 
@@ -90,7 +99,11 @@ int main(void)
   MX_USB_DEVICE_Init();
   /* USER CODE BEGIN 2 */
 
-  uint8_t buffer[] = "App Loaded!";
+  // Wait for USB enumeration to complete after reinitialization
+  HAL_Delay(2000);
+
+  uint8_t buffer[64];// = "App 1 Loaded!"
+  sprintf(buffer, "printf address: 0x%p \n", (uintptr_t)printf);
 
   /* USER CODE END 2 */
 
@@ -98,7 +111,9 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-	  CDC_Transmit_FS(buffer,sizeof(buffer));
+	  printf("App 1 Loaded!\n");
+
+	  //CDC_Transmit_FS(buffer, sizeof(buffer));
 	  HAL_GPIO_TogglePin(LED_GPIO_Port, LED_Pin);
 	  HAL_Delay(1000);
     /* USER CODE END WHILE */

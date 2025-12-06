@@ -493,3 +493,39 @@ Command-line arguments:  -os win32 -ws win32 -arch x86_64
 
 !ENTRY com.st.stm32cube.ide.mcu.ide 1 1 2025-12-04 14:33:51.852
 !MESSAGE Started RMI Server, listening on port 41337
+!SESSION 2025-12-05 10:32:42.166 -----------------------------------------------
+eclipse.buildId=Version 1.19.0
+java.version=21.0.3
+java.vendor=Eclipse Adoptium
+BootLoader constants: OS=win32, ARCH=x86_64, WS=win32, NL=en_GB
+Command-line arguments:  -os win32 -ws win32 -arch x86_64
+
+!ENTRY com.st.stm32cube.ide.mcu.informationcenter 4 4 2025-12-05 10:32:58.988
+!MESSAGE CubeMX plugin appears to be active, Log4j initialization might be too late.
+
+!ENTRY com.st.stm32cube.ide.mcu.informationcenter 1 1 2025-12-05 10:32:58.990
+!MESSAGE Log4j2 initialized with config file C:\Users\Matyas\STM32CubeIDE\workspace_1.19.0\.metadata\.log4j2.xml
+
+!ENTRY com.st.stm32cube.ide.mcu.ide 1 1 2025-12-05 10:33:13.703
+!MESSAGE Started RMI Server, listening on port 41337
+
+!ENTRY org.eclipse.cdt.core 1 0 2025-12-05 10:42:41.528
+!MESSAGE Indexed 'SecureBoot-1' (30 sources, 130 headers) in 2.71 sec: 12,102 declarations; 46,325 references; 1 unresolved inclusions; 92 syntax errors; 240 unresolved names (0.41%)
+
+!ENTRY org.eclipse.cdt.dsf 4 10005 2025-12-05 11:54:46.831
+!MESSAGE Request for monitor: 'RequestMonitor (org.eclipse.cdt.dsf.gdb.internal.ui.actions.DsfTerminateCommand$3$1@783c0623): Status OK: unknown code=0 OK' resulted in a rejected execution exception.
+!SESSION 2025-12-06 12:26:32.452 -----------------------------------------------
+eclipse.buildId=Version 1.19.0
+java.version=21.0.3
+java.vendor=Eclipse Adoptium
+BootLoader constants: OS=win32, ARCH=x86_64, WS=win32, NL=en_GB
+Command-line arguments:  -os win32 -ws win32 -arch x86_64
+
+!ENTRY com.st.stm32cube.ide.mcu.informationcenter 4 4 2025-12-06 12:26:49.352
+!MESSAGE CubeMX plugin appears to be active, Log4j initialization might be too late.
+
+!ENTRY com.st.stm32cube.ide.mcu.informationcenter 1 1 2025-12-06 12:26:49.353
+!MESSAGE Log4j2 initialized with config file C:\Users\Matyas\STM32CubeIDE\workspace_1.19.0\.metadata\.log4j2.xml
+
+!ENTRY com.st.stm32cube.ide.mcu.ide 1 1 2025-12-06 12:27:03.116
+!MESSAGE Started RMI Server, listening on port 41337

@@ -1,17 +1,26 @@
-14:38:03 **** Incremental Build of configuration Debug for project SecureBoot-1 ****
+12:30:10 **** Incremental Build of configuration Debug for project SecureBoot-1 ****
 make -j16 all 
 arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m4 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F401xE -c -I../Core/Inc -I../Drivers/STM32F4xx_HAL_Driver/Inc -I../Drivers/STM32F4xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F4xx/Include -I../Drivers/CMSIS/Include -I../USB_DEVICE/App -I../USB_DEVICE/Target -I../Middlewares/ST/STM32_USB_Device_Library/Core/Inc -I../Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Inc -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -o "Core/Src/main.o"
-arm-none-eabi-gcc -o "SecureBoot-1.elf" @"objects.list"   -mcpu=cortex-m4 -T"C:\Users\Matyas\STM32CubeIDE\workspace_1.19.0\SecureBoot-1\STM32F401CDUX_FLASH.ld" --specs=nosys.specs -Wl,-Map="SecureBoot-1.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+../Core/Src/main.c: In function 'main':
+../Core/Src/main.c:189:3: warning: implicit declaration of function 'USBD_DeInit'; did you mean 'USB_DevInit'? [-Wimplicit-function-declaration]
+  189 |   USBD_DeInit(&hUsbDeviceFS);
+      |   ^~~~~~~~~~~
+      |   USB_DevInit
+../Core/Src/main.c: At top level:
+../Core/Src/main.c:280:13: warning: 'MX_CRC_Init' defined but not used [-Wunused-function]
+  280 | static void MX_CRC_Init(void)
+      |             ^~~~~~~~~~~
+arm-none-eabi-gcc -o "SecureBoot-1.elf" @"objects.list"   -mcpu=cortex-m4 -T"C:\Users\Matyas\STM32CubeIDE\workspace_1.19.0\SecureBoot-1\STM32F401CDUX_FLASH_RAM.ld" --specs=nosys.specs -Wl,-Map="SecureBoot-1.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
 Finished building target: SecureBoot-1.elf
  
 arm-none-eabi-size  SecureBoot-1.elf 
 arm-none-eabi-objdump -h -S SecureBoot-1.elf  > "SecureBoot-1.list"
    text	   data	    bss	    dec	    hex	filename
-  28176	    252	   8708	  37136	   9110	SecureBoot-1.elf
+  34936	    344	   9048	  44328	   ad28	SecureBoot-1.elf
 Finished building: default.size.stdout
  
 Finished building: SecureBoot-1.list
  
 
-14:38:04 Build Finished. 0 errors, 0 warnings. (took 795ms)
+12:30:11 Build Finished. 0 errors, 2 warnings. (took 852ms)
 

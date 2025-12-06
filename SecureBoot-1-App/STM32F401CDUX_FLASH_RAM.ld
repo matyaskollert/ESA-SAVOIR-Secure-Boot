@@ -45,7 +45,8 @@ _Min_Stack_Size = 0x400; /* required amount of stack */
 MEMORY
 {
   RAM    (xrw)    : ORIGIN = 0x20004000,   LENGTH = 80K
-  FLASH    (rx)    : ORIGIN = 0x8010000,   LENGTH = 324K
+  FLASH    (rx)    : ORIGIN = 0x8010000,   LENGTH = 162K
+  FLASH2    (rx)    : ORIGIN = 0x8038800,   LENGTH = 162K
 }
 
 /* Sections */
@@ -130,6 +131,62 @@ SECTIONS
     PROVIDE_HIDDEN (__fini_array_end = .);
     . = ALIGN(4);
   } >RAM AT> FLASH
+
+
+  /* Section copy table for bootloader */
+  .copy_table (READONLY) :
+  {
+    . = ALIGN(4);
+    __copy_table_start__ = .;
+    
+    /* Entry for .isr_vector */
+    LONG(LOADADDR(.isr_vector));    /* src_lma */
+    LONG(ADDR(.isr_vector));        /* dst_vma */
+    LONG(SIZEOF(.isr_vector));      /* size */
+    
+    /* Entry for .text */
+    LONG(LOADADDR(.text));
+    LONG(ADDR(.text));
+    LONG(SIZEOF(.text));
+    
+    /* Entry for .rodata */
+    LONG(LOADADDR(.rodata));
+    LONG(ADDR(.rodata));
+    LONG(SIZEOF(.rodata));
+    
+    /* Entry for .ARM.extab */
+    LONG(LOADADDR(.ARM.extab));
+    LONG(ADDR(.ARM.extab));
+    LONG(SIZEOF(.ARM.extab));
+    
+    /* Entry for .ARM */
+    LONG(LOADADDR(.ARM));
+    LONG(ADDR(.ARM));
+    LONG(SIZEOF(.ARM));
+    
+    /* Entry for .preinit_array */
+    LONG(LOADADDR(.preinit_array));
+    LONG(ADDR(.preinit_array));
+    LONG(SIZEOF(.preinit_array));
+    
+    /* Entry for .init_array */
+    LONG(LOADADDR(.init_array));
+    LONG(ADDR(.init_array));
+    LONG(SIZEOF(.init_array));
+    
+    /* Entry for .fini_array */
+    LONG(LOADADDR(.fini_array));
+    LONG(ADDR(.fini_array));
+    LONG(SIZEOF(.fini_array));
+    
+    /* Entry for .data */
+    LONG(LOADADDR(.data));
+    LONG(ADDR(.data));
+    LONG(SIZEOF(.data));
+    
+    __copy_table_end__ = .;
+    . = ALIGN(4);
+  } >FLASH
 
   /* Used by the startup to initialize data */
   _sidata = LOADADDR(.data);

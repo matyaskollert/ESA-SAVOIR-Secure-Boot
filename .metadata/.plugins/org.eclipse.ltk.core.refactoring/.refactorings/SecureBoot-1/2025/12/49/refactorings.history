@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<session version="1.0">
+<refactoring comment="Rename resource &apos;SecureBoot-1/Core/Inc/crc&apos; to &apos;crc.h&apos;" description="Rename resource &apos;crc&apos;" flags="7" id="org.eclipse.ltk.core.refactoring.rename.resource" input="Core/Inc/crc" name="crc.h" stamp="1764930684376" updateReferences="true"/>
+</session>

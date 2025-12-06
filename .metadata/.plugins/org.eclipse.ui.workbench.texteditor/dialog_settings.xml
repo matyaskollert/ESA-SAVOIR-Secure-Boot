@@ -3,6 +3,10 @@
 	<item key="hasShownOverlayPopupBefore" value="true"/>
 	<item key="replaceBarOpen" value="false"/>
 	<list key="searchhistory">
+		<item value="RAM_AREA_IMAGE"/>
+		<item value="MX_USB_DEVICE_Init"/>
+		<item value="&gt;RAM AT&gt; FLASH"/>
+		<item value="RAM AT&gt; FLASH"/>
 		<item value="USBD_DFU_APP_DEFAULT_ADD"/>
 	</list>
 </section>

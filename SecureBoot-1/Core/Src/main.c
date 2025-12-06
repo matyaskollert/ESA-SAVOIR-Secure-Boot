@@ -34,7 +34,7 @@
 /* USER CODE BEGIN PD */
 #define FLASH_AREA_IMAGE   0x08010000
 #define RAM_AREA_IMAGE     0x20004000
-#define IMAGE_SIZE		   0x0000A000
+#define FLASH_AREA_IMAGE_2 0x08038800
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -43,20 +43,42 @@
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
+CRC_HandleTypeDef hcrc;
 
 /* USER CODE BEGIN PV */
 extern uint8_t CDC_Transmit_FS(uint8_t* Buf, uint16_t Len);
+extern USBD_HandleTypeDef hUsbDeviceFS;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
+static void MX_CRC_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+
+int _write(int file, char *ptr, int len)
+{
+    // Wait until the USB CDC is ready
+    while (CDC_Transmit_FS((uint8_t*)ptr, len) == USBD_BUSY) {}
+
+    return len;
+}
+
+#define WORDS_TO_PRINT 10
+
+void print_memory(const char* label, uint8_t* addr) {
+    printf("%s @ %p: ", label, addr);
+    for (int i = 0; i < WORDS_TO_PRINT; i++) {
+        uint32_t word = *(uint32_t*)(addr + i*4);  // 4 bytes per word
+        printf("0x%08lX ", word);
+    }
+    printf("\r\n");
+}
 
 /* USER CODE END 0 */
 
@@ -89,11 +111,15 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_USB_DEVICE_Init();
+  //MX_CRC_Init();
   /* USER CODE BEGIN 2 */
 
-  HAL_Delay(1000);
-  uint8_t buffer1[] = "Bootloader loaded";
-  CDC_Transmit_FS(buffer1,sizeof(buffer1));
+  srand(HAL_GetTick());
+  const int image_number = rand();
+
+  HAL_Delay(3000);
+
+  printf("Bootloader loaded: %d\r\n", image_number);
 
 
   /* FLASH LOAD START */
@@ -104,23 +130,81 @@ int main(void)
 
   /* FLASH->RAM LOAD START */
 
-  const uint8_t *src = (const uint8_t *)(FLASH_AREA_IMAGE);
-  uint8_t *dst = (uint8_t *)RAM_AREA_IMAGE;
-  memcpy(dst, src, IMAGE_SIZE);
+  // Define the section copy table structure
+  typedef struct {
+      uint32_t src_lma;   // Load Memory Address (source in FLASH)
+      uint32_t dst_vma;   // Virtual Memory Address (destination in RAM)
+      uint32_t size;      // Size in bytes
+  } section_copy_entry_t;
+  
+  uint32_t app_flash_base = FLASH_AREA_IMAGE;
+  
+  printf("Starting section-by-section copy from FLASH to RAM\r\n");
+  uint32_t num_sections = 9; // We know from linker script
+  uint32_t copy_table_offset = 0x8218; // Adjust based on actual size
+  
+  section_copy_entry_t *section_table = (section_copy_entry_t *)(app_flash_base + copy_table_offset);
+  
+  printf("Copy table at FLASH offset 0x%lX\r\n", copy_table_offset);
+  
+  // Iterate through each section and copy it
+  for (uint32_t i = 0; i < num_sections; i++) {
+      uint32_t src_lma = section_table[i].src_lma;
+      uint32_t dst_vma = section_table[i].dst_vma;
+      uint32_t size = section_table[i].size;
+      
+      if (size == 0) {
+          printf("Section %lu: empty, skipping\r\n", i);
+          continue;
+      }
+      
+      printf("Section %lu: copying %lu bytes from 0x%08lX to 0x%08lX\r\n", 
+             i, size, src_lma, dst_vma);
+      
+      // The src_lma is the absolute address in the app's FLASH space
+      // We need to translate it to our loaded image location
+      // If the app expects to be at 0x08010000 and we loaded it there, use as-is
+      // Otherwise, adjust: actual_src = app_flash_base + (src_lma - 0x08010000)
+      
+      uint8_t *actual_src = (uint8_t *)src_lma;
+      uint8_t *actual_dst = (uint8_t *)dst_vma;
+      
+      // Perform the copy
+      memcpy(actual_dst, actual_src, size);
+  }
+  
+  printf("All sections copied successfully\r\n");
+  HAL_Delay(2000);
 
   uint32_t app_vector = RAM_AREA_IMAGE;
-  SCB->VTOR = app_vector;
 
-  /* FLASH->RAM LOAD START */
+  /* FLASH->RAM LOAD END */
 
   //set the stack pointer and call the reset vector
-  void (*app_reset_handler)(void);
-  uint32_t msp_value = *(volatile uint32_t *)(app_vector);
-  __set_MSP(msp_value);
-  uint32_t reset_handler_address = *(volatile uint32_t *)(app_vector + 4);
+  // 1. Disable interrupts
+  __disable_irq();
 
-  app_reset_handler = (void *)reset_handler_address;
-  app_reset_handler();
+  // 2. Stop USB (avoid leftover ISRs)
+  HAL_NVIC_DisableIRQ(OTG_FS_IRQn);
+  USBD_DeInit(&hUsbDeviceFS);
+
+  // (optional) Disable SysTick
+  SysTick->CTRL = 0;
+
+  // 3. Set vector table for the application
+  SCB->VTOR = app_vector;
+
+  // 4. Fetch MSP and ResetHandler
+  uint32_t msp_value = *(volatile uint32_t *)(app_vector);
+  uint32_t reset_handler = *(volatile uint32_t *)(app_vector + 4);
+
+  HAL_DeInit();
+
+  // 5. Set MSP
+  __set_MSP(msp_value);
+
+  // 6. Jump to application
+  ((void (*)(void))reset_handler)();
 
   // used for debugging
   uint8_t buffer2[] = "Bootloader loop";
@@ -186,6 +270,32 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
+}
+
+/**
+  * @brief CRC Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_CRC_Init(void)
+{
+
+  /* USER CODE BEGIN CRC_Init 0 */
+
+  /* USER CODE END CRC_Init 0 */
+
+  /* USER CODE BEGIN CRC_Init 1 */
+
+  /* USER CODE END CRC_Init 1 */
+  hcrc.Instance = CRC;
+  if (HAL_CRC_Init(&hcrc) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN CRC_Init 2 */
+
+  /* USER CODE END CRC_Init 2 */
+
 }
 
 /**
