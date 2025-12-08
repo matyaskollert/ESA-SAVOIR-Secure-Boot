@@ -130,6 +130,14 @@ int main(void)
 
   /* FLASH->RAM LOAD START */
 
+  typedef struct __attribute__((packed)){
+      uint16_t image_magic;
+      uint16_t image_version;
+      uint32_t image_size;
+      uint32_t crc;
+
+  } image_hdr_t;
+
   // Define the section copy table structure
   typedef struct {
       uint32_t src_lma;   // Load Memory Address (source in FLASH)
@@ -139,9 +147,12 @@ int main(void)
   
   uint32_t app_flash_base = FLASH_AREA_IMAGE;
   
+  image_hdr_t *head = (image_hdr_t *)(app_flash_base);
+  printf("Magic: %u", head->image_magic);
+
   printf("Starting section-by-section copy from FLASH to RAM\r\n");
   uint32_t num_sections = 9; // We know from linker script
-  uint32_t copy_table_offset = 0x8218; // Adjust based on actual size
+  uint32_t copy_table_offset = sizeof(image_hdr_t); // Adjust based on actual size
   
   section_copy_entry_t *section_table = (section_copy_entry_t *)(app_flash_base + copy_table_offset);
   
@@ -174,9 +185,11 @@ int main(void)
   }
   
   printf("All sections copied successfully\r\n");
-  HAL_Delay(2000);
 
   uint32_t app_vector = RAM_AREA_IMAGE;
+
+  printf("App Vector: 0x%08lX\r\n", app_vector);
+  HAL_Delay(2000);
 
   /* FLASH->RAM LOAD END */
 
