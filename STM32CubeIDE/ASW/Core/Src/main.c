@@ -35,11 +35,6 @@
 
 #define IMAGE_MAGIC 0xABCD
 
-#define FLASH_AREA_IMAGE_1   0x08010000
-#define FLASH_AREA_IMAGE_2   0x08038800
-
-#define IMAGE_OFFSET        0x400             //because vector table offset should be a multiple of 0x200
-
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
