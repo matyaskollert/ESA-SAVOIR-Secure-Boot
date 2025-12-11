@@ -1,3 +1,0 @@
-../Core/Src/image.c:7:20:imageGetHeader	24	static
-../Core/Src/image.c:36:5:imageValidate	32	static
-../Core/Src/image.c:67:6:imageStart	32	static,ignoring_inline_asm
