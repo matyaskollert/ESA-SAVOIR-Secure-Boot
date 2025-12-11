@@ -2,17 +2,17 @@
 
 This is a Secure Bootloader PoC implementation using the STM32CubeIDE along with its built-in HAL.
 
-## Installation
+## Functionality
 
-- Copy this gitlab repository
-- Upload the whole directory as projects into STM32CubeIDE
-- Connect STM32F401CD using the external ST-Link
-- Run BSW
-- Run ASW
+- Load ASW image header
+- Check ASW image header magic number
+- Check ASW image CRC
+- Load ASW image into RAM
+- Run ASW image
+- Supports 2 ASW images which can be manually triggered by choosing `IMAGE_SLOT_1` or `IMAGE_SLOT_2` in the `main.c` file
 
-## Run
+## TODO
 
-- Connect the internal USB-C port to your PC
-- Open a Serial Monitor (baud rate 9600) to receive status updates
-- You can use the NRST button to restart the BSW/ASW without disconnecting from the PC
-
+- CRC after loading into RAM
+- Digital Signatures
+- and much more
