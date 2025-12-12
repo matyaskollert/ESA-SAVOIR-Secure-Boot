@@ -40,6 +40,8 @@ const image_hdr_t *imageGetHeader(image_slot_t slot);
 
 int imageValidate(image_slot_t slot);
 
+int imageValidateInRAM(image_slot_t slot);
+
 void imageLoad(image_slot_t slot);
 
 void imageStart(image_slot_t slot);

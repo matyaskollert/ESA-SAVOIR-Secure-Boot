@@ -59,32 +59,96 @@ const section_copy_entry_t* imageGetCopyTable(image_slot_t slot)
 int imageValidate(image_slot_t slot)
 {
 	const image_hdr_t* hdr = imageGetHeader(slot);
-	void *addr = NULL;
-
-	if(slot == IMAGE_SLOT_1)
-	{
-		addr = (uint32_t *)(FLASH_AREA_IMAGE_1);
-	}
-	else
-	{
-		addr = (uint32_t *)(FLASH_AREA_IMAGE_2);
+	if (hdr == NULL) {
+		return -1;
 	}
 
-	addr += sizeof(image_hdr_t);
-	uint32_t len = hdr->image_size;
-	uint32_t a = crc32(addr, len);
-	uint32_t b = hdr->crc;
-	if (a == b)
+	// Get section copy table
+	const section_copy_entry_t *section_table = imageGetCopyTable(slot);
+	uint32_t num_sections = hdr->num_sections;
+	
+	// Compute CRC for each section and combine
+	uint32_t combined_crc = 0;
+	for (uint32_t i = 0; i < num_sections; i++) {
+		uint32_t src_lma = section_table[i].src_lma;
+		uint32_t size = section_table[i].size;
+		
+		if (size == 0) {
+			printf("Section %lu: empty, skipping\r\n", i);
+			continue;
+		}
+		
+		// Use src_lma directly - it's the absolute address in FLASH
+		void *section_addr = (void *)src_lma;
+		
+		// Compute CRC for this section
+		uint32_t section_crc = crc32(section_addr, size);
+		printf("Section %lu: addr=0x%08lx, size=%lu, crc=0x%08lx\r\n", i, src_lma, size, section_crc);
+		
+		// Combine CRCs using XOR
+		combined_crc ^= section_crc;
+	}
+	
+	printf("Combined CRC: 0x%08lx\r\n", combined_crc);
+	printf("Expected CRC: 0x%08lx\r\n", hdr->crc);
+	
+	if (combined_crc == hdr->crc)
 	{
-		printf("CRC success: %lx\n", a);
+		printf("CRC success!\r\n");
 	    return 0;
 	}
 	else
 	{
-	    printf("CRC Mismatch: %lx vs %lx\n", a, b);
+	    printf("CRC Mismatch: 0x%08lx vs 0x%08lx\r\n", combined_crc, hdr->crc);
 	    return -1;
 	}
+}
 
+int imageValidateInRAM(image_slot_t slot)
+{
+	const image_hdr_t* hdr = imageGetHeader(slot);
+	if (hdr == NULL) {
+		return -1;
+	}
+
+	// Get section copy table
+	const section_copy_entry_t *section_table = imageGetCopyTable(slot);
+	uint32_t num_sections = hdr->num_sections;
+	
+	// Compute CRC for each section in RAM and combine
+	uint32_t combined_crc = 0;
+	for (uint32_t i = 0; i < num_sections; i++) {
+		uint32_t dst_vma = section_table[i].dst_vma;
+		uint32_t size = section_table[i].size;
+		
+		if (size == 0) {
+			printf("Section %lu: empty, skipping\r\n", i);
+			continue;
+		}
+		
+		// Compute CRC for this section in RAM
+		void *section_addr = (void *)dst_vma;
+		uint32_t section_crc = crc32(section_addr, size);
+		printf("Section %lu in RAM: addr=0x%08lx, size=%lu, crc=0x%08lx\r\n",
+		       i, dst_vma, size, section_crc);
+		
+		// Combine CRCs using XOR
+		combined_crc ^= section_crc;
+	}
+	
+	printf("Combined CRC (RAM): 0x%08lx\r\n", combined_crc);
+	printf("Expected CRC: 0x%08lx\r\n", hdr->crc);
+	
+	if (combined_crc == hdr->crc)
+	{
+		printf("CRC validation in RAM successful!\r\n");
+	    return 0;
+	}
+	else
+	{
+	    printf("CRC Mismatch in RAM: 0x%08lx vs 0x%08lx\r\n", combined_crc, hdr->crc);
+	    return -1;
+	}
 }
 
 void imageLoad(image_slot_t slot) {
