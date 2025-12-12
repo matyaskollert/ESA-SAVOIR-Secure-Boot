@@ -735,7 +735,7 @@ int imageValidate(image_slot_t slot)
  800075c:	6138      	str	r0, [r7, #16]
 	uint32_t b = hdr->crc;
  800075e:	69bb      	ldr	r3, [r7, #24]
- 8000760:	68db      	ldr	r3, [r3, #12]
+ 8000760:	689b      	ldr	r3, [r3, #8]
  8000762:	60fb      	str	r3, [r7, #12]
 	if (a == b)
  8000764:	693a      	ldr	r2, [r7, #16]
@@ -799,7 +799,7 @@ void imageLoad(image_slot_t slot) {
  80007c4:	f007 f952 	bl	8007a6c <puts>
 	  uint32_t num_sections = head->num_sections;
  80007c8:	6abb      	ldr	r3, [r7, #40]	@ 0x28
- 80007ca:	689b      	ldr	r3, [r3, #8]
+ 80007ca:	68db      	ldr	r3, [r3, #12]
  80007cc:	627b      	str	r3, [r7, #36]	@ 0x24
 
 	  const section_copy_entry_t *section_table = imageGetCopyTable(slot);
@@ -1107,14 +1107,14 @@ int main(void)
 
   /* FLASH->RAM LOAD START */
   
-  imageLoad(IMAGE_SLOT_1);
- 8000968:	2001      	movs	r0, #1
+  imageLoad(IMAGE_SLOT_2);
+ 8000968:	2002      	movs	r0, #2
  800096a:	f7ff ff19 	bl	80007a0 <imageLoad>
-  imageValidate(IMAGE_SLOT_1);
- 800096e:	2001      	movs	r0, #1
+  imageValidate(IMAGE_SLOT_2);
+ 800096e:	2002      	movs	r0, #2
  8000970:	f7ff fed6 	bl	8000720 <imageValidate>
-  imageStart(IMAGE_SLOT_1);
- 8000974:	2001      	movs	r0, #1
+  imageStart(IMAGE_SLOT_2);
+ 8000974:	2002      	movs	r0, #2
  8000976:	f7ff ff81 	bl	800087c <imageStart>
   /* FLASH->RAM LOAD END */
 

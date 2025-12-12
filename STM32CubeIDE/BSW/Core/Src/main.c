@@ -129,9 +129,9 @@ int main(void)
 
   /* FLASH->RAM LOAD START */
   
-  imageLoad(IMAGE_SLOT_1);
-  imageValidate(IMAGE_SLOT_1);
-  imageStart(IMAGE_SLOT_1);
+  imageLoad(IMAGE_SLOT_2);
+  imageValidate(IMAGE_SLOT_2);
+  imageStart(IMAGE_SLOT_2);
 
   /* FLASH->RAM LOAD END */
 

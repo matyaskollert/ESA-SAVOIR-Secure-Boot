@@ -8,7 +8,7 @@ def patch_binary_payload(bin_filename):
     Patch crc & data_size fields of image_hdr_t in place in binary
     Raise exception if binary is not a supported type
     """
-    IMAGE_HDR_SIZE_BYTES = 12
+    IMAGE_HDR_SIZE_BYTES = 16
     IMAGE_HDR_MAGIC = 0xABCD
     IMAGE_HDR_VERSION = 1
 

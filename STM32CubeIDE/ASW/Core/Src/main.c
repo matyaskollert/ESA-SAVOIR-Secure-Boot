@@ -70,16 +70,16 @@ typedef struct __attribute__((packed)){
     uint16_t image_magic;
     uint16_t image_version;
     uint32_t image_size;
-    uint32_t num_sections;
     uint32_t crc;
+    uint32_t num_sections;
 } image_hdr_t;
 
 image_hdr_t image_hdr __attribute__((section(".fw_header")))= {
     .image_magic = IMAGE_MAGIC,
-    .image_version = 9,
+    .image_version = 1,
     .image_size = 0, //to be added manually using crc.py script after build
-	.num_sections = 9,
-    .crc = 0                       //-do-
+    .crc = 0,                       //-do-
+	.num_sections = 9
 };
 /* USER CODE END 0 */
 

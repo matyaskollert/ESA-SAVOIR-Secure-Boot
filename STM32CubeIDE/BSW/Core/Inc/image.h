@@ -16,8 +16,8 @@ typedef struct __attribute__((packed)){
     uint16_t image_magic;
     uint16_t image_version;
     uint32_t image_size;
-    uint32_t num_sections;
     uint32_t crc;
+    uint32_t num_sections;
 } image_hdr_t;
 
 // Define the section copy table structure

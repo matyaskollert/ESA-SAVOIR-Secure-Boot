@@ -3,53 +3,53 @@ SecureBoot-1-App.elf:     file format elf32-littlearm
 
 Sections:
 Idx Name          Size      VMA       LMA       File off  Algn
-  0 .fw_header    00000010  08010000  08010000  00001000  2**2
+  0 .fw_header    00000010  08038800  08038800  00000800  2**2
                   CONTENTS, ALLOC, LOAD, DATA
-  1 .isr_vector   00000194  20004000  08010400  00002000  2**0
+  1 .isr_vector   00000194  20004000  08038a00  00001000  2**0
                   CONTENTS, ALLOC, LOAD, READONLY, DATA
-  2 .text         00007b4c  200041a0  08010594  000021a0  2**4
+  2 .text         00007b4c  200041a0  08038b94  000011a0  2**4
                   CONTENTS, ALLOC, LOAD, READONLY, CODE
-  3 .rodata       000000b4  2000bcec  080180e0  00009cec  2**2
+  3 .rodata       000000b4  2000bcec  080406e0  00008cec  2**2
                   CONTENTS, ALLOC, LOAD, READONLY, DATA
-  4 .ARM.extab    00000000  2000bda0  2000bda0  00009f08  2**0
+  4 .ARM.extab    00000000  2000bda0  2000bda0  00008f08  2**0
                   CONTENTS, READONLY
-  5 .ARM          00000008  2000bda0  08018194  00009da0  2**2
+  5 .ARM          00000008  2000bda0  08040794  00008da0  2**2
                   CONTENTS, ALLOC, LOAD, READONLY, DATA
-  6 .preinit_array 00000000  2000bda8  080182fc  00009f08  2**0
+  6 .preinit_array 00000000  2000bda8  080408fc  00008f08  2**0
                   CONTENTS, ALLOC, LOAD, DATA
-  7 .init_array   00000004  2000bda8  0801819c  00009da8  2**2
+  7 .init_array   00000004  2000bda8  0804079c  00008da8  2**2
                   CONTENTS, ALLOC, LOAD, READONLY, DATA
-  8 .fini_array   00000004  2000bdac  080181a0  00009dac  2**2
+  8 .fini_array   00000004  2000bdac  080407a0  00008dac  2**2
                   CONTENTS, ALLOC, LOAD, READONLY, DATA
-  9 .copy_table   0000006c  08010010  08010010  00001010  2**0
+  9 .copy_table   0000006c  08038810  08038810  00000810  2**0
                   CONTENTS, ALLOC, LOAD, READONLY, DATA
- 10 .data         00000158  2000bdb0  080181a4  00009db0  2**2
+ 10 .data         00000158  2000bdb0  080407a4  00008db0  2**2
                   CONTENTS, ALLOC, LOAD, DATA
- 11 .bss          00001d54  2000bf08  080182fc  00009f08  2**2
+ 11 .bss          00001d54  2000bf08  080408fc  00008f08  2**2
                   ALLOC
- 12 ._user_heap_stack 00000604  2000dc5c  080182fc  0000ac5c  2**0
+ 12 ._user_heap_stack 00000604  2000dc5c  080408fc  00009c5c  2**0
                   ALLOC
- 13 .ARM.attributes 00000030  00000000  00000000  00009f08  2**0
+ 13 .ARM.attributes 00000030  00000000  00000000  00008f08  2**0
                   CONTENTS, READONLY
- 14 .debug_info   0000dd80  00000000  00000000  00009f38  2**0
+ 14 .debug_info   0000dd7e  00000000  00000000  00008f38  2**0
                   CONTENTS, READONLY, DEBUGGING, OCTETS
- 15 .debug_abbrev 00002c84  00000000  00000000  00017cb8  2**0
+ 15 .debug_abbrev 00002c85  00000000  00000000  00016cb6  2**0
                   CONTENTS, READONLY, DEBUGGING, OCTETS
- 16 .debug_aranges 00000c20  00000000  00000000  0001a940  2**3
+ 16 .debug_aranges 00000c20  00000000  00000000  00019940  2**3
                   CONTENTS, READONLY, DEBUGGING, OCTETS
- 17 .debug_rnglists 000008e6  00000000  00000000  0001b560  2**0
+ 17 .debug_rnglists 000008e6  00000000  00000000  0001a560  2**0
                   CONTENTS, READONLY, DEBUGGING, OCTETS
- 18 .debug_macro  00018aea  00000000  00000000  0001be46  2**0
+ 18 .debug_macro  00018ad8  00000000  00000000  0001ae46  2**0
                   CONTENTS, READONLY, DEBUGGING, OCTETS
- 19 .debug_line   00010167  00000000  00000000  00034930  2**0
+ 19 .debug_line   00010166  00000000  00000000  0003391e  2**0
                   CONTENTS, READONLY, DEBUGGING, OCTETS
- 20 .debug_str    000886ac  00000000  00000000  00044a97  2**0
+ 20 .debug_str    0008865d  00000000  00000000  00043a84  2**0
                   CONTENTS, READONLY, DEBUGGING, OCTETS
- 21 .comment      00000043  00000000  00000000  000cd143  2**0
+ 21 .comment      00000043  00000000  00000000  000cc0e1  2**0
                   CONTENTS, READONLY
- 22 .debug_frame  00003758  00000000  00000000  000cd188  2**2
+ 22 .debug_frame  00003758  00000000  00000000  000cc124  2**2
                   CONTENTS, READONLY, DEBUGGING, OCTETS
- 23 .debug_line_str 00000074  00000000  00000000  000d08e0  2**0
+ 23 .debug_line_str 00000074  00000000  00000000  000cf87c  2**0
                   CONTENTS, READONLY, DEBUGGING, OCTETS
 
 Disassembly of section .text:
@@ -526,7 +526,7 @@ __STATIC_FORCEINLINE void __enable_irq(void)
 	  printf("App STARTED - version %d - CRC 0x%lx\n",
 200045fc:	4619      	mov	r1, r3
 200045fe:	4b08      	ldr	r3, [pc, #32]	@ (20004620 <main+0x48>)
-20004600:	68db      	ldr	r3, [r3, #12]
+20004600:	689b      	ldr	r3, [r3, #8]
 20004602:	461a      	mov	r2, r3
 20004604:	4807      	ldr	r0, [pc, #28]	@ (20004624 <main+0x4c>)
 20004606:	f006 fcf9 	bl	2000affc <iprintf>
@@ -543,7 +543,7 @@ __STATIC_FORCEINLINE void __enable_irq(void)
 	  printf("App STARTED - version %d - CRC 0x%lx\n",
 2000461c:	bf00      	nop
 2000461e:	e7eb      	b.n	200045f8 <main+0x20>
-20004620:	08010000 	.word	0x08010000
+20004620:	08038800 	.word	0x08038800
 20004624:	2000bcec 	.word	0x2000bcec
 20004628:	40020800 	.word	0x40020800
 
@@ -1384,7 +1384,7 @@ LoopFillZerobss:
   ldr r1, =_edata
 200049f0:	2000bf08 	.word	0x2000bf08
   ldr r2, =_sidata
-200049f4:	080181a4 	.word	0x080181a4
+200049f4:	080407a4 	.word	0x080407a4
   ldr r2, =_sbss
 200049f8:	2000bf08 	.word	0x2000bf08
   ldr r4, =_ebss
