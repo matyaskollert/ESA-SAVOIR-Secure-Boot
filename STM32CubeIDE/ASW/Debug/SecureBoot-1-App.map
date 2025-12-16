@@ -3629,10 +3629,10 @@ Memory Configuration
 
 Name             Origin             Length             Attributes
 RAM              0x20004000         0x00014000         xrw
-xFLASH_HEADER    0x08010000         0x00000400         r
-xFLASH           0x08010400         0x00028400         xr
-FLASH_HEADER     0x08038800         0x00000400         r
-FLASH            0x08038a00         0x00028400         xr
+FLASH_HEADER     0x08010000         0x00000400         r
+FLASH            0x08010400         0x00028400         xr
+xFLASH_HEADER    0x08038800         0x00000400         r
+xFLASH           0x08038a00         0x00028400         xr
 *default*        0x00000000         0xffffffff
 
 Linker script and memory map
@@ -3695,19 +3695,19 @@ LOAD C:/ST/STM32CubeIDE_1.19.0/STM32CubeIDE/plugins/com.st.stm32cube.ide.mcu.ext
                 0x00000200                        _Min_Heap_Size = 0x200
                 0x00000400                        _Min_Stack_Size = 0x400
 
-.fw_header      0x08038800       0x10
+.fw_header      0x08010000       0x10
  *(.fw_header)
- .fw_header     0x08038800       0x10 ./Core/Src/main.o
-                0x08038800                image_hdr
+ .fw_header     0x08010000       0x10 ./Core/Src/main.o
+                0x08010000                image_hdr
 
-.isr_vector     0x20004000      0x194 load address 0x08038a00
+.isr_vector     0x20004000      0x194 load address 0x08010400
                 0x20004000                        . = ALIGN (0x4)
  *(.isr_vector)
  .isr_vector    0x20004000      0x194 ./Core/Startup/startup_stm32f401cdux.o
                 0x20004000                g_pfnVectors
                 0x20004194                        . = ALIGN (0x4)
 
-.text           0x200041a0     0x7b4c load address 0x08038b94
+.text           0x200041a0     0x7b4c load address 0x08010594
                 0x200041a0                        . = ALIGN (0x4)
  *(.text)
  .text          0x200041a0       0x40 C:/ST/STM32CubeIDE_1.19.0/STM32CubeIDE/plugins/com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.13.3.rel1.win32_1.0.0.202411081344/tools/bin/../lib/gcc/arm-none-eabi/13.3.1/thumb/v7e-m+fp/hard/crtbegin.o
@@ -4466,16 +4466,16 @@ LOAD C:/ST/STM32CubeIDE_1.19.0/STM32CubeIDE/plugins/com.st.stm32cube.ide.mcu.ext
                 0x2000bcec                        . = ALIGN (0x4)
                 0x2000bcec                        _etext = .
 
-.vfp11_veneer   0x2000bcec        0x0 load address 0x080406e0
+.vfp11_veneer   0x2000bcec        0x0 load address 0x080180e0
  .vfp11_veneer  0x2000bcec        0x0 linker stubs
 
-.v4_bx          0x2000bcec        0x0 load address 0x080406e0
+.v4_bx          0x2000bcec        0x0 load address 0x080180e0
  .v4_bx         0x2000bcec        0x0 linker stubs
 
-.iplt           0x2000bcec        0x0 load address 0x080406e0
+.iplt           0x2000bcec        0x0 load address 0x080180e0
  .iplt          0x2000bcec        0x0 C:/ST/STM32CubeIDE_1.19.0/STM32CubeIDE/plugins/com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.13.3.rel1.win32_1.0.0.202411081344/tools/bin/../lib/gcc/arm-none-eabi/13.3.1/thumb/v7e-m+fp/hard/crtbegin.o
 
-.rodata         0x2000bcec       0xb4 load address 0x080406e0
+.rodata         0x2000bcec       0xb4 load address 0x080180e0
                 0x2000bcec                        . = ALIGN (0x4)
  *(.rodata)
  .rodata        0x2000bcec       0x26 ./Core/Src/main.o
@@ -4494,12 +4494,12 @@ LOAD C:/ST/STM32CubeIDE_1.19.0/STM32CubeIDE/plugins/com.st.stm32cube.ide.mcu.ext
                 0x2000bdc4                        . = ALIGN (0x4)
  *fill*         0x2000bd9f        0x1 
 
-.ARM.extab      0x2000bda0        0x0 load address 0x08040794
+.ARM.extab      0x2000bda0        0x0 load address 0x08018194
                 0x2000bda0                        . = ALIGN (0x4)
  *(.ARM.extab* .gnu.linkonce.armextab.*)
                 0x2000bda0                        . = ALIGN (0x4)
 
-.ARM            0x2000bda0        0x8 load address 0x08040794
+.ARM            0x2000bda0        0x8 load address 0x08018194
                 0x2000bda0                        . = ALIGN (0x4)
                 0x2000bda0                        __exidx_start = .
  *(.ARM.exidx*)
@@ -4509,14 +4509,14 @@ LOAD C:/ST/STM32CubeIDE_1.19.0/STM32CubeIDE/plugins/com.st.stm32cube.ide.mcu.ext
                 0x2000bda8                        __exidx_end = .
                 0x2000bda8                        . = ALIGN (0x4)
 
-.preinit_array  0x2000bda8        0x0 load address 0x0804079c
+.preinit_array  0x2000bda8        0x0 load address 0x0801819c
                 0x2000bda8                        . = ALIGN (0x4)
                 0x2000bda8                        PROVIDE (__preinit_array_start = .)
  *(.preinit_array*)
                 0x2000bda8                        PROVIDE (__preinit_array_end = .)
                 0x2000bda8                        . = ALIGN (0x4)
 
-.init_array     0x2000bda8        0x4 load address 0x0804079c
+.init_array     0x2000bda8        0x4 load address 0x0801819c
                 0x2000bda8                        . = ALIGN (0x4)
                 0x2000bda8                        PROVIDE (__init_array_start = .)
  *(SORT_BY_NAME(.init_array.*))
@@ -4525,7 +4525,7 @@ LOAD C:/ST/STM32CubeIDE_1.19.0/STM32CubeIDE/plugins/com.st.stm32cube.ide.mcu.ext
                 0x2000bdac                        PROVIDE (__init_array_end = .)
                 0x2000bdac                        . = ALIGN (0x4)
 
-.fini_array     0x2000bdac        0x4 load address 0x080407a0
+.fini_array     0x2000bdac        0x4 load address 0x080181a0
                 0x2000bdac                        . = ALIGN (0x4)
                 [!provide]                        PROVIDE (__fini_array_start = .)
  *(SORT_BY_NAME(.fini_array.*))
@@ -4534,44 +4534,44 @@ LOAD C:/ST/STM32CubeIDE_1.19.0/STM32CubeIDE/plugins/com.st.stm32cube.ide.mcu.ext
                 [!provide]                        PROVIDE (__fini_array_end = .)
                 0x2000bdb0                        . = ALIGN (0x4)
 
-.copy_table     0x08038810       0x6c
-                0x08038810                        . = ALIGN (0x4)
-                0x08038810                        __copy_table_start__ = .
-                0x08038810        0x4 LONG 0x8038a00 LOADADDR (.isr_vector)
-                0x08038814        0x4 LONG 0x20004000 ADDR (.isr_vector)
-                0x08038818        0x4 LONG 0x194 SIZEOF (.isr_vector)
-                0x0803881c        0x4 LONG 0x8038b94 LOADADDR (.text)
-                0x08038820        0x4 LONG 0x200041a0 ADDR (.text)
-                0x08038824        0x4 LONG 0x7b4c SIZEOF (.text)
-                0x08038828        0x4 LONG 0x80406e0 LOADADDR (.rodata)
-                0x0803882c        0x4 LONG 0x2000bcec ADDR (.rodata)
-                0x08038830        0x4 LONG 0xb4 SIZEOF (.rodata)
-                0x08038834        0x4 LONG 0x8040794 LOADADDR (.ARM.extab)
-                0x08038838        0x4 LONG 0x2000bda0 ADDR (.ARM.extab)
-                0x0803883c        0x4 LONG 0x0 SIZEOF (.ARM.extab)
-                0x08038840        0x4 LONG 0x8040794 LOADADDR (.ARM)
-                0x08038844        0x4 LONG 0x2000bda0 ADDR (.ARM)
-                0x08038848        0x4 LONG 0x8 SIZEOF (.ARM)
-                0x0803884c        0x4 LONG 0x804079c LOADADDR (.preinit_array)
-                0x08038850        0x4 LONG 0x2000bda8 ADDR (.preinit_array)
-                0x08038854        0x4 LONG 0x0 SIZEOF (.preinit_array)
-                0x08038858        0x4 LONG 0x804079c LOADADDR (.init_array)
-                0x0803885c        0x4 LONG 0x2000bda8 ADDR (.init_array)
-                0x08038860        0x4 LONG 0x4 SIZEOF (.init_array)
-                0x08038864        0x4 LONG 0x80407a0 LOADADDR (.fini_array)
-                0x08038868        0x4 LONG 0x2000bdac ADDR (.fini_array)
-                0x0803886c        0x4 LONG 0x4 SIZEOF (.fini_array)
-                0x08038870        0x4 LONG 0x80407a4 LOADADDR (.data)
-                0x08038874        0x4 LONG 0x2000bdb0 ADDR (.data)
-                0x08038878        0x4 LONG 0x158 SIZEOF (.data)
-                0x0803887c                        __copy_table_end__ = .
-                0x0803887c                        . = ALIGN (0x4)
-                0x080407a4                        _sidata = LOADADDR (.data)
+.copy_table     0x08010010       0x6c
+                0x08010010                        . = ALIGN (0x4)
+                0x08010010                        __copy_table_start__ = .
+                0x08010010        0x4 LONG 0x8010400 LOADADDR (.isr_vector)
+                0x08010014        0x4 LONG 0x20004000 ADDR (.isr_vector)
+                0x08010018        0x4 LONG 0x194 SIZEOF (.isr_vector)
+                0x0801001c        0x4 LONG 0x8010594 LOADADDR (.text)
+                0x08010020        0x4 LONG 0x200041a0 ADDR (.text)
+                0x08010024        0x4 LONG 0x7b4c SIZEOF (.text)
+                0x08010028        0x4 LONG 0x80180e0 LOADADDR (.rodata)
+                0x0801002c        0x4 LONG 0x2000bcec ADDR (.rodata)
+                0x08010030        0x4 LONG 0xb4 SIZEOF (.rodata)
+                0x08010034        0x4 LONG 0x8018194 LOADADDR (.ARM.extab)
+                0x08010038        0x4 LONG 0x2000bda0 ADDR (.ARM.extab)
+                0x0801003c        0x4 LONG 0x0 SIZEOF (.ARM.extab)
+                0x08010040        0x4 LONG 0x8018194 LOADADDR (.ARM)
+                0x08010044        0x4 LONG 0x2000bda0 ADDR (.ARM)
+                0x08010048        0x4 LONG 0x8 SIZEOF (.ARM)
+                0x0801004c        0x4 LONG 0x801819c LOADADDR (.preinit_array)
+                0x08010050        0x4 LONG 0x2000bda8 ADDR (.preinit_array)
+                0x08010054        0x4 LONG 0x0 SIZEOF (.preinit_array)
+                0x08010058        0x4 LONG 0x801819c LOADADDR (.init_array)
+                0x0801005c        0x4 LONG 0x2000bda8 ADDR (.init_array)
+                0x08010060        0x4 LONG 0x4 SIZEOF (.init_array)
+                0x08010064        0x4 LONG 0x80181a0 LOADADDR (.fini_array)
+                0x08010068        0x4 LONG 0x2000bdac ADDR (.fini_array)
+                0x0801006c        0x4 LONG 0x4 SIZEOF (.fini_array)
+                0x08010070        0x4 LONG 0x80181a4 LOADADDR (.data)
+                0x08010074        0x4 LONG 0x2000bdb0 ADDR (.data)
+                0x08010078        0x4 LONG 0x158 SIZEOF (.data)
+                0x0801007c                        __copy_table_end__ = .
+                0x0801007c                        . = ALIGN (0x4)
+                0x080181a4                        _sidata = LOADADDR (.data)
 
-.rel.dyn        0x0803887c        0x0
- .rel.iplt      0x0803887c        0x0 C:/ST/STM32CubeIDE_1.19.0/STM32CubeIDE/plugins/com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.13.3.rel1.win32_1.0.0.202411081344/tools/bin/../lib/gcc/arm-none-eabi/13.3.1/thumb/v7e-m+fp/hard/crtbegin.o
+.rel.dyn        0x0801007c        0x0
+ .rel.iplt      0x0801007c        0x0 C:/ST/STM32CubeIDE_1.19.0/STM32CubeIDE/plugins/com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.13.3.rel1.win32_1.0.0.202411081344/tools/bin/../lib/gcc/arm-none-eabi/13.3.1/thumb/v7e-m+fp/hard/crtbegin.o
 
-.data           0x2000bdb0      0x158 load address 0x080407a4
+.data           0x2000bdb0      0x158 load address 0x080181a4
                 0x2000bdb0                        . = ALIGN (0x4)
                 0x2000bdb0                        _sdata = .
  *(.data)
@@ -4630,11 +4630,11 @@ LOAD C:/ST/STM32CubeIDE_1.19.0/STM32CubeIDE/plugins/com.st.stm32cube.ide.mcu.ext
                 0x2000bf08                        . = ALIGN (0x4)
                 0x2000bf08                        _edata = .
 
-.igot.plt       0x2000bf08        0x0 load address 0x080408fc
+.igot.plt       0x2000bf08        0x0 load address 0x080182fc
  .igot.plt      0x2000bf08        0x0 C:/ST/STM32CubeIDE_1.19.0/STM32CubeIDE/plugins/com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.13.3.rel1.win32_1.0.0.202411081344/tools/bin/../lib/gcc/arm-none-eabi/13.3.1/thumb/v7e-m+fp/hard/crtbegin.o
                 0x2000bf08                        . = ALIGN (0x4)
 
-.bss            0x2000bf08     0x1d54 load address 0x080408fc
+.bss            0x2000bf08     0x1d54 load address 0x080182fc
                 0x2000bf08                        _sbss = .
                 0x2000bf08                        __bss_start__ = _sbss
  *(.bss)
@@ -4688,7 +4688,7 @@ LOAD C:/ST/STM32CubeIDE_1.19.0/STM32CubeIDE/plugins/com.st.stm32cube.ide.mcu.ext
                 0x2000dc5c                        __bss_end__ = _ebss
 
 ._user_heap_stack
-                0x2000dc5c      0x604 load address 0x080408fc
+                0x2000dc5c      0x604 load address 0x080182fc
                 0x2000dc60                        . = ALIGN (0x8)
  *fill*         0x2000dc5c        0x4 
                 [!provide]                        PROVIDE (end = .)

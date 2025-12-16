@@ -1,6 +1,7 @@
 import argparse
 import binascii
 import struct
+from crccheck.crc import Crc32Mpeg2
 
 
 def patch_binary_payload(bin_filename):
@@ -93,9 +94,20 @@ def patch_binary_payload(bin_filename):
         
         # Read section data from the correct offset
         section_data = full_binary[section_offset_in_file:section_offset_in_file + size]
+
+        if (size < 100):
+            # print the whole section data in hex for small sections
+            print(f"  Section data (hex): {section_data.hex()}")
+
         
-        section_crc = binascii.crc32(section_data) & 0xffffffff
+
+        # section_crc = binascii.crc32(section_data) & 0xffffffff
+        section_crc = Crc32Mpeg2.calc(section_data)
         print(f"Section {i}: src_lma=0x{src_lma:08x}, size={size}, file_offset=0x{section_offset_in_file:x}, crc=0x{section_crc:08x}")
+        # print first 32 byte word of section data for verification
+        first_word = struct.unpack("<L", section_data[0:4])[0]
+        print(f"  First word of section data: 0x{first_word:08x}")
+        print("")
         
         # Combine CRCs using XOR
         combined_crc ^= section_crc

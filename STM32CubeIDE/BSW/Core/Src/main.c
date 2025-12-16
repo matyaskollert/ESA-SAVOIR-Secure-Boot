@@ -23,7 +23,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 
-#include "image.h"
+#include "boot.h"
 
 /* USER CODE END Includes */
 
@@ -110,36 +110,14 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_USB_DEVICE_Init();
-  //MX_CRC_Init();
+  MX_CRC_Init();
   /* USER CODE BEGIN 2 */
-
-  srand(HAL_GetTick());
-  const int image_number = rand();
 
   HAL_Delay(3000);
 
-  printf("Bootloader loaded: %d\r\n", image_number);
-
-
-  /* FLASH LOAD START */
-
-  //uint32_t app_vector = FLASH_ARE_IMAGE;
-
-  /* FLASH LOAD END */
-
-  /* FLASH->RAM LOAD START */
+  printf("Bootloader loaded!\r\n");
   
-  imageValidate(IMAGE_SLOT_1);
-  imageLoad(IMAGE_SLOT_1);
-  imageValidateInRAM(IMAGE_SLOT_1);
-  imageStart(IMAGE_SLOT_1);
-
-  /* FLASH->RAM LOAD END */
-
-
-
-  // used for debugging
-  uint8_t buffer2[] = "Bootloader loop";
+  boot();
 
   /* USER CODE END 2 */
 
@@ -147,7 +125,6 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-	  CDC_Transmit_FS(buffer2,sizeof(buffer2));
 	  HAL_GPIO_TogglePin(LED_GPIO_Port, LED_Pin);
 	  HAL_Delay(1000);
     /* USER CODE END WHILE */

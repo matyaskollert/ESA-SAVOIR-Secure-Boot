@@ -1,6 +1,9 @@
 
 #include "crc.h"
+#include "main.h"
 
+// External CRC handle from main.c
+extern CRC_HandleTypeDef hcrc;
 
 uint32_t crc32_for_byte(uint32_t r) {
   for(int j = 0; j < 8; ++j)
@@ -20,4 +23,11 @@ uint32_t crc32(const void *data, uint32_t n_bytes) {
     crc = table[(uint8_t)crc ^ ((uint8_t*)data)[i]] ^ crc >> 8;
 
   return crc;
+}
+
+
+uint32_t crc32HW(const void *data, uint32_t n_bytes) {
+	uint32_t n_words = n_bytes / 4;
+	uint32_t crc_result = HAL_CRC_Calculate(&hcrc, (uint32_t *) data, n_bytes);
+	return crc_result;
 }

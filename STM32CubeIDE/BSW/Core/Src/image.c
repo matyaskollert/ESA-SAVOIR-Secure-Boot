@@ -4,8 +4,6 @@
 #include "image.h"
 #include "crc.h"
 
-extern USBD_HandleTypeDef hUsbDeviceFS;
-
 const image_hdr_t* imageGetHeader(image_slot_t slot)
 {
 	 const image_hdr_t *header = NULL;
@@ -83,7 +81,9 @@ int imageValidate(image_slot_t slot)
 		
 		// Compute CRC for this section
 		uint32_t section_crc = crc32(section_addr, size);
-		printf("Section %lu: addr=0x%08lx, size=%lu, crc=0x%08lx\r\n", i, src_lma, size, section_crc);
+		uint32_t section_crc_hw = crc32HW(section_addr, size);
+		uint32_t section_crc_hw2 = crc32HW(section_addr, size);
+		printf("Section %lu: addr=0x%08lx, size=%lu, crc=0x%08lx, crcHW=0x%08lx, crcHW2=0x%08lx\r\n", i, src_lma, size, section_crc, section_crc_hw, section_crc_hw2);
 		
 		// Combine CRCs using XOR
 		combined_crc ^= section_crc;
@@ -131,7 +131,7 @@ int imageValidateInRAM(image_slot_t slot)
 		uint32_t section_crc = crc32(section_addr, size);
 		printf("Section %lu in RAM: addr=0x%08lx, size=%lu, crc=0x%08lx\r\n",
 		       i, dst_vma, size, section_crc);
-		
+
 		// Combine CRCs using XOR
 		combined_crc ^= section_crc;
 	}
@@ -204,7 +204,6 @@ void imageStart(image_slot_t slot)
 
 	  // 2. Stop USB (avoid leftover ISRs)
 	  HAL_NVIC_DisableIRQ(OTG_FS_IRQn);
-	  USBD_DeInit(&hUsbDeviceFS);
 
 	  // (optional) Disable SysTick
 	  SysTick->CTRL = 0;

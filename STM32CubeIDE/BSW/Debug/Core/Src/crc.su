@@ -1,2 +1,3 @@
-../Core/Src/crc.c:5:10:crc32_for_byte	24	static
-../Core/Src/crc.c:13:10:crc32	32	static
+../Core/Src/crc.c:8:10:crc32_for_byte	24	static
+../Core/Src/crc.c:16:10:crc32	32	static
+../Core/Src/crc.c:29:10:crc32HW	24	static
