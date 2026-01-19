@@ -1,0 +1,3 @@
+../Core/Src/flash.c:11:6:eraseFlashSector	40	static
+../Core/Src/flash.c:29:6:writeFlashWord	16	static
+../Core/Src/flash.c:42:6:writeFlashSector	32	static
