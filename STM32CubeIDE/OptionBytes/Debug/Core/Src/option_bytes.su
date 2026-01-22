@@ -1,4 +1,0 @@
-../Drivers/CMSIS/Include/core_cm4.h:1938:34:__NVIC_SystemReset	4	static,ignoring_inline_asm
-../Core/Src/option_bytes.c:10:6:disableSectorWriteProtection	48	static
-../Core/Src/option_bytes.c:47:6:enableSectorWriteProtection	48	static
-../Core/Src/option_bytes.c:84:10:checkSectorWriteProtection	48	static

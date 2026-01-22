@@ -1,3 +1,0 @@
-../Core/Src/crc.c:8:10:crc32_for_byte	3
-../Core/Src/crc.c:16:10:crc32	4
-../Core/Src/crc.c:29:10:crc32HW	1

@@ -1,3 +1,0 @@
-../Core/Src/flash.c:11:6:eraseFlashSector	2
-../Core/Src/flash.c:29:6:writeFlashWord	2
-../Core/Src/flash.c:42:6:writeFlashSector	2

@@ -1,6 +1,0 @@
-../Core/Src/image.c:7:20:imageGetHeader	5
-../Core/Src/image.c:35:29:imageGetCopyTable	3
-../Core/Src/image.c:57:5:imageValidate	5
-../Core/Src/image.c:107:5:imageValidateInRAM	5
-../Core/Src/image.c:154:6:imageLoad	3
-../Core/Src/image.c:192:6:imageStart	1

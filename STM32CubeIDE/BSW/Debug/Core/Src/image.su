@@ -1,6 +1,0 @@
-../Core/Src/image.c:7:20:imageGetHeader	24	static
-../Core/Src/image.c:35:29:imageGetCopyTable	24	static
-../Core/Src/image.c:57:5:imageValidate	80	static
-../Core/Src/image.c:107:5:imageValidateInRAM	64	static
-../Core/Src/image.c:154:6:imageLoad	64	static
-../Core/Src/image.c:192:6:imageStart	32	static,ignoring_inline_asm
