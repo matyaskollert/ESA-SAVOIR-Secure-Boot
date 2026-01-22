@@ -13,6 +13,7 @@ def patch_binary_payload(bin_filename):
     IMAGE_HDR_MAGIC = 0xABCD
     IMAGE_HDR_VERSION = 1
     SECTION_COPY_ENTRY_SIZE = 12  # 3 uint32_t fields
+    USE_HW_CRC = False  # Set to False to use software CRC32
 
     with open(bin_filename, "rb") as f:
         image_hdr = f.read(IMAGE_HDR_SIZE_BYTES)
@@ -60,7 +61,7 @@ def patch_binary_payload(bin_filename):
     # Since we don't know the base yet, we'll try common known values
     
     # Try known image bases
-    possible_bases = [0x08010000, 0x08038800]
+    possible_bases = [0x08020000, 0x08040000]
     image_base_flash = None
     
     for base in possible_bases:
@@ -99,10 +100,12 @@ def patch_binary_payload(bin_filename):
             # print the whole section data in hex for small sections
             print(f"  Section data (hex): {section_data.hex()}")
 
-        
+        if not USE_HW_CRC:
+            section_crc = binascii.crc32(section_data) & 0xffffffff
+        else:
+            section_crc = Crc32Mpeg2.calc(section_data)
 
-        # section_crc = binascii.crc32(section_data) & 0xffffffff
-        section_crc = Crc32Mpeg2.calc(section_data)
+
         print(f"Section {i}: src_lma=0x{src_lma:08x}, size={size}, file_offset=0x{section_offset_in_file:x}, crc=0x{section_crc:08x}")
         # print first 32 byte word of section data for verification
         first_word = struct.unpack("<L", section_data[0:4])[0]

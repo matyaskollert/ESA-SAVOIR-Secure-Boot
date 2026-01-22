@@ -73,15 +73,7 @@ def process_binary_with_crc(input_bin_filename, output_bin_filename=None, image_
         raise Exception("No valid sections found to determine image base")
     
     # Try known image bases
-    possible_bases = [0x08020000, 0x08040000]
-    image_base_flash = None
-    
-    for base in possible_bases:
-        expected_offset = first_src_lma - base
-        if 0 < expected_offset < len(full_binary):
-            image_base_flash = base
-            print(f"Detected image base FLASH address: 0x{image_base_flash:08x}")
-            break
+    image_base_flash = 0x08020000
     
     if image_base_flash is None:
         # Fallback: assume first section is at a typical offset like 0x400
