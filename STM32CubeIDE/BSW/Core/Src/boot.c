@@ -8,8 +8,8 @@
 #include "boot.h"
 
 void boot() {
-	imageValidate(IMAGE_SLOT_1);
-	imageLoad(IMAGE_SLOT_1);
-	imageValidateInRAM(IMAGE_SLOT_1);
-	imageStart(IMAGE_SLOT_1);
+	imageValidate(IMAGE_SLOT_2);
+	imageLoad(IMAGE_SLOT_2);
+	imageValidateInRAM(IMAGE_SLOT_2);
+	imageStart(IMAGE_SLOT_2);
 }
