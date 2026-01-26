@@ -9,7 +9,7 @@
 #define FLASH_AREA_IMAGE_2   0x08040000
 #define RAM_AREA_IMAGE     0x20006800
 
-#define IMAGE_OFFSET        0x400             //because vector table offset should be a multiple of 0x200
+#define IMAGE_OFFSET        0x1400             //because vector table offset should be a multiple of 0x200
 
 
 typedef struct __attribute__((packed)){
@@ -18,6 +18,8 @@ typedef struct __attribute__((packed)){
     uint32_t image_size;
     uint32_t crc;
     uint32_t num_sections;
+    //uint32_t signature_alg;
+    uint8_t signature[4096];
 } image_hdr_t;
 
 // Define the section copy table structure
@@ -39,6 +41,8 @@ const section_copy_entry_t *imageGetCopyTable(image_slot_t slot);
 const image_hdr_t *imageGetHeader(image_slot_t slot);
 
 int imageValidate(image_slot_t slot);
+
+int imageVerify(image_slot_t slot);
 
 int imageValidateInRAM(image_slot_t slot);
 

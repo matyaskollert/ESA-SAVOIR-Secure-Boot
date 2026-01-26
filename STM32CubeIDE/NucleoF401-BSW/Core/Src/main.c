@@ -152,12 +152,7 @@ int main(void)
   while (1)
   {
     /* USER CODE END WHILE */
-    HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
-    printf("Hello There my friend Bootloader!\r\n");
-//    HAL_UART_Receive(&huart2, my_rx_buffer, RX_BUFFER_SIZE, HAL_MAX_DELAY);
-//    my_rx_buffer[RX_BUFFER_SIZE] = 0;
-//    printf("Received data: %s\r\n", my_rx_buffer);
-    HAL_Delay(1000);
+
     /* USER CODE BEGIN 3 */
   }
   /* USER CODE END 3 */

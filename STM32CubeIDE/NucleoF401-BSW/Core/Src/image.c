@@ -3,8 +3,9 @@
 #include "stm32f4xx_hal.h"
 #include "image.h"
 #include "crc.h"
+#include "crypto.h"
 
-image_hdr_t header;
+volatile image_hdr_t header;
 
 const image_hdr_t* imageGetHeader(image_slot_t slot)
 {
@@ -55,7 +56,6 @@ const section_copy_entry_t* imageGetCopyTable(image_slot_t slot)
 	 return copy_table;
 }
 
-
 int imageValidate(image_slot_t slot)
 {
 	image_hdr_t* hdr = imageGetHeader(slot);
@@ -83,20 +83,24 @@ int imageValidate(image_slot_t slot)
 		
 		// Compute CRC for this section
 		uint32_t section_crc = crc32(section_addr, size);
-		uint32_t section_crc_hw = crc32HW(section_addr, size);
-		printf("Section %lu: addr=0x%08lx, size=%lu, crc=0x%08lx, crcHW=0x%08lx\r\n", i, src_lma, size, section_crc, section_crc_hw);
+		printf("Section %lu: addr=0x%08lx, size=%lu, crc=0x%08lx\r\n", i, src_lma, size, section_crc);
 		
 		// Combine CRCs using XOR
 		combined_crc ^= section_crc;
 	}
 	
 
-	header.crc = hdr->crc;
-	hdr->crc = 0L;
-	uint32_t header_crc = crc32(hdr, sizeof(hdr));
-	uint32_t header_crc_hw = crc32HW(hdr, sizeof(hdr));
-	printf("Header: addr=0x%08lx, size=%lu, crc=0x%08lx, crcHW=0x%08lx\r\n", hdr, sizeof(hdr), header_crc, header_crc_hw);
-	hdr->crc = header.crc;
+	memcpy(&header, hdr, sizeof(image_hdr_t));
+
+	header.crc = 0;
+
+	uint32_t hdr_size = sizeof(image_hdr_t);
+	uint32_t header_crc = crc32(&header, hdr_size);
+
+	printf("Header: addr=%p, size=%lu, crc=0x%08lx\r\n",
+	       &header,
+	       hdr_size,
+	       header_crc);
 
 	combined_crc ^= header_crc;
 
@@ -147,7 +151,21 @@ int imageValidateInRAM(image_slot_t slot)
 		combined_crc ^= section_crc;
 	}
 	
-	printf("Combined CRC (RAM): 0x%08lx\r\n", combined_crc);
+	memcpy(&header, hdr, sizeof(image_hdr_t));
+
+	header.crc = 0;
+
+	uint32_t hdr_size = sizeof(image_hdr_t);
+	uint32_t header_crc = crc32(&header, hdr_size);
+
+	printf("Header: addr=%p, size=%lu, crc=0x%08lx\r\n",
+		   &header,
+		   hdr_size,
+		   header_crc);
+
+	combined_crc ^= header_crc;
+
+	printf("Combined CRC: 0x%08lx\r\n", combined_crc);
 	printf("Expected CRC: 0x%08lx\r\n", hdr->crc);
 	
 	if (combined_crc == hdr->crc)
