@@ -19,8 +19,6 @@ byte   dsaKeyBuffer[] = {
 
 byte hashDigest[WC_SHA256_DIGEST_SIZE];
 Sha256 sha;
-ecc_key key;
-word32 idx = 0;
 
 
 byte* hash(const byte* buffer, uint32_t size) {

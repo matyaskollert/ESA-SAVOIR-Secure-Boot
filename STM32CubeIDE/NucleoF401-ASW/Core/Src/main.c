@@ -79,7 +79,7 @@ typedef struct __attribute__((packed)){
     uint32_t crc;
     uint32_t num_sections;
     //uint16_t signature_alg;
-    uint8_t signature[4096];
+    //uint8_t signature[4096];
 } image_hdr_t;
 
 image_hdr_t image_hdr __attribute__((section(".fw_header")))= {

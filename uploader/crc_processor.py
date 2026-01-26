@@ -73,13 +73,7 @@ def process_binary_with_crc(input_bin_filename, output_bin_filename=None, image_
         raise Exception("No valid sections found to determine image base")
     
     # Try known image bases
-    image_base_flash = 0x08020000
-    
-    if image_base_flash is None:
-        # Fallback: assume first section is at a typical offset like 0x400
-        typical_offset = 0x400
-        image_base_flash = first_src_lma - typical_offset
-        print(f"Assumed image base FLASH address: 0x{image_base_flash:08x}")
+    image_base_flash = 0x08020400
     
     # Compute CRC for each section and combine them
     combined_crc = 0
@@ -115,31 +109,37 @@ def process_binary_with_crc(input_bin_filename, output_bin_filename=None, image_
     print(f"Combined CRC of sections: 0x{combined_crc:08x}")
     
     # Now build the complete header with version and compute final CRC
-    # Header structure: [magic:2][version:2][data_size:4][crc:4][num_sections:4]
+    # Header structure: [magic:2][version:2][data_size:4][crc:4][num_sections:4][signature:4096]
     # We need to compute CRC over the complete header (with CRC field set to 0) + data
     
     # Build header with CRC initially set to 0
     temp_header = struct.pack("<HH", IMAGE_HDR_MAGIC, image_version)  # magic + version
     temp_header += struct.pack("<L", data_size)  # data_size
     temp_header += struct.pack("<L", 0)  # crc placeholder (set to 0)
-    temp_header += image_hdr[12:]  # num_sections (last 4 bytes of original header)
+    temp_header += image_hdr[12:16]  # num_sections (4 bytes from original header)
     
-    # Compute CRC over complete header + data
-    header_and_data = temp_header + data
-    final_crc = binascii.crc32(header_and_data) & 0xffffffff
+    header_crc = binascii.crc32(temp_header) & 0xffffffff
+
+    # print the first 4 32-bit words of the header for debugging
+    header_words = struct.unpack("<LLLL", temp_header)
+    print(f"Header words: 0x{header_words[0]:08x} 0x{header_words[1]:08x} 0x{header_words[2]:08x} 0x{header_words[3]:08x}")
+
+    print(f"Header crc (with crc=0): 0x{header_crc:08x}")
+
+    combined_crc ^= header_crc
     
-    print(f"Final CRC (including header): 0x{final_crc:08x}")
-    print(f"Adding crc:0x{final_crc:08x} data_size:{data_size} version:{image_version} to '{output_bin_filename}'")
+    print(f"Final CRC (including header): 0x{combined_crc:08x}")
+    print(f"Adding crc:0x{combined_crc:08x} data_size:{data_size} version:{image_version} to '{output_bin_filename}'")
     
     # Create new file with patched header
     with open(output_bin_filename, "wb") as f:
         # Write magic and version
         f.write(struct.pack("<HH", IMAGE_HDR_MAGIC, image_version))
         # Write data size and CRC
-        f.write(struct.pack("<LL", data_size, final_crc))
+        f.write(struct.pack("<LL", data_size, combined_crc))
         # Write remaining header bytes (num_sections)
         f.write(image_hdr[12:])
         # Write the rest of the data
-        f.write(data)
+        f.write(data)    
     
     return output_bin_filename

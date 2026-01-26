@@ -1,11 +1,10 @@
 #include <stdio.h>
-
+#include <string.h>
 #include "stm32f4xx_hal.h"
 #include "image.h"
 #include "crc.h"
-#include "crypto.h"
 
-volatile image_hdr_t header;
+image_hdr_t header;
 
 const image_hdr_t* imageGetHeader(image_slot_t slot)
 {
@@ -58,7 +57,7 @@ const section_copy_entry_t* imageGetCopyTable(image_slot_t slot)
 
 int imageValidate(image_slot_t slot)
 {
-	image_hdr_t* hdr = imageGetHeader(slot);
+	const image_hdr_t* hdr = imageGetHeader(slot);
 	if (hdr == NULL) {
 		return -1;
 	}
