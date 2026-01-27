@@ -79,7 +79,7 @@ int _write(int fd, char *ptr, int len) {
 #define SMALL_RX_BUFFER_SIZE 1//0x10000;
 uint8_t my_small_rx_buffer[SMALL_RX_BUFFER_SIZE];
 
-#define RX_BUFFER_SIZE 13864//0x10000;
+#define RX_BUFFER_SIZE 13844//0x10000;
 uint8_t my_rx_buffer[RX_BUFFER_SIZE];
 
 #define FLASH_ADDR  0x08020000U
@@ -134,7 +134,7 @@ int main(void)
 	  HAL_UART_Receive(&huart2, my_rx_buffer, RX_BUFFER_SIZE, HAL_MAX_DELAY);
 
 	  printf("First Word: 0x%04x\r\n", ((uint32_t *)my_rx_buffer)[0]);
-	  writeFlashSector(FLASH_SECTOR, FLASH_ADDR, (uint32_t *)my_rx_buffer, 13864/4);
+	  writeFlashSector(FLASH_SECTOR, FLASH_ADDR, (uint32_t *)my_rx_buffer, RX_BUFFER_SIZE/4);
 
 	  boot();
   } else {

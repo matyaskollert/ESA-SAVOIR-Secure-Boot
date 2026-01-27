@@ -28,7 +28,7 @@ int imageSimpleValidate()
 		return -1;
 	}
 	
-	uint32_t* image = (uint32_t*)hdr + IMAGE_OFFSET;
+	uint32_t* image = FLASH_AREA_IMAGE_1 + IMAGE_OFFSET;
 
 	// Compute CRC for this section
 	uint32_t image_crc = crc32(image, hdr->image_size);
@@ -139,7 +139,7 @@ void imageSimpleStart()
 	  SysTick->CTRL = 0;
 
 	  // 3. Set vector table for the application
-	  //SCB->VTOR = app_vector;
+	  SCB->VTOR = app_vector;
 
 	  // 4. Fetch MSP and ResetHandler
 	  uint32_t msp_value = *(volatile uint32_t *)(app_vector);
