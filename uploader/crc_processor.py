@@ -23,7 +23,7 @@ def process_binary_with_crc(input_bin_filename, output_bin_filename=None, image_
     Raises:
         Exception if binary is not a supported type
     """
-    IMAGE_HDR_SIZE_BYTES = 16
+    IMAGE_HDR_SIZE_BYTES = 16 #+ 4096  # header + signature
     IMAGE_HDR_MAGIC = 0xABCD
     SECTION_COPY_ENTRY_SIZE = 12  # 3 uint32_t fields
     USE_HW_CRC = False  # Set to False to use software CRC32
@@ -73,7 +73,7 @@ def process_binary_with_crc(input_bin_filename, output_bin_filename=None, image_
         raise Exception("No valid sections found to determine image base")
     
     # Try known image bases
-    image_base_flash = 0x08020400
+    image_base_flash = 0x08020000
     
     # Compute CRC for each section and combine them
     combined_crc = 0
