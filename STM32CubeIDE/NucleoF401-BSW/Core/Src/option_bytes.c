@@ -6,6 +6,7 @@
  */
 
 #include "option_bytes.h"
+#include <stdio.h>
 
 void disableSectorWriteProtection(uint32_t sector) {
 

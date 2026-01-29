@@ -22,7 +22,9 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 
+#include <stdio.h>
 #include "boot.h"
+#include "flash.h"
 
 /* USER CODE END Includes */
 
@@ -77,10 +79,11 @@ int _write(int fd, char *ptr, int len) {
 }
 
 #define SMALL_RX_BUFFER_SIZE 1//0x10000;
-uint8_t my_small_rx_buffer[SMALL_RX_BUFFER_SIZE];
+uint8_t mySmallRXBuffer[SMALL_RX_BUFFER_SIZE];
 
-#define RX_BUFFER_SIZE 13844//0x10000;
-uint8_t my_rx_buffer[RX_BUFFER_SIZE];
+//TODO: dynamic
+#define RX_BUFFER_SIZE 16388//0x10000;
+uint8_t myRXBuffer[RX_BUFFER_SIZE];
 
 #define FLASH_ADDR  0x08020000U
 #define FLASH_SECTOR FLASH_SECTOR_5
@@ -124,17 +127,17 @@ int main(void)
 
   printf("Bootloader loaded, enter '1' for boot or '2' for upload\r\n");
 
-  HAL_UART_Receive(&huart2, my_small_rx_buffer, SMALL_RX_BUFFER_SIZE, HAL_MAX_DELAY);
+  HAL_UART_Receive(&huart2, mySmallRXBuffer, SMALL_RX_BUFFER_SIZE, HAL_MAX_DELAY);
 
-  char* choice = (char *)my_small_rx_buffer;
+  char* choice = (char *)mySmallRXBuffer;
 
   if (choice[0] == '1') {
 	  boot();
   } else if (choice[0] == '2') {
-	  HAL_UART_Receive(&huart2, my_rx_buffer, RX_BUFFER_SIZE, HAL_MAX_DELAY);
+	  HAL_UART_Receive(&huart2, myRXBuffer, RX_BUFFER_SIZE, HAL_MAX_DELAY);
 
-	  printf("First Word: 0x%04x\r\n", ((uint32_t *)my_rx_buffer)[0]);
-	  writeFlashSector(FLASH_SECTOR, FLASH_ADDR, (uint32_t *)my_rx_buffer, RX_BUFFER_SIZE/4);
+	  printf("First Word: 0x%04lx\r\n", ((uint32_t *)myRXBuffer)[0]);
+	  writeFlashSector(FLASH_SECTOR, FLASH_ADDR, (uint32_t *)myRXBuffer, RX_BUFFER_SIZE/4);
 
 	  boot();
   } else {

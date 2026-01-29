@@ -10,8 +10,8 @@
 
 #include <wolfssl/wolfcrypt/sha256.h>
 
-byte* hash(const byte* buffer, uint32_t size);
+byte* hash(const byte* buffer, uint32_t bufferSize);
 
-int verify(const byte* signature, const byte* hsh, word32 sigLen);
+int verifySignature(const byte* signature, word32 signatureLength);
 
 #endif /* INC_CRYPTO_H_ */

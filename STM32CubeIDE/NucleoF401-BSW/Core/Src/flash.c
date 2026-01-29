@@ -7,6 +7,7 @@
 
 
 #include "flash.h"
+#include <stdio.h>
 
 void eraseFlashSector(uint32_t sector) {
   /* Erase sector */
@@ -44,7 +45,7 @@ void writeFlashSector(uint32_t sector, uint32_t address, uint32_t* value, uint32
 
   eraseFlashSector(sector);
 
-  printf("First address: 0x%08x and first word: 0x%08x", address, value[0]);
+  printf("First address: 0x%08lx and first word: 0x%08lx", address, value[0]);
 
   for (int i = 0; i < size; i++) {
 	  writeFlashWord(address + 4*i, value[i]);

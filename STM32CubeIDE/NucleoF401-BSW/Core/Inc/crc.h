@@ -4,7 +4,7 @@
 #include <stdint.h>
 #include <stddef.h>
 
-uint32_t crc32(const void *buf, uint32_t size);
-uint32_t crc32HW(const void *data, uint32_t n_bytes);
+uint32_t crc32(const void *data, uint32_t sizeBytes);
+uint32_t crc32_hw(const void *data, uint32_t sizeBytes);
 
 #endif /* INC_CRC_H_ */

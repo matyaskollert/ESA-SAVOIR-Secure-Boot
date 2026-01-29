@@ -1,6 +1,6 @@
 """
-STM32F401 Binary Uploader Application
-A simple GUI application for uploading binary files to STM32F401 boards via UART.
+STM32F4 Binary Uploader Application
+A simple GUI application for uploading binary files to STM32F4 boards via UART.
 """
 import sys
 import time
@@ -8,13 +8,14 @@ from pathlib import Path
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QFileDialog, QTextEdit, QProgressBar, QGroupBox,
-    QSpinBox, QMessageBox
+    QSpinBox, QMessageBox, QCheckBox, QLineEdit, QRadioButton, QButtonGroup
 )
 from PySide6.QtCore import QThread, Signal, Qt
 from PySide6.QtGui import QFont
 import serial
 import serial.tools.list_ports
-from crc_processor import process_binary_with_crc
+from binary_processor import process_binary
+from signature_ecdsa import ECDSASignature
 
 
 class UploaderThread(QThread):
@@ -139,9 +140,11 @@ class MainWindow(QMainWindow):
         self.patched_file = None
         self.uploader_thread = None
         self.image_version = 1
+        self.signature_algo = ECDSASignature()
+        self.keys_dir = Path(__file__).parent / "keys"
         
-        self.setWindowTitle("STM32F401 Binary Uploader")
-        self.setMinimumSize(700, 600)
+        self.setWindowTitle("STM32F4 Binary Uploader")
+        self.setMinimumSize(700, 700)
         
         self.init_ui()
         
@@ -155,7 +158,7 @@ class MainWindow(QMainWindow):
         main_layout.setContentsMargins(20, 20, 20, 20)
         
         # Title
-        title_label = QLabel("STM32F401 Binary Uploader")
+        title_label = QLabel("STM32F4 Binary Uploader")
         title_font = QFont()
         title_font.setPointSize(16)
         title_font.setBold(True)
@@ -181,8 +184,48 @@ class MainWindow(QMainWindow):
         file_group.setLayout(file_layout)
         main_layout.addWidget(file_group)
         
+        # Signature group
+        sig_group = QGroupBox("2. Digital Signature")
+        sig_layout = QVBoxLayout()
+        
+        # Key options container
+        self.key_options_widget = QWidget()
+        key_options_layout = QVBoxLayout(self.key_options_widget)
+        key_options_layout.setContentsMargins(20, 0, 0, 0)
+        
+        # Radio buttons for key generation/use
+        self.key_button_group = QButtonGroup()
+        self.generate_keys_radio = QRadioButton("Generate new keys")
+        self.use_existing_keys_radio = QRadioButton("Use existing keys")
+        self.generate_keys_radio.setChecked(True)
+        self.key_button_group.addButton(self.generate_keys_radio)
+        self.key_button_group.addButton(self.use_existing_keys_radio)
+        key_options_layout.addWidget(self.generate_keys_radio)
+        key_options_layout.addWidget(self.use_existing_keys_radio)
+        
+        # Existing keys path selection
+        existing_keys_layout = QHBoxLayout()
+        self.private_key_label = QLabel("Private Key:")
+        self.private_key_path = QLineEdit()
+        self.private_key_path.setPlaceholderText("Path to private key (.pem)")
+        self.private_key_browse = QPushButton("Browse...")
+        self.private_key_browse.clicked.connect(self.browse_private_key)
+        
+        existing_keys_layout.addWidget(self.private_key_label)
+        existing_keys_layout.addWidget(self.private_key_path, 1)
+        existing_keys_layout.addWidget(self.private_key_browse)
+        key_options_layout.addLayout(existing_keys_layout)
+        
+        # Connect radio button to enable/disable key path selection
+        self.use_existing_keys_radio.toggled.connect(self.toggle_key_path_selection)
+        
+        sig_layout.addWidget(self.key_options_widget)
+        
+        sig_group.setLayout(sig_layout)
+        main_layout.addWidget(sig_group)
+        
         # Process group
-        process_group = QGroupBox("2. Process Binary with CRC")
+        process_group = QGroupBox("3. Add Header and Process File")
         process_layout = QVBoxLayout()
         
         # Version input
@@ -208,7 +251,7 @@ class MainWindow(QMainWindow):
         main_layout.addWidget(process_group)
         
         # Upload group
-        upload_group = QGroupBox("3. Upload to Device")
+        upload_group = QGroupBox("4. Upload to Device")
         upload_layout = QVBoxLayout()
         
         # Upload and cancel buttons
@@ -248,25 +291,33 @@ class MainWindow(QMainWindow):
         log_group.setLayout(log_layout)
         main_layout.addWidget(log_group, 1)
         
-        self.log("Application started. Select a .bin file to begin.")
+        # Initialize key path selection state
+        self.toggle_key_path_selection()
         
-    def select_file(self):
-        """Open file dialog to select a binary file."""
+        self.log("Application started. Select a .bin file to begin.")
+    
+    def toggle_key_path_selection(self):
+        """Enable/disable key path selection based on radio button."""
+        use_existing = self.use_existing_keys_radio.isChecked()
+        self.private_key_label.setEnabled(use_existing)
+        self.private_key_path.setEnabled(use_existing)
+        self.private_key_browse.setEnabled(use_existing)
+    
+    def browse_private_key(self):
+        """Browse for private key file."""
         file_path, _ = QFileDialog.getOpenFileName(
             self,
-            "Select Binary File",
-            "",
-            "Binary Files (*.bin);;All Files (*.*)"
+            "Select Private Key File",
+            str(self.keys_dir),
+            "PEM Files (*.pem);;All Files (*.*)"
         )
         
         if file_path:
-            self.selected_file = file_path
-            self.file_label.setText(Path(file_path).name)
-            self.process_button.setEnabled(True)
-            self.log(f"Selected file: {file_path}")
+            self.private_key_path.setText(file_path)
+            self.log(f"Selected private key: {file_path}")
     
     def process_file(self):
-        """Process the binary file with CRC header."""
+        """Process the binary file and add header with CRC and signature."""
         if not self.selected_file:
             self.log("ERROR: No file selected!")
             return
@@ -279,10 +330,40 @@ class MainWindow(QMainWindow):
             self.process_button.setEnabled(False)
             self.version_spinbox.setEnabled(False)
             
-            # Process the file with CRC
-            self.log(f"Processing binary file with CRC (version {self.image_version})...")
-            self.patched_file = process_binary_with_crc(self.selected_file, image_version=self.image_version)
-            self.log(f"✓ Created patched file: {self.patched_file}")
+            # Setup signature
+            self.log("Setting up ECDSA signature...")
+            
+            if self.generate_keys_radio.isChecked():
+                # Generate new keys
+                self.keys_dir.mkdir(exist_ok=True)
+                timestamp = time.strftime("%Y%m%d_%H%M%S")
+                private_key_path = str(self.keys_dir / f"private_key_{timestamp}.pem")
+                public_key_path = str(self.keys_dir / f"public_key_{timestamp}.pem")
+                
+                self.log(f"Generating new ECDSA key pair...")
+                self.signature_algo.generate_keys(private_key_path, public_key_path)
+                self.log(f"Keys saved to {self.keys_dir}")
+            else:
+                # Use existing keys
+                private_key_path = self.private_key_path.text()
+                if not private_key_path or not Path(private_key_path).exists():
+                    self.log("ERROR: Private key file not found!")
+                    self.process_button.setEnabled(True)
+                    self.version_spinbox.setEnabled(True)
+                    return
+                
+                self.log(f"Loading private key from {private_key_path}...")
+                self.signature_algo.load_keys(private_key_path=private_key_path)
+                self.log("Private key loaded")
+            
+            # Process the file with CRC and signature
+            self.log(f"Processing binary file (version {self.image_version})...")
+            self.patched_file = process_binary(
+                self.selected_file, 
+                signature_algo=self.signature_algo,
+                image_version=self.image_version,
+            )
+            self.log(f"Created patched file: {self.patched_file}")
             self.log("Ready to upload. Click UPLOAD.")
             
             # Enable upload button
@@ -290,6 +371,8 @@ class MainWindow(QMainWindow):
             
         except Exception as e:
             self.log(f"ERROR: {str(e)}")
+            import traceback
+            traceback.print_exc()
             self.process_button.setEnabled(True)
             self.version_spinbox.setEnabled(True)
     
@@ -347,7 +430,7 @@ class MainWindow(QMainWindow):
                     "Connection Error",
                     "Unable to connect to the device.\n\n"
                     "Please check that:\n"
-                    "• The STM32F401 board is connected\n"
+                    "• The STM32F4 board is connected\n"
                     "• The board is powered on\n"
                     "• The correct COM port (COM3) is selected\n"
                     "• No other application is using the port"
@@ -362,6 +445,21 @@ class MainWindow(QMainWindow):
         self.upload_button.setEnabled(bool(self.patched_file))
         self.version_spinbox.setEnabled(bool(self.selected_file) and not bool(self.patched_file))
         self.cancel_button.setEnabled(False)
+    
+    def select_file(self):
+        """Open file dialog to select a binary file."""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select Binary File",
+            "",
+            "Binary Files (*.bin);;All Files (*.*)"
+        )
+        
+        if file_path:
+            self.selected_file = file_path
+            self.file_label.setText(Path(file_path).name)
+            self.process_button.setEnabled(True)
+            self.log(f"Selected file: {file_path}")
     
     def log(self, message):
         """Add a message to the log."""
