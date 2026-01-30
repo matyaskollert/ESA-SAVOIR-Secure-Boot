@@ -65,10 +65,12 @@ static void MX_CRC_Init(void);
 /* USER CODE BEGIN 0 */
 
 // Send printf to uart2
-int _write(int fd, char *ptr, int len) {
+int _write(int fd, char *ptr, int len)
+{
     HAL_StatusTypeDef hstatus;
 
-    if (fd == 1 || fd == 2) {
+    if (fd == 1 || fd == 2)
+    {
         hstatus = HAL_UART_Transmit(&huart2, (uint8_t*) ptr, len, HAL_MAX_DELAY);
         if (hstatus == HAL_OK)
             return len;
@@ -129,22 +131,35 @@ int main(void)
 
   HAL_UART_Receive(&huart2, mySmallRXBuffer, SMALL_RX_BUFFER_SIZE, HAL_MAX_DELAY);
 
-  char* choice = (char *)mySmallRXBuffer;
+	char* choice = (char *)mySmallRXBuffer;
 
-  if (choice[0] == '1') {
-	  boot();
-  } else if (choice[0] == '2') {
-	  HAL_UART_Receive(&huart2, myRXBuffer, RX_BUFFER_SIZE, HAL_MAX_DELAY);
+	if (choice[0] == '1')
+	{
+		int16_t ret = boot();
+		if (ret != 1)
+		{
+			printf("Booting image failed");
+		}
+	}
+	else if (choice[0] == '2')
+	{
+		HAL_UART_Receive(&huart2, myRXBuffer, RX_BUFFER_SIZE, HAL_MAX_DELAY);
 
-	  printf("First Word: 0x%04lx\r\n", ((uint32_t *)myRXBuffer)[0]);
-	  writeFlashSector(FLASH_SECTOR, FLASH_ADDR, (uint32_t *)myRXBuffer, RX_BUFFER_SIZE/4);
+		printf("First Word: 0x%04lx\r\n", ((uint32_t *)myRXBuffer)[0]);
+		writeFlashSector(FLASH_SECTOR, FLASH_ADDR, (uint32_t *)myRXBuffer, RX_BUFFER_SIZE/4);
 
-	  boot();
-  } else {
-	  printf("ERROR, reset\r\n");
-	  HAL_Delay(1000);
-	  NVIC_SystemReset();
-  }
+		int16_t ret = boot();
+		if (ret != 1)
+		{
+			printf("Booting image failed");
+		}
+	}
+	else
+	{
+		printf("ERROR, reset\r\n");
+		HAL_Delay(1000);
+		NVIC_SystemReset();
+	}
 
 
 

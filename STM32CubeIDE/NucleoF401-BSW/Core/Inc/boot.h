@@ -8,6 +8,8 @@
 #ifndef INC_BOOT_H_
 #define INC_BOOT_H_
 
-void boot();
+#include "stm32f4xx_hal.h"
+
+int16_t boot();
 
 #endif /* INC_BOOT_H_ */

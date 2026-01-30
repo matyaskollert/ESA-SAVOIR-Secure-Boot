@@ -12,6 +12,6 @@
 
 byte* hash(const byte* buffer, uint32_t bufferSize);
 
-int verifySignature(const byte* signature, word32 signatureLength);
+int16_t verifySignature(const byte* buffer, uint32_t bufferSize, const byte* signature);
 
 #endif /* INC_CRYPTO_H_ */

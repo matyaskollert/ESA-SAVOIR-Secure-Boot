@@ -23,28 +23,26 @@ const byte pubKey[] = {
 byte hashDigest[WC_SHA256_DIGEST_SIZE];
 Sha256 sha;
 
-void printSha256(const uint8_t *digest) {
-    for (int i = 0; i < WC_SHA256_DIGEST_SIZE; i++) {
+void printSha256(const uint8_t *digest)
+{
+    for (uint32_t i = 0; i < WC_SHA256_DIGEST_SIZE; i++)
+    {
         printf("%02x", digest[i]);
     }
     printf("\n");
 }
 
-byte* hash(const byte* buffer, uint32_t size) {
-
-
+byte* hash(const byte* buffer, uint32_t bufferSize)
+{
 	wc_InitSha256(&sha);
-
-	wc_Sha256Update(&sha, buffer, size);  /*can be called again
-	                                          and again*/
+	wc_Sha256Update(&sha, buffer, bufferSize);
 	wc_Sha256Final(&sha, hashDigest);
-
 	printSha256(hashDigest);
-
 	return hashDigest;
 }
 
-int verifySignature(const byte* signature, word32 signatureLength) {
+int16_t verifySignature(const byte* buffer, uint32_t bufferSize, const byte* signature)
+{
 	ecc_key eccKey;
 	word32 inOutIdx = 0;
 	int ret, verified = 0;
@@ -52,26 +50,39 @@ int verifySignature(const byte* signature, word32 signatureLength) {
 	ret = wc_EccPublicKeyDecode(pubKey, &inOutIdx, &eccKey, sizeof(pubKey));
 	ret = wc_ecc_set_curve(&eccKey, 32, ECC_SECP256R1);
 	
+	uint8_t tag = signature[0];      // must be 0x30
+	if (tag != 0x30) {
+		printf("Invalid signature tag");
+	}
+	uint8_t len = signature[1];      // total payload length
+	uint32_t signatureLength = len + 2;
+
 	// Debug: Print signature
-	printf("Signature (%u bytes): ", signatureLength);
-	for (int i = 0; i < signatureLength; i++) {
+	printf("Signature (%lu bytes): ", signatureLength);
+	for (uint32_t i = 0; i < signatureLength; i++)
+	{
 		printf("%02x", signature[i]);
 	}
 	printf("\r\n");
 	
+	hash(buffer, bufferSize);
+
 	ret = wc_ecc_verify_hash(signature, signatureLength, hashDigest, WC_SHA256_DIGEST_SIZE,
-	&verified, &eccKey);
+			&verified, &eccKey);
 	
-	printf("wc_ecc_verify_hash returned: %d\r\n", ret);
-	printf("verified flag: %d\r\n", verified);
+	//printf("wc_ecc_verify_hash returned: %d\r\n", ret);
+	//printf("verified flag: %d\r\n", verified);
 	
 	wc_ecc_free(&eccKey);
-	if ( ret != 0 ) {
+	if (ret != 0)
+	{
 		printf("Error performing verification\r\n");
 		return 0;
-	} else if ( verified == 0 ) {
-	    printf("The signature is invalid\r\n");
-	    return 0;
+	}
+	else if (verified == 0)
+	{
+		printf("The signature is invalid\r\n");
+		return 0;
 	}
 	return 1;
 }
