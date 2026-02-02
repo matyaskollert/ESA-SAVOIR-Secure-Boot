@@ -59,6 +59,11 @@ class UploaderThread(QThread):
                 return
             
             try:
+                # First send a "2" to signal the board to prepare for upload
+                self.status.emit("Signaling board to prepare for upload...")
+                ser.write(b'2')
+                time.sleep(1)  # Wait for board to process
+
                 # Read the binary file
                 self.status.emit("Reading patched binary file...")
                 with open(self.patched_file_path, 'rb') as f:

@@ -28,7 +28,7 @@ int16_t boot()
 		return -3;
 	}
 	imageStart();
-	return 1;
+	return 0;
 }
 
 

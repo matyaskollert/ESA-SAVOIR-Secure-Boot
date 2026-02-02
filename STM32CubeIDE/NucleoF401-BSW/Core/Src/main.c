@@ -24,7 +24,9 @@
 
 #include <stdio.h>
 #include "boot.h"
-#include "flash.h"
+#include "input.h"
+#include "update.h"
+#include "report.h"
 
 /* USER CODE END Includes */
 
@@ -80,15 +82,8 @@ int _write(int fd, char *ptr, int len)
     return -1;
 }
 
-#define SMALL_RX_BUFFER_SIZE 1//0x10000;
+#define SMALL_RX_BUFFER_SIZE 1
 uint8_t mySmallRXBuffer[SMALL_RX_BUFFER_SIZE];
-
-//TODO: dynamic
-#define RX_BUFFER_SIZE 16388//0x10000;
-uint8_t myRXBuffer[RX_BUFFER_SIZE];
-
-#define FLASH_ADDR  0x08020000U
-#define FLASH_SECTOR FLASH_SECTOR_5
 
 /* USER CODE END 0 */
 
@@ -125,34 +120,64 @@ int main(void)
   MX_CRC_Init();
   /* USER CODE BEGIN 2 */
 
-  HAL_Delay(3000);
+    HAL_Delay(3000);
 
-  printf("Bootloader loaded, enter '1' for boot or '2' for upload\r\n");
+  	printf("Bootloader loaded, enter '1' for boot or '2' for upload, '3' for revert, '4' to check image versions\r\n");
 
-  HAL_UART_Receive(&huart2, mySmallRXBuffer, SMALL_RX_BUFFER_SIZE, HAL_MAX_DELAY);
+	int8_t ret = receiveData(&huart2, mySmallRXBuffer, SMALL_RX_BUFFER_SIZE);
+	if (ret != 0)
+	{
+		printf("Getting input from user failed\r\n");
+	}
 
 	char* choice = (char *)mySmallRXBuffer;
 
 	if (choice[0] == '1')
 	{
 		int16_t ret = boot();
-		if (ret != 1)
+		if (ret != 0)
 		{
-			printf("Booting image failed");
+			printf("Booting image failed\r\n");
 		}
 	}
 	else if (choice[0] == '2')
 	{
-		HAL_UART_Receive(&huart2, myRXBuffer, RX_BUFFER_SIZE, HAL_MAX_DELAY);
-
-		printf("First Word: 0x%04lx\r\n", ((uint32_t *)myRXBuffer)[0]);
-		writeFlashSector(FLASH_SECTOR, FLASH_ADDR, (uint32_t *)myRXBuffer, RX_BUFFER_SIZE/4);
-
-		int16_t ret = boot();
-		if (ret != 1)
+		int16_t ret = receiveUpdateData(&huart2);
+		if (ret != 0)
 		{
-			printf("Booting image failed");
+			printf("Receiving image failed\r\n");
 		}
+		ret = swapBootWithUpdate();
+		if (ret != 0)
+		{
+			printf("Swapping images failed\r\n");
+		}
+
+		ret = boot();
+		if (ret != 0)
+		{
+			printf("Booting image failed\r\n");
+		}
+	}
+	else if (choice[0] == '3')
+	{
+		int16_t ret = swapBootWithUpdate();
+		if (ret != 0)
+		{
+			printf("Swapping images failed\r\n");
+		}
+
+		ret = boot();
+		if (ret != 0)
+		{
+			printf("Booting image failed\r\n");
+		}
+	}
+	else if (choice[0] == '4')
+	{
+		printImageHeaders();
+		HAL_Delay(1000);
+		NVIC_SystemReset();
 	}
 	else
 	{

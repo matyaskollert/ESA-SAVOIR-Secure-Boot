@@ -7,13 +7,15 @@
 
 #define IMAGE_MAGIC 0xABCD
 
-#define FLASH_AREA_IMAGE_1   0x08020000
-#define RAM_AREA_IMAGE     0x20008000
+#define BOOT_FLASH_ADDRESS   0x08020000
+#define UPDATE_FLASH_ADDRESS 0x08040000
+#define SWAP_FLASH_ADDRESS   0x08060000
+#define BOOT_RAM_ADDRESS     0x20008000
 #define IMAGE_OFFSET 0x1400
 
 const image_header_t* imageGetHeader()
 {
-	const image_header_t *header = (const image_header_t *)(FLASH_AREA_IMAGE_1);
+	const image_header_t *header = (const image_header_t *)(BOOT_FLASH_ADDRESS);
 
 	if (header && header->imageMagic == IMAGE_MAGIC)
 	{
@@ -34,7 +36,7 @@ int16_t imageValidate()
 		return -2;
 	}
 	
-	void* image_address = (void *)(FLASH_AREA_IMAGE_1 + 4);
+	void* image_address = (void *)(BOOT_FLASH_ADDRESS + 4);
 	uint32_t dataSize = header->imageSize + IMAGE_OFFSET - 4;
 
 	// Compute CRC for this section
@@ -64,7 +66,7 @@ int16_t imageValidateInRAM()
 		return -2;
 	}
 
-	void* image_address = (void *)(RAM_AREA_IMAGE + 4);
+	void* image_address = (void *)(BOOT_RAM_ADDRESS + 4);
 	uint32_t dataSize = header->imageSize + IMAGE_OFFSET - 4;
 
 	// Compute CRC for this section
@@ -92,7 +94,7 @@ int16_t imageVerify() {
 		return -1;
 	}
 
-	byte* ramImageAddress = (byte *)(RAM_AREA_IMAGE + 4);
+	byte* ramImageAddress = (byte *)(BOOT_RAM_ADDRESS + 4);
 	uint32_t dataSize = IMAGE_OFFSET + header->imageSize - 4;
 	printf("Verify image: addr=0x%08lx, size=%lu\r\n", (uint32_t)ramImageAddress, dataSize);
 	return verifySignature(ramImageAddress, dataSize, header->signature);
@@ -106,8 +108,8 @@ int16_t imageLoad() {
 
 	printf("Starting copy from FLASH to RAM\r\n");
 
-	void* ramDestination = (void *)RAM_AREA_IMAGE;
-	void* flashSource = (void *)FLASH_AREA_IMAGE_1;
+	void* ramDestination = (void *)BOOT_RAM_ADDRESS;
+	void* flashSource = (void *)BOOT_FLASH_ADDRESS;
 	memcpy(ramDestination, flashSource, IMAGE_OFFSET + header->imageSize);
 
 	memset(ramDestination + 12, 0, IMAGE_OFFSET - 12);
@@ -128,7 +130,7 @@ void imageStart()
 {
 	printf("Booting from image slot 1\r\n");
 
-	uint32_t appVector = RAM_AREA_IMAGE + IMAGE_OFFSET;
+	uint32_t appVector = BOOT_RAM_ADDRESS + IMAGE_OFFSET;
 
 	printf("App Vector: 0x%08lX\r\n", appVector);
 	HAL_Delay(2000);

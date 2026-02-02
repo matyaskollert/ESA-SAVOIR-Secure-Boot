@@ -45,7 +45,7 @@ void writeFlashSector(uint32_t sector, uint32_t address, uint32_t* value, uint32
 
 	eraseFlashSector(sector);
 
-	printf("First address: 0x%08lx and first word: 0x%08lx", address, value[0]);
+	printf("First address: 0x%08lx and first word: 0x%08lx\r\n", address, value[0]);
 
 	for (uint32_t i = 0; i < size; i++)
 	{
