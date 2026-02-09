@@ -18,3 +18,15 @@ int16_t receiveData(UART_HandleTypeDef* uart, uint8_t* receiveBuffer, uint32_t b
 	}
 	return 0;
 }
+
+int16_t sendAck(UART_HandleTypeDef* uart)
+{
+	uint8_t ack = 0x06;  // ACK byte
+	HAL_StatusTypeDef ret = HAL_UART_Transmit(uart, &ack, 1, 1000);
+	if (ret != HAL_OK)
+	{
+		printf("Error sending ACK: %d\r\n", ret);
+		return 1;
+	}
+	return 0;
+}

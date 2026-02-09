@@ -11,5 +11,6 @@
 #include "stm32f4xx_hal.h"
 
 int16_t receiveData(UART_HandleTypeDef* uart, uint8_t* receiveBuffer, uint32_t bufferLength);
+int16_t sendAck(UART_HandleTypeDef* uart);
 
 #endif /* INC_INPUT_H_ */

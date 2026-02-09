@@ -31,6 +31,33 @@ class UploaderThread(QThread):
         self.port = port
         self.baudrate = baudrate
         self._is_running = True
+        self.ack_timeout = 2.0  # Timeout for ACK in seconds
+        self.max_retries = 3  # Maximum number of retries per transmission
+    
+    def wait_for_ack(self, ser):
+        """Wait for ACK byte (0x06) from the microcontroller.
+        
+        Args:
+            ser: Serial connection object
+            
+        Returns:
+            bool: True if ACK received, False otherwise
+        """
+        start_time = time.time()
+        while (time.time() - start_time) < self.ack_timeout:
+            if ser.in_waiting > 0:
+                data = ser.read(1)
+                if data == b'\x06':  # ACK byte
+                    return True
+                else:
+                    # Log unexpected byte
+                    try:
+                        text = data.decode('utf-8', errors='replace')
+                        self.uart_data.emit(f"[Unexpected: {text}]")
+                    except:
+                        self.uart_data.emit(f"[Unexpected HEX: {data.hex()}]")
+            time.sleep(0.01)  # Small delay to avoid busy-waiting
+        return False
         
     def run(self):
         """Execute the upload process."""
@@ -71,6 +98,40 @@ class UploaderThread(QThread):
                 
                 total_size = len(binary_data)
                 self.status.emit(f"Uploading {total_size} bytes to device...")
+
+                # Send data size first (4 bytes, little-endian) with retry
+                size_sent = False
+                for attempt in range(self.max_retries):
+                    if not self._is_running:
+                        self.finished.emit(False, "Upload cancelled by user")
+                        return
+                    
+                    self.status.emit(f"Sending data size ({total_size} bytes)... Attempt {attempt + 1}/{self.max_retries}")
+                    ser.write(total_size.to_bytes(4, byteorder='little'))
+                    
+                    # Wait for ACK
+                    if self.wait_for_ack(ser):
+                        self.status.emit("Data size acknowledged by device")
+                        size_sent = True
+                        break
+                    else:
+                        self.status.emit(f"No ACK received for data size (attempt {attempt + 1})")
+                        if attempt < self.max_retries - 1:
+                            time.sleep(0.5)  # Wait before retry
+                
+                if not size_sent:
+                    self.finished.emit(False, "Failed to send data size after multiple retries")
+                    return
+
+                # Check for any incoming messages from board
+                time.sleep(0.1)
+                if ser.in_waiting > 0:
+                    incoming = ser.read(ser.in_waiting)
+                    try:
+                        text = incoming.decode('utf-8', errors='replace')
+                        self.uart_data.emit(text)
+                    except:
+                        self.uart_data.emit(f"[HEX: {incoming.hex()}]")
                 
                 # Send the data in chunks
                 chunk_size = 256
@@ -82,27 +143,43 @@ class UploaderThread(QThread):
                         return
                     
                     chunk = binary_data[i:i + chunk_size]
-                    ser.write(chunk)
-                    bytes_sent += len(chunk)
+                    chunk_num = i // chunk_size + 1
+                    total_chunks = (total_size + chunk_size - 1) // chunk_size
                     
-                    # Check for incoming data from board
-                    if ser.in_waiting > 0:
-                        incoming = ser.read(ser.in_waiting)
-                        try:
-                            # Try to decode as text first
-                            text = incoming.decode('utf-8', errors='replace')
-                            self.uart_data.emit(text)
-                        except:
-                            # If decoding fails, show as hex
-                            self.uart_data.emit(f"[HEX: {incoming.hex()}]")
+                    # Try to send chunk with retry
+                    chunk_sent = False
+                    for attempt in range(self.max_retries):
+                        if not self._is_running:
+                            self.finished.emit(False, "Upload cancelled by user")
+                            return
+                        
+                        if attempt > 0:
+                            self.status.emit(f"Retrying chunk {chunk_num}/{total_chunks}... Attempt {attempt + 1}/{self.max_retries}")
+                        
+                        ser.write(chunk)
+                        
+                        # Wait for ACK
+                        if self.wait_for_ack(ser):
+                            chunk_sent = True
+                            break
+                        else:
+                            self.status.emit(f"No ACK for chunk {chunk_num} (attempt {attempt + 1})")
+                            if attempt < self.max_retries - 1:
+                                time.sleep(0.3)  # Wait before retry
+                    
+                    if not chunk_sent:
+                        self.finished.emit(False, f"Failed to send chunk {chunk_num} after {self.max_retries} retries")
+                        return
+                    
+                    bytes_sent += len(chunk)
                     
                     # Update progress
                     progress_percent = int((bytes_sent / total_size) * 100)
                     self.progress.emit(progress_percent)
-                    self.status.emit(f"Uploading: {bytes_sent}/{total_size} bytes ({progress_percent}%)")
+                    self.status.emit(f"Uploading: {bytes_sent}/{total_size} bytes ({progress_percent}%) - Chunk {chunk_num}/{total_chunks}")
                     
-                    # Small delay to avoid overwhelming the device
-                    time.sleep(0.01)
+                    # Small delay between chunks
+                    time.sleep(0.05)
                 
                 # Upload complete - continue monitoring UART output
                 self.status.emit("Upload complete. Monitoring board output...")

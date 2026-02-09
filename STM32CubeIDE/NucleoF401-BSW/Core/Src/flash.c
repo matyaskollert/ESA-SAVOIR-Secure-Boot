@@ -9,6 +9,16 @@
 #include "flash.h"
 #include <stdio.h>
 
+void unlockFlash()
+{
+	HAL_FLASH_Unlock();
+}
+
+void lockFlash()
+{
+	HAL_FLASH_Lock();
+}
+
 void eraseFlashSector(uint32_t sector)
 {
 	FLASH_EraseInitTypeDef eraseInit;
@@ -38,18 +48,26 @@ void writeFlashWord(uint32_t address, uint32_t value)
 	}
 }
 
+void writeFlashBlock(uint32_t address, uint32_t* buffer, uint32_t bufferSize)
+{
+	for (uint32_t i = 0; i < bufferSize; i++)
+	{
+		writeFlashWord(address + 4*i, buffer[i]);
+	}
+}
 
-void writeFlashSector(uint32_t sector, uint32_t address, uint32_t* value, uint32_t size)
+
+void writeFlashSector(uint32_t sector, uint32_t address, uint32_t* buffer, uint32_t bufferSize)
 {
 	HAL_FLASH_Unlock();
 
 	eraseFlashSector(sector);
 
-	printf("First address: 0x%08lx and first word: 0x%08lx\r\n", address, value[0]);
+	printf("First address: 0x%08lx and first word: 0x%08lx\r\n", address, buffer[0]);
 
-	for (uint32_t i = 0; i < size; i++)
+	for (uint32_t i = 0; i < bufferSize; i++)
 	{
-		writeFlashWord(address + 4*i, value[i]);
+		writeFlashWord(address + 4*i, buffer[i]);
 	}
 
 	HAL_FLASH_Lock();

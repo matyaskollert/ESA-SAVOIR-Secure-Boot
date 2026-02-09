@@ -17,6 +17,12 @@
 #define SWAP_FLASH_ADDRESS  0x08060000U
 #define SWAP_FLASH_SECTOR FLASH_SECTOR_7
 
+void unlockFlash();
+void lockFlash();
+void eraseFlashSector(uint32_t sector);
+
 void writeFlashSector(uint32_t sector, uint32_t address, uint32_t* buffer, uint32_t bufferLength);
+
+void writeFlashBlock(uint32_t address, uint32_t* buffer, uint32_t bufferLength);
 
 #endif /* INC_FLASH_H_ */
