@@ -6,6 +6,7 @@
  */
 
 #include "option_bytes.h"
+#include "flash.h"
 #include <stdio.h>
 
 void disableSectorWriteProtection(uint32_t sector)
@@ -41,9 +42,6 @@ void disableSectorWriteProtection(uint32_t sector)
 	HAL_FLASH_OB_Launch();
 	HAL_FLASH_OB_Lock();
 	HAL_FLASH_Lock();
-	NVIC_SystemReset();
-
-	printf("This should not be printed\r\n");
 }
 
 void enableSectorWriteProtection(uint32_t sector)
@@ -80,12 +78,9 @@ void enableSectorWriteProtection(uint32_t sector)
 	HAL_FLASH_OB_Launch();
 	HAL_FLASH_OB_Lock();
 	HAL_FLASH_Lock();
-	NVIC_SystemReset();
-
-	printf("This should not be printed\r\n");
 }
 
-uint32_t checkSectorWriteProtection(uint32_t sector)
+int16_t checkSectorWriteProtection(uint32_t sector)
 {
 	FLASH_OBProgramInitTypeDef obInit;
 	HAL_FLASHEx_OBGetConfig(&obInit);
@@ -98,4 +93,45 @@ uint32_t checkSectorWriteProtection(uint32_t sector)
 
 	printf("Sector %lu is NOT write protected\r\n", sector);
 	return 1;
+}
+
+int16_t performOBSelfTest(int8_t update)
+{
+	if (update == 0)
+	{
+		if (checkSectorWriteProtection(BOOT_FLASH_OB_SECTOR) == 1)
+		{
+			enableSectorWriteProtection(BOOT_FLASH_OB_SECTOR);
+			return 1;
+		}
+		if (checkSectorWriteProtection(UPDATE_FLASH_OB_SECTOR) == 0)
+		{
+			disableSectorWriteProtection(UPDATE_FLASH_OB_SECTOR);
+			return 2;
+		}
+		if (checkSectorWriteProtection(SWAP_FLASH_OB_SECTOR) == 1)
+		{
+			enableSectorWriteProtection(SWAP_FLASH_OB_SECTOR);
+			return 3;
+		}
+	}
+	else
+	{
+		if (checkSectorWriteProtection(BOOT_FLASH_OB_SECTOR) == 0)
+		{
+			disableSectorWriteProtection(BOOT_FLASH_OB_SECTOR);
+			return -1;
+		}
+		if (checkSectorWriteProtection(UPDATE_FLASH_OB_SECTOR) == 0)
+		{
+			disableSectorWriteProtection(UPDATE_FLASH_OB_SECTOR);
+			return -2;
+		}
+		if (checkSectorWriteProtection(SWAP_FLASH_OB_SECTOR) == 0)
+		{
+			disableSectorWriteProtection(SWAP_FLASH_OB_SECTOR);
+			return -3;
+		}
+	}
+	return 0;
 }

@@ -14,6 +14,8 @@ void disableSectorWriteProtection(uint32_t sector);
 
 void enableSectorWriteProtection(uint32_t sector);
 
-uint32_t checkSectorWriteProtection(uint32_t sector);
+int16_t checkSectorWriteProtection(uint32_t sector);
+
+int16_t performOBSelfTest(int8_t update);
 
 #endif /* INC_OPTION_BYTES_H_ */

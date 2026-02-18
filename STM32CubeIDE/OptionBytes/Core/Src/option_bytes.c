@@ -9,9 +9,9 @@
 
 void disableSectorWriteProtection(uint32_t sector) {
 
-  if (checkSectorWriteProtection(sector) == 1) {
-    return;
-  }
+//  if (checkSectorWriteProtection(sector) == 1) {
+//    return;
+//  }
 
   FLASH_OBProgramInitTypeDef obInit;
 
@@ -39,7 +39,7 @@ void disableSectorWriteProtection(uint32_t sector) {
   HAL_FLASH_OB_Launch();
   HAL_FLASH_OB_Lock();
   HAL_FLASH_Lock();
-  NVIC_SystemReset();
+  //NVIC_SystemReset();
 
   printf("This should not be printed\r\n");
 }

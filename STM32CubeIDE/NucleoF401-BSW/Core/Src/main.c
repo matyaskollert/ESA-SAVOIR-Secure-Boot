@@ -27,6 +27,7 @@
 #include "input.h"
 #include "update.h"
 #include "report.h"
+#include "self_test.h"
 
 /* USER CODE END Includes */
 
@@ -119,6 +120,15 @@ int main(void)
   MX_USART2_UART_Init();
   MX_CRC_Init();
   /* USER CODE BEGIN 2 */
+
+
+
+  	int16_t testResult = performSelfTests(0);
+  	if (testResult != 0)
+  	{
+  		printf("System is in an invalid state\r\n");
+  		NVIC_SystemReset();
+  	}
 
     HAL_Delay(3000);
 

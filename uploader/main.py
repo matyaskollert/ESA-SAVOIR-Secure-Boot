@@ -25,7 +25,7 @@ class UploaderThread(QThread):
     uart_data = Signal(str)  # Signal for UART data received from board
     finished = Signal(bool, str)
     
-    def __init__(self, patched_file_path, port='COM3', baudrate=115200):
+    def __init__(self, patched_file_path, port='COM4', baudrate=115200):
         super().__init__()
         self.patched_file_path = patched_file_path
         self.port = port
@@ -337,7 +337,7 @@ class MainWindow(QMainWindow):
         upload_layout = QVBoxLayout()
         
         # Upload and cancel buttons
-        self.upload_button = QPushButton("UPLOAD to COM3")
+        self.upload_button = QPushButton("UPLOAD to COM4")
         self.upload_button.setMinimumHeight(40)
         self.upload_button.setEnabled(False)
         self.upload_button.clicked.connect(self.upload_to_device)
@@ -514,7 +514,7 @@ class MainWindow(QMainWindow):
                     "Please check that:\n"
                     "• The STM32F4 board is connected\n"
                     "• The board is powered on\n"
-                    "• The correct COM port (COM3) is selected\n"
+                    "• The correct COM port (COM4) is selected\n"
                     "• No other application is using the port"
                 )
         
