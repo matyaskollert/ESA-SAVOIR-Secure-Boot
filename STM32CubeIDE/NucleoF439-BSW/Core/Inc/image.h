@@ -3,6 +3,12 @@
 
 #include <stdint.h>
 
+typedef enum {BOOT, UPDATE, SWAP} ImageSlot;
+
+#define IMAGE_MAGIC 		0xABCD
+#define BOOT_RAM_ADDRESS 	0x20008000
+
+
 typedef struct __attribute__((packed)){
     uint32_t crc;
     uint16_t imageMagic;
@@ -13,13 +19,13 @@ typedef struct __attribute__((packed)){
     uint8_t signature[4096];
 } image_header_t;
 
-const image_header_t* imageGetHeader();
+const image_header_t* imageGetHeader(ImageSlot slot);
 
-int16_t imageValidate();
+int16_t imageValidate(ImageSlot slot);
 
-int16_t imageValidateInRAM();
+int16_t imageValidateInRAM(ImageSlot slot);
 
-int16_t imageLoad();
+int16_t imageLoad(ImageSlot slot);
 
 void imageStart();
 

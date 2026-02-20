@@ -26,6 +26,10 @@ int16_t setupSystemForNominal();
 
 int16_t checkSystemForNominal();
 
+int16_t setupSystemForUpdate();
+
+int16_t checkSystemForUpdate();
+
 int16_t checkUpdateVersion();
 
 uint32_t getLowestAllowedVersion();

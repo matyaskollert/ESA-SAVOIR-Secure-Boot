@@ -5,12 +5,13 @@
  *      Author: Matyas
  */
 
+#include <stdio.h>
+#include <string.h>
 #include "update.h"
 #include "input.h"
 #include "flash.h"
 #include "option_bytes.h"
 #include "image.h"
-#include <stdio.h>
 
 #define RX_BUFFER_SIZE 256U
 uint8_t myRXBuffer[RX_BUFFER_SIZE];
@@ -36,9 +37,6 @@ int16_t receiveUpdateData(UART_HandleTypeDef* uart)
 	uint32_t amountOfChunks = dataLength / RX_BUFFER_SIZE;
 	uint32_t reminder = dataLength % RX_BUFFER_SIZE;
 
-	HAL_FLASH_Unlock();
-	eraseFlashSector(UPDATE_FLASH_SECTOR);
-
 	// Send ACK after receiving data length
 	if (sendAck(uart) != 0)
 	{
@@ -46,26 +44,36 @@ int16_t receiveUpdateData(UART_HandleTypeDef* uart)
 		return 1;
 	}
 
-	// TODO: Check header version ASAP
-	// TODO: First store the data in SWAP
-	// TODO: Perform CRC and SIGN checks before putting into UPDATE
+	void* ramDestination = (void *)BOOT_RAM_ADDRESS;
 
 	for (uint32_t i = 0; i < amountOfChunks; i++)
 	{
 		if (receiveData(uart, myRXBuffer, RX_BUFFER_SIZE) != 0)
 		{
 			printf("Error receiving update data\r\n");
-			HAL_FLASH_Lock();
 			return 1;
 		}
-		// TODO: add error handling and custrom response?
-		writeFlashBlock(UPDATE_FLASH_ADDRESS + i * RX_BUFFER_SIZE, (uint32_t *)myRXBuffer, RX_BUFFER_SIZE/4);
+
+		if (i == 0)
+		{
+			// Check header version ASAP
+			uint32_t lowestAllowedVersion = getLowestAllowedVersion();
+			uint16_t updateMagic = (uint16_t)myRXBuffer[4];
+			uint16_t updateVersion = (uint16_t)myRXBuffer[6];
+			if (updateMagic != IMAGE_MAGIC || updateVersion < lowestAllowedVersion)
+			{
+				printf("This is not an image or the image version is too low\r\n");
+				// TODO: Send some REJECT packet
+			}
+		}
+
+		// copy CRC + header + image
+		memcpy(ramDestination + i * RX_BUFFER_SIZE, myRXBuffer, RX_BUFFER_SIZE);
 		
 		// Send ACK after successfully receiving and writing chunk
 		if (sendAck(uart) != 0)
 		{
 			printf("Error sending ACK for chunk %lu\r\n", i);
-			HAL_FLASH_Lock();
 			return 1;
 		}
 	}
@@ -75,21 +83,20 @@ int16_t receiveUpdateData(UART_HandleTypeDef* uart)
 		if (receiveData(uart, myRXBuffer, reminder) != 0)
 		{
 			printf("Error receiving update data\r\n");
-			HAL_FLASH_Lock();
 			return 1;
 		}
-		writeFlashBlock(UPDATE_FLASH_ADDRESS + amountOfChunks * RX_BUFFER_SIZE, (uint32_t *)myRXBuffer, RX_BUFFER_SIZE/4);
+		memcpy(ramDestination + amountOfChunks * RX_BUFFER_SIZE, myRXBuffer, RX_BUFFER_SIZE);
 		
 		// Send ACK after successfully receiving and writing final chunk
 		if (sendAck(uart) != 0)
 		{
 			printf("Error sending ACK for final chunk\r\n");
-			HAL_FLASH_Lock();
 			return 1;
 		}
 	}
 
-	HAL_FLASH_Lock();
+	// TODO: Perform CRC and SIGN checks before putting into UPDATE
+	writeFlashSector(UPDATE_FLASH_SECTOR, UPDATE_FLASH_ADDRESS, (uint32_t *)ramDestination, dataLength/4U);
 	return 0;
 }
 
@@ -193,9 +200,40 @@ int16_t checkSystemForNominal()
 	return 0;
 }
 
+int16_t setupSystemForUpdate()
+{
+	// TODO: Do we need to UNLOCK update and swap since they should never be locked??
+	return setupSystemForNominal();
+}
+
+int16_t checkSystemForUpdate()
+{
+	// TODO: Decide if we should check the STATUS here
+	// TODO: This could be done in one step?
+	uint32_t sectorMask = COUNTER_FLASH_OB_SECTOR | BOOT_FLASH_OB_SECTOR;
+	if (checkSectorWriteProtection(sectorMask) != 0)
+	{
+		printf("Cannot update with BOOT and COUNTER unprotected\r\n");
+		return 1;
+	}
+
+	sectorMask = UPDATE_FLASH_OB_SECTOR;
+	if (checkSectorWriteProtection(sectorMask) != 1)
+	{
+		printf("Cannot update with UPDATE protected. This should never happen\r\n");
+		return 1;
+	}
+	return 0;
+}
+
 int16_t checkUpdateVersion()
 {
-	// TODO: First we need to Verify the CRC + digital signature so the version cannot be modified
+	// First we need to Verify the CRC + digital signature so the version cannot be modified
+	if (imageLoad(UPDATE) != 0)
+	{
+		printf("Update image verification failed\r\n");
+		return 2;
+	}
 	uint32_t lowestAllowedVersion = getLowestAllowedVersion();
 	const image_header_t* updateImage = (const image_header_t *)(UPDATE_FLASH_ADDRESS);
 	uint32_t updateImageVersion = (uint32_t)updateImage->imageVersion;

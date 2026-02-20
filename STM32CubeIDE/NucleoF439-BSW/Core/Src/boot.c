@@ -11,15 +11,15 @@
 
 int16_t boot()
 {
-	if (imageValidate() != 0)
+	if (imageValidate(BOOT) != 0)
 	{
 		return 1;
 	}
-	if (imageLoad() != 0)
+	if (imageLoad(BOOT) != 0)
 	{
 		return 2;
 	}
-	if (imageValidateInRAM() != 0)
+	if (imageValidateInRAM(BOOT) != 0)
 	{
 		return 3;
 	}

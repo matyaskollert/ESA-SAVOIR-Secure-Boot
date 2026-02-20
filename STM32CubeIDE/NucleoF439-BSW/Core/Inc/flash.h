@@ -27,6 +27,10 @@
 #define COUNTER_FLASH_SECTOR 	FLASH_SECTOR_9
 #define COUNTER_FLASH_OB_SECTOR OB_WRP_SECTOR_9
 
+#define REPORT_FLASH_ADDRESS  	0x080C0000U
+#define REPORT_FLASH_SECTOR 	FLASH_SECTOR_10
+#define REPORT_FLASH_OB_SECTOR  OB_WRP_SECTOR_10
+
 int16_t eraseFlashSector(uint32_t sector);
 
 int16_t writeFlashSector(uint32_t sector, uint32_t address, uint32_t* buffer, uint32_t bufferLength);

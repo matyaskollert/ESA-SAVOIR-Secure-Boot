@@ -7,7 +7,6 @@
 
 #include "report.h"
 #include <stdio.h>
-#include "stm32f4xx_hal.h"
 #include "image.h"
 #include "flash.h"
 
@@ -20,4 +19,19 @@ void printImageHeaders()
 	printf("UPDATE version: %u\r\n", updateImage->imageVersion);
 	const image_header_t* swapImage = (const image_header_t *)(SWAP_FLASH_ADDRESS);
 	printf("SWAP version: %u\r\n", swapImage->imageVersion);
+}
+
+int16_t createErrorReport(ReportLevel level)
+{
+	switch (level)
+	{
+	case ERROR_REPORT:
+		// TODO: Implement ERROR BOOT REPORT
+		break;
+	case INFO_REPORT:
+		// TODO: Implement INFO BOOT REPORT
+		break;
+	}
+
+	return 0;
 }

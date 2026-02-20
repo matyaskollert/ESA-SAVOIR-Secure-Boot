@@ -1,18 +1,27 @@
-#include <image.h>
 #include <stdio.h>
 #include <string.h>
 #include "stm32f4xx_hal.h"
+#include "image.h"
 #include "crc.h"
 #include "crypto.h"
 #include "flash.h"
 
-#define IMAGE_MAGIC 		0xABCD
 #define IMAGE_OFFSET 		0x1400
-#define BOOT_RAM_ADDRESS 	0x20008000
 
-const image_header_t* imageGetHeader()
+const image_header_t* imageGetHeader(ImageSlot slot)
 {
-	const image_header_t *header = (const image_header_t *)(BOOT_FLASH_ADDRESS);
+	const image_header_t *header;
+	switch (slot)
+	{
+	case BOOT:
+		header = (const image_header_t *)BOOT_FLASH_ADDRESS;
+		break;
+	case UPDATE:
+		header = (const image_header_t *)UPDATE_FLASH_ADDRESS;
+		break;
+	case SWAP:
+		header = (const image_header_t *)SWAP_FLASH_ADDRESS;
+	}
 
 	if (header && header->imageMagic == IMAGE_MAGIC)
 	{
@@ -20,20 +29,20 @@ const image_header_t* imageGetHeader()
 	}
 	else
 	{
-		printf("No valid header found in slot 1 !!\r\n");
+		printf("No valid header found in slot %d !!\r\n", slot);
 		return NULL;
 	}
 }
 
-int16_t imageValidate()
+int16_t imageValidate(ImageSlot slot)
 {
-	const image_header_t* header = imageGetHeader();
+	const image_header_t* header = imageGetHeader(slot);
 	if (header == NULL)
 	{
 		return 2;
 	}
 	
-	void* image_address = (void *)(BOOT_FLASH_ADDRESS + 4);
+	void* image_address = (void *)(header) + 4;
 	uint32_t dataSize = header->imageSize + IMAGE_OFFSET - 4;
 
 	uint32_t imageCRC = crc32(image_address, dataSize);
@@ -50,15 +59,15 @@ int16_t imageValidate()
 	}
 }
 
-int16_t imageValidateInRAM()
+int16_t imageValidateInRAM(ImageSlot slot)
 {
-	const image_header_t* header = imageGetHeader();
+	const image_header_t* header = imageGetHeader(slot);
 	if (header == NULL)
 	{
 		return 2;
 	}
 
-	void* image_address = (void *)(BOOT_RAM_ADDRESS + 4);
+	void* image_address = (void *)(header) + 4;
 	// header size + image size - CRC
 	uint32_t dataSize = header->imageSize + IMAGE_OFFSET - 4;
 
@@ -76,8 +85,8 @@ int16_t imageValidateInRAM()
 	}
 }
 
-int16_t imageVerify() {
-	const image_header_t* header = imageGetHeader();
+int16_t imageVerify(ImageSlot slot) {
+	const image_header_t* header = imageGetHeader(slot);
 	if (header == NULL) {
 		return 2;
 	}
@@ -89,8 +98,9 @@ int16_t imageVerify() {
 	return verifySignature(ramImageAddress, dataSize, header->signature);
 }
 
-int16_t imageLoad() {
-	const image_header_t* header = imageGetHeader();
+int16_t imageLoad(ImageSlot slot) {
+	// TODO: Check the performance since it is taking quite long. Is it the memcpy or verify?
+	const image_header_t* header = imageGetHeader(slot);
 	if (header == NULL) {
 		return 2;
 	}
@@ -98,14 +108,14 @@ int16_t imageLoad() {
 	printf("Starting copy from FLASH to RAM\r\n");
 
 	void* ramDestination = (void *)BOOT_RAM_ADDRESS;
-	void* flashSource = (void *)BOOT_FLASH_ADDRESS;
+	void* flashSource = (void *)header;
 	// copy CRC + header + image
 	memcpy(ramDestination, flashSource, IMAGE_OFFSET + header->imageSize);
 
 	// set digital signature to 0 to verify
 	uint32_t dsHeaderOffset = 12U; // 4b CRC, 2b MAGIC, 2b VERSION, 4b SIZE
 	memset(ramDestination + dsHeaderOffset, 0, IMAGE_OFFSET - dsHeaderOffset);
-	if (imageVerify() == 1) {
+	if (imageVerify(slot) == 1) {
 		printf("Digital signature valid\r\n");
 	} else {
 		printf("Digital signature validation failed\r\n");

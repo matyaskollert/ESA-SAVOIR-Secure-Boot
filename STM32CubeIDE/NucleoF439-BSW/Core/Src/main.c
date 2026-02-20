@@ -160,15 +160,13 @@ int main(void)
   	if (choice[0] == '1')
   	{
   		// NOMINAL MODE
-  		int16_t ret = checkSystemForNominal();
-  		if (ret != 0)
+  		if (checkSystemForNominal() != 0)
   		{
   			// TODO: Decide if we want to LOCK or if UPDATE has to happen
   			setupSystemForNominal();
   			NVIC_SystemReset();
   		}
-  		ret = boot();
-  		if (ret != 0)
+  		if (boot() != 0)
   		{
   			printf("Booting image failed\r\n");
   			// TODO: Create ERROR report
@@ -177,7 +175,12 @@ int main(void)
   	}
   	else if (choice[0] == '2')
   	{
-  		// TODO : Make sure OB is set up correctly
+  		// Make sure OB is set up correctly
+  		if (checkSystemForUpdate() != 0)
+		{
+			setupSystemForUpdate();
+			NVIC_SystemReset();
+		}
   		if (receiveUpdateData(&huart3) != 0)
   		{
   			printf("Receiving image failed\r\n");
@@ -222,7 +225,7 @@ int main(void)
   	}
   	else
   	{
-  		// TODO: Support sending BOOT REPORT
+  		// TODO: Support storing BOOT REPORT
   		printf("ERROR, reset\r\n");
   		NVIC_SystemReset();
   	}
