@@ -80,12 +80,10 @@ static void MX_CRC_Init(void);
 
 int _write(int fd, char *ptr, int len)
 {
-    HAL_StatusTypeDef hstatus;
-
     if (fd == 1 || fd == 2)
     {
-        hstatus = HAL_UART_Transmit(&huart3, (uint8_t*) ptr, len, HAL_MAX_DELAY);
-        if (hstatus == HAL_OK)
+        // Send debug output as ECSS DEBUG_LOG packet
+        if (sendDebugPacket(&huart3, ptr, len) == 0)
             return len;
         else
             return -1;
@@ -93,7 +91,7 @@ int _write(int fd, char *ptr, int len)
     return -1;
 }
 
-#define SMALL_RX_BUFFER_SIZE 1
+#define SMALL_RX_BUFFER_SIZE 3
 uint8_t mySmallRXBuffer[SMALL_RX_BUFFER_SIZE];
 
 /* USER CODE END 0 */
@@ -134,6 +132,8 @@ int main(void)
   MX_CRC_Init();
   /* USER CODE BEGIN 2 */
 
+    // TODO: Add BSW CRC Check - where should the CRC be stored?
+
     printf("Performing self-tests\r\n");
 
     int16_t testResult = performSelfTests(0);
@@ -147,11 +147,26 @@ int main(void)
 
     printf("Bootloader loaded, enter '1' for boot or '2' for upload, '3' for swap, '4' to check image versions\r\n");
 
-  	int8_t ret = receiveData(&huart3, mySmallRXBuffer, SMALL_RX_BUFFER_SIZE);
+  	// Receive command as ECSS packet
+  	ECSSPacketHeader cmd_header;
+  	int8_t ret = receivePacketHeader(&huart3, &cmd_header);
   	if (ret != 0)
   	{
-  		printf("Getting input from user failed\r\n");
+  		printf("Getting command packet header failed\r\n");
   	}
+
+  	// Receive packet data (command character)
+  	if (cmd_header.data_length > 0 && cmd_header.data_length <= SMALL_RX_BUFFER_SIZE)
+  	{
+  		ret = receivePacketData(&huart3, mySmallRXBuffer, cmd_header.data_length);
+  		if (ret != 0)
+  		{
+  			printf("Getting command packet data failed\r\n");
+  		}
+  	}
+  	
+  	printf("Received command packet: service_type=0x%02X, data_length=%d\r\n", 
+  	       cmd_header.service_type, cmd_header.data_length);
 
   	// TODO: Split code into NOMINAL and STANDBY
 
@@ -159,13 +174,22 @@ int main(void)
 
   	if (choice[0] == '1')
   	{
-  		// NOMINAL MODE
+  		// NOMINAL MODE - Check if system is configured for nominal
   		if (checkSystemForNominal() != 0)
   		{
+  			printf("ERROR: System not configured for nominal mode\r\n");
+  			sendNackPacket(&huart3, cmd_header.sequence_count, 11);
   			// TODO: Decide if we want to LOCK or if UPDATE has to happen
   			setupSystemForNominal();
   			NVIC_SystemReset();
   		}
+  		
+  		// System ready - send ACK
+  		if (sendAckPacket(&huart3, cmd_header.sequence_count) != 0)
+  		{
+  			printf("Error sending ACK for command\r\n");
+  		}
+  		
   		if (boot() != 0)
   		{
   			printf("Booting image failed\r\n");
@@ -175,12 +199,22 @@ int main(void)
   	}
   	else if (choice[0] == '2')
   	{
-  		// Make sure OB is set up correctly
+  		// UPDATE MODE - Check if system is configured for update
   		if (checkSystemForUpdate() != 0)
 		{
+			printf("ERROR: System not configured for update\r\n");
+			sendNackPacket(&huart3, cmd_header.sequence_count, 10);
 			setupSystemForUpdate();
 			NVIC_SystemReset();
 		}
+		
+		// System is ready - send ACK
+		printf("System ready for update\r\n");
+		if (sendAckPacket(&huart3, cmd_header.sequence_count) != 0)
+		{
+			printf("Error sending ACK for command\r\n");
+		}
+		
   		if (receiveUpdateData(&huart3) != 0)
   		{
   			printf("Receiving image failed\r\n");
@@ -191,11 +225,20 @@ int main(void)
   	}
   	else if (choice[0] == '3')
   	{
+  		// IMAGE SWAP MODE - Check if system is configured for swap
   		if (checkSystemForImageSwap() != 0)
   		{
-  			printf("System not setup for swap, aborting\r\n");
+  			printf("ERROR: System not setup for swap, aborting\r\n");
+  			sendNackPacket(&huart3, cmd_header.sequence_count, 12);
   			NVIC_SystemReset();
   		}
+  		
+  		// System ready - send ACK
+  		if (sendAckPacket(&huart3, cmd_header.sequence_count) != 0)
+  		{
+  			printf("Error sending ACK for command\r\n");
+  		}
+  		
   		if (checkUpdateVersion() != 0)
   		{
   			printf("Cannot update - rollback protection");

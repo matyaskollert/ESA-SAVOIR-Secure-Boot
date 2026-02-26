@@ -95,7 +95,14 @@ int16_t imageVerify(ImageSlot slot) {
 	// header size + image size - CRC
 	uint32_t dataSize = IMAGE_OFFSET + header->imageSize - 4;
 	printf("Verify image: addr=0x%08lx, size=%lu\r\n", (uint32_t)ramImageAddress, dataSize);
-	return verifySignature(ramImageAddress, dataSize, header->signature);
+
+	uint32_t start = HAL_GetTick();
+	int16_t ret = verifySignature(ramImageAddress, dataSize, header->signature);
+	uint32_t end = HAL_GetTick();
+
+	printf("Took %lu milliseconds\r\n", end - start);
+
+	return ret;
 }
 
 int16_t imageLoad(ImageSlot slot) {

@@ -4,6 +4,7 @@ A simple GUI application for uploading binary files to STM32F4 boards via UART.
 """
 import sys
 import time
+import queue
 from pathlib import Path
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -16,6 +17,110 @@ import serial
 import serial.tools.list_ports
 from binary_processor import process_binary
 from signature_ecdsa import ECDSASignature
+from ecss_packet import (ECSSPacket, PacketType, create_start_packet, 
+                         create_data_packet, create_end_packet, create_command_packet)
+
+
+class NackReceivedException(Exception):
+    """Exception raised when NACK packet is received from firmware."""
+    
+    # Error code descriptions from firmware
+    ERROR_DESCRIPTIONS = {
+        1: "Failed to receive START packet header",
+        2: "Wrong packet type (expected START_UPLOAD)",
+        3: "START packet data length invalid (expected 4 bytes)",
+        4: "Failed to receive START packet data",
+        6: "Failed to receive DATA packet header",
+        7: "Wrong packet type (expected DATA_CHUNK)",
+        8: "Failed to receive chunk data",
+        9: "Invalid image header or version too low (check magic number and version)",
+        10: "System not configured for update - option bytes need reconfiguration",
+        11: "System not configured for nominal mode",
+        12: "System not configured for image swap",
+    }
+    
+    def __init__(self, sequence, error_code):
+        self.sequence = sequence
+        self.error_code = error_code
+        self.description = self.ERROR_DESCRIPTIONS.get(error_code, f"Unknown error code: {error_code}")
+        super().__init__(f"NACK received for sequence {sequence}, error code: {error_code} - {self.description}")
+
+
+class PacketReceiverThread(QThread):
+    """Background thread for continuously receiving ECSS packets."""
+    debug_message = Signal(str)  # Signal for debug log messages
+    packet_received = Signal(object)  # Signal for other packets
+    connection_lost = Signal()
+    
+    def __init__(self, serial_port):
+        super().__init__()
+        self.serial_port = serial_port
+        self._is_running = True
+        self.packet_queue = queue.Queue()  # Queue for non-debug packets
+    
+    def run(self):
+        """Continuously read and parse ECSS packets."""
+        while self._is_running:
+            try:
+                if not self.serial_port or not self.serial_port.is_open:
+                    time.sleep(0.1)
+                    continue
+                
+                if self.serial_port.in_waiting >= ECSSPacket.HEADER_SIZE:
+                    # Read packet header
+                    header_bytes = self.serial_port.read(ECSSPacket.HEADER_SIZE)
+                    packet = ECSSPacket.unpack_header(header_bytes)
+                    
+                    # Read data if present
+                    if packet.data_length > 0:
+                        # Wait for data to arrive
+                        timeout = time.time() + 1.0
+                        while self.serial_port.in_waiting < packet.data_length:
+                            if time.time() > timeout:
+                                break
+                            time.sleep(0.001)
+                        
+                        if self.serial_port.in_waiting >= packet.data_length:
+                            packet.data = self.serial_port.read(packet.data_length)
+                    
+                    # Handle packet based on type
+                    if packet.service_type == PacketType.DEBUG_LOG:
+                        # Immediately emit debug messages
+                        try:
+                            message = packet.data.decode('utf-8', errors='replace')
+                            self.debug_message.emit(message)
+                        except:
+                            self.debug_message.emit(f"[Debug data: {packet.data.hex()}]")
+                    else:
+                        # Queue other packets for processing
+                        self.packet_queue.put(packet)
+                        self.packet_received.emit(packet)
+                else:
+                    time.sleep(0.01)  # Small delay when no data
+                    
+            except Exception as e:
+                if self._is_running:
+                    self.debug_message.emit(f"[Receiver error: {str(e)}]")
+                    self.connection_lost.emit()
+                break
+    
+    def get_packet(self, timeout=None):
+        """Get a packet from the queue.
+        
+        Args:
+            timeout: Maximum time to wait for a packet (None = wait forever)
+            
+        Returns:
+            ECSSPacket or None if timeout
+        """
+        try:
+            return self.packet_queue.get(timeout=timeout)
+        except queue.Empty:
+            return None
+    
+    def stop(self):
+        """Stop the receiver thread."""
+        self._is_running = False
 
 
 class UploaderThread(QThread):
@@ -25,186 +130,253 @@ class UploaderThread(QThread):
     uart_data = Signal(str)  # Signal for UART data received from board
     finished = Signal(bool, str)
     
-    def __init__(self, patched_file_path, port='COM4', baudrate=115200):
+    def __init__(self, patched_file_path, receiver_thread, port='COM6', baudrate=115200):
         super().__init__()
         self.patched_file_path = patched_file_path
+        self.receiver_thread = receiver_thread
         self.port = port
         self.baudrate = baudrate
         self._is_running = True
         self.ack_timeout = 2.0  # Timeout for ACK in seconds
         self.max_retries = 3  # Maximum number of retries per transmission
     
-    def wait_for_ack(self, ser):
-        """Wait for ACK byte (0x06) from the microcontroller.
+    def wait_for_ack_packet(self, expected_sequence):
+        """Wait for ECSS ACK packet from the receiver thread queue.
         
         Args:
-            ser: Serial connection object
+            expected_sequence: Expected sequence number in ACK
             
         Returns:
-            bool: True if ACK received, False otherwise
+            bool: True if ACK received, False on timeout
+            
+        Raises:
+            NackReceivedException: If NACK packet is received
         """
         start_time = time.time()
         while (time.time() - start_time) < self.ack_timeout:
-            if ser.in_waiting > 0:
-                data = ser.read(1)
-                if data == b'\x06':  # ACK byte
-                    return True
+            if not self._is_running:
+                return False
+            
+            # Get packet from receiver queue (non-blocking with timeout)
+            packet = self.receiver_thread.get_packet(timeout=0.1)
+            
+            if packet:
+                # Handle different packet types
+                if packet.service_type == PacketType.ACK:
+                    if packet.sequence_count == expected_sequence:
+                        return True
+                    else:
+                        self.uart_data.emit(f"[Warning: ACK seq mismatch: expected {expected_sequence}, got {packet.sequence_count}]")
+                        return True  # Accept anyway for now
+                elif packet.service_type == PacketType.NACK:
+                    error_code = packet.data[0] if len(packet.data) > 0 else 0
+                    # Raise exception to immediately stop upload
+                    raise NackReceivedException(packet.sequence_count, error_code)
                 else:
-                    # Log unexpected byte
-                    try:
-                        text = data.decode('utf-8', errors='replace')
-                        self.uart_data.emit(f"[Unexpected: {text}]")
-                    except:
-                        self.uart_data.emit(f"[Unexpected HEX: {data.hex()}]")
-            time.sleep(0.01)  # Small delay to avoid busy-waiting
+                    self.uart_data.emit(f"[Unexpected packet type: {packet.service_type}]")
+                    # Put it back in queue if not ACK/NACK?
+                    return False
+            
         return False
         
     def run(self):
-        """Execute the upload process."""
+        """Execute the upload process using ECSS packet protocol."""
         try:
-            self.status.emit(f"Connecting to device on {self.port}...")
-            
-            # Try to connect to the serial port
-            max_wait_time = 5  # seconds - shorter wait time
-            start_time = time.time()
-            ser = None
-            
-            while self._is_running and (time.time() - start_time) < max_wait_time:
-                try:
-                    ports = [p.device for p in serial.tools.list_ports.comports()]
-                    if self.port in ports:
-                        self.status.emit(f"Device detected on {self.port}. Opening connection...")
-                        ser = serial.Serial(self.port, self.baudrate, timeout=1)
-                        time.sleep(0.5)  # Give the connection time to stabilize
-                        break
-                except (serial.SerialException, OSError) as e:
-                    time.sleep(0.5)
-                    continue
+            # Use the serial port from the receiver thread
+            ser = self.receiver_thread.serial_port
             
             if not ser or not ser.is_open:
-                self.finished.emit(False, f"Device not found on {self.port}. Please check connection and ensure the board is ready.")
+                self.finished.emit(False, f"Serial port not open. Please connect to the device first.")
                 return
             
-            try:
-                # First send a "2" to signal the board to prepare for upload
-                self.status.emit("Signaling board to prepare for upload...")
-                ser.write(b'2')
-                time.sleep(1)  # Wait for board to process
+            self.status.emit(f"Using connection on {self.port}...")
+            
+            # First send a "2" command as ECSS packet to signal the board to prepare for upload
+            self.status.emit("Signaling board to prepare for upload...")
+            command_packet = create_command_packet(0, '2')
+            cmd_header = command_packet.pack_header()
+            cmd_data = command_packet.data
+            print(f"Sending command - Header: {cmd_header.hex()}, Data: {cmd_data.hex()}")
+            
+            # Send header first
+            ser.write(cmd_header)
+            ser.flush()
+            # Small delay
+            time.sleep(0.01)
+            # Send data
+            if len(cmd_data) > 0:
+                ser.write(cmd_data)
+                ser.flush()
+            
+            # Wait for ACK from firmware to confirm system is ready for upload
+            self.status.emit("Waiting for board to confirm system configuration...")
+            if not self.wait_for_ack_packet(0):
+                self.finished.emit(False, "Board did not acknowledge upload command (timeout or system not configured)")
+                return
+            
+            self.status.emit("Board ready for upload")
+            time.sleep(0.5)  # Brief delay before starting upload
 
-                # Read the binary file
-                self.status.emit("Reading patched binary file...")
-                with open(self.patched_file_path, 'rb') as f:
-                    binary_data = f.read()
+            # Read the binary file
+            self.status.emit("Reading patched binary file...")
+            with open(self.patched_file_path, 'rb') as f:
+                binary_data = f.read()
+            
+            total_size = len(binary_data)
+            self.status.emit(f"Uploading {total_size} bytes using ECSS protocol...")
+
+            sequence = 0
+            
+            # 1. Send START_UPLOAD packet with total size
+            self.status.emit(f"Sending START_UPLOAD packet...")
+            start_packet = create_start_packet(sequence, total_size)
+            start_header = start_packet.pack_header()
+            start_data = start_packet.data
+            print(f"START_UPLOAD - Header: {start_header.hex()}, Data: {start_data.hex()}")
+            
+            start_sent = False
+            for attempt in range(self.max_retries):
+                if not self._is_running:
+                    self.finished.emit(False, "Upload cancelled by user")
+                    return
                 
-                total_size = len(binary_data)
-                self.status.emit(f"Uploading {total_size} bytes to device...")
+                self.status.emit(f"Sending START packet... Attempt {attempt + 1}/{self.max_retries}")
+                # Send header first
+                ser.write(start_header)
+                ser.flush()
+                # Small delay to let firmware start receiving data
+                time.sleep(0.01)
+                # Send data
+                if len(start_data) > 0:
+                    ser.write(start_data)
+                    ser.flush()
+                
+                # Wait for ACK
+                if self.wait_for_ack_packet(sequence):
+                    self.status.emit("START_UPLOAD acknowledged")
+                    start_sent = True
+                    break
+                else:
+                    self.status.emit(f"Timeout waiting for ACK (attempt {attempt + 1})")
+                    if attempt < self.max_retries - 1:
+                        time.sleep(0.5)
+            
+            if not start_sent:
+                self.finished.emit(False, "Failed to send START packet after multiple retries")
+                return
 
-                # Send data size first (4 bytes, little-endian) with retry
-                size_sent = False
+            sequence += 1
+
+            # Check for any incoming messages from board
+            time.sleep(0.1)
+            if ser.in_waiting > ECSSPacket.HEADER_SIZE:
+                # Skip potential non-packet data
+                pass
+            
+            # 2. Send DATA_CHUNK packets
+            chunk_size = 256
+            bytes_sent = 0
+            
+            for i in range(0, total_size, chunk_size):
+                if not self._is_running:
+                    self.finished.emit(False, "Upload cancelled by user")
+                    return
+                
+                chunk = binary_data[i:i + chunk_size]
+                chunk_num = i // chunk_size + 1
+                total_chunks = (total_size + chunk_size - 1) // chunk_size
+                
+                # Create DATA_CHUNK packet
+                data_packet = create_data_packet(sequence, chunk)
+                chunk_header = data_packet.pack_header()
+                chunk_data = data_packet.data
+                
+                # Try to send chunk with retry
+                chunk_sent = False
                 for attempt in range(self.max_retries):
                     if not self._is_running:
                         self.finished.emit(False, "Upload cancelled by user")
                         return
                     
-                    self.status.emit(f"Sending data size ({total_size} bytes)... Attempt {attempt + 1}/{self.max_retries}")
-                    ser.write(total_size.to_bytes(4, byteorder='little'))
+                    if attempt > 0:
+                        self.status.emit(f"Retrying chunk {chunk_num}/{total_chunks}... Attempt {attempt + 1}/{self.max_retries}")
+                    
+                    # Send header first
+                    ser.write(chunk_header)
+                    ser.flush()
+                    # Small delay to let firmware start receiving data
+                    time.sleep(0.01)
+                    # Send data
+                    if len(chunk_data) > 0:
+                        ser.write(chunk_data)
+                        ser.flush()
                     
                     # Wait for ACK
-                    if self.wait_for_ack(ser):
-                        self.status.emit("Data size acknowledged by device")
-                        size_sent = True
+                    if self.wait_for_ack_packet(sequence):
+                        chunk_sent = True
                         break
                     else:
-                        self.status.emit(f"No ACK received for data size (attempt {attempt + 1})")
+                        self.status.emit(f"Timeout waiting for ACK (attempt {attempt + 1})")
                         if attempt < self.max_retries - 1:
-                            time.sleep(0.5)  # Wait before retry
+                            time.sleep(0.3)
                 
-                if not size_sent:
-                    self.finished.emit(False, "Failed to send data size after multiple retries")
+                if not chunk_sent:
+                    self.finished.emit(False, f"Failed to send chunk {chunk_num} after {self.max_retries} retries")
                     return
-
-                # Check for any incoming messages from board
-                time.sleep(0.1)
-                if ser.in_waiting > 0:
-                    incoming = ser.read(ser.in_waiting)
-                    try:
-                        text = incoming.decode('utf-8', errors='replace')
-                        self.uart_data.emit(text)
-                    except:
-                        self.uart_data.emit(f"[HEX: {incoming.hex()}]")
                 
-                # Send the data in chunks
-                chunk_size = 256
-                bytes_sent = 0
+                bytes_sent += len(chunk)
+                sequence += 1
                 
-                for i in range(0, total_size, chunk_size):
-                    if not self._is_running:
-                        self.finished.emit(False, "Upload cancelled by user")
-                        return
-                    
-                    chunk = binary_data[i:i + chunk_size]
-                    chunk_num = i // chunk_size + 1
-                    total_chunks = (total_size + chunk_size - 1) // chunk_size
-                    
-                    # Try to send chunk with retry
-                    chunk_sent = False
-                    for attempt in range(self.max_retries):
-                        if not self._is_running:
-                            self.finished.emit(False, "Upload cancelled by user")
-                            return
-                        
-                        if attempt > 0:
-                            self.status.emit(f"Retrying chunk {chunk_num}/{total_chunks}... Attempt {attempt + 1}/{self.max_retries}")
-                        
-                        ser.write(chunk)
-                        
-                        # Wait for ACK
-                        if self.wait_for_ack(ser):
-                            chunk_sent = True
-                            break
-                        else:
-                            self.status.emit(f"No ACK for chunk {chunk_num} (attempt {attempt + 1})")
-                            if attempt < self.max_retries - 1:
-                                time.sleep(0.3)  # Wait before retry
-                    
-                    if not chunk_sent:
-                        self.finished.emit(False, f"Failed to send chunk {chunk_num} after {self.max_retries} retries")
-                        return
-                    
-                    bytes_sent += len(chunk)
-                    
-                    # Update progress
-                    progress_percent = int((bytes_sent / total_size) * 100)
-                    self.progress.emit(progress_percent)
-                    self.status.emit(f"Uploading: {bytes_sent}/{total_size} bytes ({progress_percent}%) - Chunk {chunk_num}/{total_chunks}")
-                    
-                    # Small delay between chunks
-                    time.sleep(0.05)
+                # Update progress
+                progress_percent = int((bytes_sent / total_size) * 100)
+                self.progress.emit(progress_percent)
+                self.status.emit(f"Uploading: {bytes_sent}/{total_size} bytes ({progress_percent}%) - Chunk {chunk_num}/{total_chunks}")
                 
-                # Upload complete - continue monitoring UART output
-                self.status.emit("Upload complete. Monitoring board output...")
-                self.progress.emit(100)
+                # Small delay between chunks
+                time.sleep(0.05)
+            
+            # 3. Send END_UPLOAD packet
+            self.status.emit("Sending END_UPLOAD packet...")
+            end_packet = create_end_packet(sequence)
+            end_header = end_packet.pack_header()
+            
+            for attempt in range(self.max_retries):
+                if not self._is_running:
+                    break
                 
-                # Monitor UART for 10 seconds after upload
-                monitor_time = 10
-                start_monitor = time.time()
+                # END packet has no data, just send header
+                ser.write(end_header)
+                ser.flush()
                 
-                while self._is_running and (time.time() - start_monitor) < monitor_time:
-                    if ser.in_waiting > 0:
-                        incoming = ser.read(ser.in_waiting)
-                        try:
-                            text = incoming.decode('utf-8', errors='replace')
-                            self.uart_data.emit(text)
-                        except:
-                            self.uart_data.emit(f"[HEX: {incoming.hex()}]")
-                    time.sleep(0.1)
+                if self.wait_for_ack_packet(sequence):
+                    self.status.emit("END_UPLOAD acknowledged")
+                    break
+                else:
+                    if attempt < self.max_retries - 1:
+                        time.sleep(0.3)
+            
+            #Upload complete
+            self.status.emit("Upload complete.")
+            self.progress.emit(100)
+            
+            # Receiver thread continues to monitor
+            time.sleep(1)
+            
+            self.finished.emit(True, f"Successfully uploaded {total_size} bytes using ECSS protocol!")
                 
-                self.finished.emit(True, f"Successfully uploaded {total_size} bytes!")
+            # Note: Serial connection is owned by receiver thread, not closed here
                 
-            finally:
-                ser.close()
-                self.status.emit("Serial connection closed")
-                
+        except NackReceivedException as e:
+            # NACK received - firmware rejected the packet
+            error_msg = f"Upload failed: Firmware sent NACK - {e.description}"
+            self.status.emit("ERROR: " + error_msg)
+            self.uart_data.emit(f"\n{'='*60}")
+            self.uart_data.emit(f"FIRMWARE ERROR - UPLOAD ABORTED")
+            self.uart_data.emit(f"Sequence Number: {e.sequence}")
+            self.uart_data.emit(f"Error Code: {e.error_code}")
+            self.uart_data.emit(f"Description: {e.description}")
+            self.uart_data.emit(f"{'='*60}\n")
+            self.finished.emit(False, error_msg)
         except Exception as e:
             self.finished.emit(False, f"Error during upload: {str(e)}")
     
@@ -221,14 +393,17 @@ class MainWindow(QMainWindow):
         self.selected_file = None
         self.patched_file = None
         self.uploader_thread = None
+        self.receiver_thread = None
+        self.serial_port = None
         self.image_version = 1
         self.signature_algo = ECDSASignature()
         self.keys_dir = Path(__file__).parent / "keys"
         
         self.setWindowTitle("STM32F4 Binary Uploader")
-        self.setMinimumSize(700, 700)
+        self.setMinimumSize(700, 750)
         
         self.init_ui()
+        self.connect_to_board()  # Auto-connect on startup
         
     def init_ui(self):
         """Initialize the user interface."""
@@ -337,7 +512,7 @@ class MainWindow(QMainWindow):
         upload_layout = QVBoxLayout()
         
         # Upload and cancel buttons
-        self.upload_button = QPushButton("UPLOAD to COM4")
+        self.upload_button = QPushButton("UPLOAD to COM6")
         self.upload_button.setMinimumHeight(40)
         self.upload_button.setEnabled(False)
         self.upload_button.clicked.connect(self.upload_to_device)
@@ -373,6 +548,23 @@ class MainWindow(QMainWindow):
         log_group.setLayout(log_layout)
         main_layout.addWidget(log_group, 1)
         
+        # Text input group for sending commands
+        input_group = QGroupBox("Send Command to Board")
+        input_layout = QHBoxLayout()
+        
+        self.text_input = QLineEdit()
+        self.text_input.setPlaceholderText("Type command and press Enter...")
+        self.text_input.returnPressed.connect(self.send_text_command)
+        
+        self.send_button = QPushButton("Send")
+        self.send_button.setMinimumHeight(30)
+        self.send_button.clicked.connect(self.send_text_command)
+        
+        input_layout.addWidget(self.text_input, 1)
+        input_layout.addWidget(self.send_button)
+        input_group.setLayout(input_layout)
+        main_layout.addWidget(input_group)
+        
         # Initialize key path selection state
         self.toggle_key_path_selection()
         
@@ -405,8 +597,9 @@ class MainWindow(QMainWindow):
             return
         
         try:
-            # Get version from spinbox
+            # Get version from spinbox (applied each time Process is clicked)
             self.image_version = self.version_spinbox.value()
+            self.log(f"Processing with image version: {self.image_version}")
             
             # Disable buttons during processing
             self.process_button.setEnabled(False)
@@ -447,9 +640,12 @@ class MainWindow(QMainWindow):
             )
             self.log(f"Created patched file: {self.patched_file}")
             self.log("Ready to upload. Click UPLOAD.")
+            self.log("You can change the version and click Process again to create a new patched file.")
             
-            # Enable upload button
+            # Enable buttons (allow re-processing with different version)
             self.upload_button.setEnabled(True)
+            self.process_button.setEnabled(True)
+            self.version_spinbox.setEnabled(True)
             
         except Exception as e:
             self.log(f"ERROR: {str(e)}")
@@ -464,6 +660,10 @@ class MainWindow(QMainWindow):
             self.log("ERROR: No processed file available!")
             return
         
+        if not self.receiver_thread or not self.serial_port:
+            self.log("ERROR: Not connected to board!")
+            return
+        
         try:
             self.log(f"Starting upload of image version {self.image_version}...")
             
@@ -475,7 +675,7 @@ class MainWindow(QMainWindow):
             self.progress_bar.setValue(0)
             
             # Start upload in background thread
-            self.uploader_thread = UploaderThread(self.patched_file)
+            self.uploader_thread = UploaderThread(self.patched_file, self.receiver_thread)
             self.uploader_thread.progress.connect(self.update_progress)
             self.uploader_thread.status.connect(self.log)
             self.uploader_thread.uart_data.connect(self.log_uart_data)
@@ -485,6 +685,68 @@ class MainWindow(QMainWindow):
         except Exception as e:
             self.log(f"ERROR: {str(e)}")
             self.reset_ui()
+    
+    def connect_to_board(self):
+        """Connect to the board and start packet receiver thread."""
+        try:
+            port = 'COM6'  # Default port
+            baudrate = 115200
+            
+            # Try to open serial port
+            ports = [p.device for p in serial.tools.list_ports.comports()]
+            if port in ports:
+                self.serial_port = serial.Serial(port, baudrate, timeout=1)
+                time.sleep(0.5)
+                
+                # Start packet receiver thread
+                self.receiver_thread = PacketReceiverThread(self.serial_port)
+                self.receiver_thread.debug_message.connect(self.log_uart_data)
+                self.receiver_thread.connection_lost.connect(self.on_connection_lost)
+                self.receiver_thread.start()
+                
+                self.log(f"Connected to {port} at {baudrate} baud")
+                self.log("Packet receiver thread started")
+            else:
+                self.log(f"Warning: {port} not found. Connect board and restart application.")
+        except Exception as e:
+            self.log(f"Error connecting to board: {str(e)}")
+    
+    def on_connection_lost(self):
+        """Handle connection loss."""
+        self.log("ERROR: Connection to board lost!")
+        
+    def send_text_command(self):
+        """Send text command to board as ECSS packet."""
+        if not self.serial_port or not self.serial_port.is_open:
+            self.log("ERROR: Not connected to board!")
+            return
+        
+        text = self.text_input.text().strip()
+        if not text:
+            return
+        
+        try:
+            # Create TEXT_COMMAND packet (using DEBUG_LOG type for bidirectional text)
+            # Add newline to match printf format
+            message = text + "\r\n"
+            packet = ECSSPacket(PacketType.DEBUG_LOG, 0, message.encode('utf-8'), is_telecommand=True)
+            
+            # Send header first, then data (to avoid UART FIFO overflow)
+            header = packet.pack_header()
+            data = packet.data
+            
+            self.serial_port.write(header)
+            self.serial_port.flush()
+            time.sleep(0.01)  # Small delay for firmware to start receiving
+            if len(data) > 0:
+                self.serial_port.write(data)
+                self.serial_port.flush()
+            
+            self.log(f"Sent: {text}")
+            self.text_input.clear()
+            
+        except Exception as e:
+            self.log(f"Error sending command: {str(e)}")
     
     def cancel_upload(self):
         """Cancel the ongoing upload."""
@@ -514,7 +776,7 @@ class MainWindow(QMainWindow):
                     "Please check that:\n"
                     "• The STM32F4 board is connected\n"
                     "• The board is powered on\n"
-                    "• The correct COM port (COM4) is selected\n"
+                    "• The correct COM port (COM6) is selected\n"
                     "• No other application is using the port"
                 )
         
@@ -525,7 +787,8 @@ class MainWindow(QMainWindow):
         self.select_button.setEnabled(True)
         self.process_button.setEnabled(bool(self.selected_file))
         self.upload_button.setEnabled(bool(self.patched_file))
-        self.version_spinbox.setEnabled(bool(self.selected_file) and not bool(self.patched_file))
+        # Allow changing version whenever a file is selected (to re-process with different version)
+        self.version_spinbox.setEnabled(bool(self.selected_file))
         self.cancel_button.setEnabled(False)
     
     def select_file(self):
@@ -563,6 +826,14 @@ class MainWindow(QMainWindow):
         if self.uploader_thread and self.uploader_thread.isRunning():
             self.uploader_thread.stop()
             self.uploader_thread.wait()
+        
+        if self.receiver_thread and self.receiver_thread.isRunning():
+            self.receiver_thread.stop()
+            self.receiver_thread.wait()
+        
+        if self.serial_port and self.serial_port.is_open:
+            self.serial_port.close()
+        
         event.accept()
 
 

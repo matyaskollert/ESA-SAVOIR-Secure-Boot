@@ -18,85 +18,169 @@ uint8_t myRXBuffer[RX_BUFFER_SIZE];
 
 #define FLASH_SECTOR_SIZE 128U*1024U/4U
 
-#define ROLLBACK_WINDOW 1U;
+#define ROLLBACK_WINDOW 1U
 
 
-// TODO: Refactor + better protocol
+// ECSS packet protocol implementation
 int16_t receiveUpdateData(UART_HandleTypeDef* uart)
 {
-
-	if (receiveData(uart, myRXBuffer, 4) != 0)
-	{
-		printf("Error receiving update data\r\n");
-		return 1;
-	}
-
-	uint32_t dataLength = ((uint32_t *)myRXBuffer)[0];
-	// printf("Upload Data Length: %lu\r\n", dataLength);
-
-	uint32_t amountOfChunks = dataLength / RX_BUFFER_SIZE;
-	uint32_t reminder = dataLength % RX_BUFFER_SIZE;
-
-	// Send ACK after receiving data length
-	if (sendAck(uart) != 0)
-	{
-		printf("Error sending ACK for data length\r\n");
-		return 1;
-	}
-
+	ECSSPacketHeader header;
+	uint32_t dataLength = 0;
+	uint32_t bytesReceived = 0;
 	void* ramDestination = (void *)BOOT_RAM_ADDRESS;
-
-	for (uint32_t i = 0; i < amountOfChunks; i++)
+	uint16_t expectedSequence = 0;
+	
+	printf("Waiting for START_UPLOAD packet...\r\n");
+	
+	// 1. Receive START_UPLOAD packet
+	if (receivePacketHeader(uart, &header) != 0)
 	{
-		if (receiveData(uart, myRXBuffer, RX_BUFFER_SIZE) != 0)
+		printf("Error receiving START packet header\r\n");
+		sendNackPacket(uart, 0, 1);
+		return 1;
+	}
+	
+	if (header.service_type != PKT_START_UPLOAD)
+	{
+		printf("Error: Expected START_UPLOAD, got 0x%02X\r\n", header.service_type);
+		sendNackPacket(uart, header.sequence_count, 2);
+		return 2;
+	}
+	
+	// Receive data length (4 bytes in payload)
+	if (header.data_length != 4)
+	{
+		printf("Error: START packet should contain 4 bytes\r\n");
+		sendNackPacket(uart, header.sequence_count, 3);
+		return 3;
+	}
+	
+	if (receivePacketData(uart, myRXBuffer, header.data_length) != 0)
+	{
+		printf("Error receiving START packet data\r\n");
+		sendNackPacket(uart, header.sequence_count, 4);
+		return 4;
+	}
+	
+	dataLength = ((uint32_t *)myRXBuffer)[0];
+	printf("Upload Data Length: %lu bytes\r\n", dataLength);
+	
+	// Send ACK for START packet
+	if (sendAckPacket(uart, header.sequence_count) != 0)
+	{
+		printf("Error sending ACK for START\r\n");
+		return 5;
+	}
+	
+	expectedSequence = header.sequence_count + 1;
+	
+	// 2. Receive DATA_CHUNK packets
+	printf("Receiving data chunks...\r\n");
+	
+	while (bytesReceived < dataLength)
+	{
+		// Receive chunk header
+		if (receivePacketHeader(uart, &header) != 0)
 		{
-			printf("Error receiving update data\r\n");
-			return 1;
+			printf("Error receiving DATA packet header\r\n");
+			sendNackPacket(uart, expectedSequence, 6);
+			return 6;
 		}
-
-		if (i == 0)
+		
+		// Check if it's END_UPLOAD (upload complete)
+		if (header.service_type == PKT_END_UPLOAD)
 		{
-			// Check header version ASAP
+			printf("Received END_UPLOAD packet\r\n");
+			break;
+		}
+		
+		if (header.service_type != PKT_DATA_CHUNK)
+		{
+			printf("Error: Expected DATA_CHUNK, got 0x%02X\r\n", header.service_type);
+			sendNackPacket(uart, header.sequence_count, 7);
+			return 7;
+		}
+		
+		// Verify sequence
+		if (header.sequence_count != expectedSequence)
+		{
+			printf("Warning: Sequence mismatch. Expected %u, got %u\r\n",
+			       expectedSequence, header.sequence_count);
+		}
+		
+		// Receive chunk data
+		if (receivePacketData(uart, myRXBuffer, header.data_length) != 0)
+		{
+			printf("Error receiving chunk data\r\n");
+			sendNackPacket(uart, header.sequence_count, 8);
+			return 8;
+		}
+		
+		// First chunk: check image header version
+		if (bytesReceived == 0)
+		{
 			uint32_t lowestAllowedVersion = getLowestAllowedVersion();
-			uint16_t updateMagic = (uint16_t)myRXBuffer[4];
-			uint16_t updateVersion = (uint16_t)myRXBuffer[6];
+			// Read 2-byte uint16_t values from buffer (little-endian on ARM)
+			uint16_t updateMagic = *(uint16_t*)(&myRXBuffer[4]);
+			uint16_t updateVersion = *(uint16_t*)(&myRXBuffer[6]);
 			if (updateMagic != IMAGE_MAGIC || updateVersion < lowestAllowedVersion)
 			{
-				printf("This is not an image or the image version is too low\r\n");
-				// TODO: Send some REJECT packet
+				printf("Invalid image or version too low (magic=0x%04X, version=%u)\r\n",
+				       updateMagic, updateVersion);
+				sendNackPacket(uart, header.sequence_count, 9);
+				return 9;
 			}
+			printf("Image validated: magic=0x%04X, version=%u\r\n", updateMagic, updateVersion);
 		}
-
-		// copy CRC + header + image
-		memcpy(ramDestination + i * RX_BUFFER_SIZE, myRXBuffer, RX_BUFFER_SIZE);
 		
-		// Send ACK after successfully receiving and writing chunk
-		if (sendAck(uart) != 0)
+		// Copy data to RAM
+		memcpy(ramDestination + bytesReceived, myRXBuffer, header.data_length);
+		bytesReceived += header.data_length;
+		
+		// Send ACK for chunk
+		if (sendAckPacket(uart, header.sequence_count) != 0)
 		{
-			printf("Error sending ACK for chunk %lu\r\n", i);
-			return 1;
+			printf("Error sending ACK for chunk\r\n");
+			return 10;
+		}
+		
+		expectedSequence++;
+		
+		// Progress indicator
+		if ((bytesReceived % (RX_BUFFER_SIZE * 10)) == 0)
+		{
+			printf("Received: %lu/%lu bytes\r\n", bytesReceived, dataLength);
 		}
 	}
-
-	if (reminder != 0)
+	
+	printf("All data received: %lu bytes\r\n", bytesReceived);
+	
+	// 3. Receive END_UPLOAD packet (if not already received)
+	if (header.service_type != PKT_END_UPLOAD)
 	{
-		if (receiveData(uart, myRXBuffer, reminder) != 0)
+		if (receivePacketHeader(uart, &header) != 0)
 		{
-			printf("Error receiving update data\r\n");
-			return 1;
+			printf("Error receiving END packet\r\n");
+			// Continue anyway, data is received
 		}
-		memcpy(ramDestination + amountOfChunks * RX_BUFFER_SIZE, myRXBuffer, RX_BUFFER_SIZE);
-		
-		// Send ACK after successfully receiving and writing final chunk
-		if (sendAck(uart) != 0)
+		else if (header.service_type == PKT_END_UPLOAD)
 		{
-			printf("Error sending ACK for final chunk\r\n");
-			return 1;
+			printf("Received END_UPLOAD packet\r\n");
+			sendAckPacket(uart, header.sequence_count);
 		}
 	}
-
-	// TODO: Perform CRC and SIGN checks before putting into UPDATE
-	writeFlashSector(UPDATE_FLASH_SECTOR, UPDATE_FLASH_ADDRESS, (uint32_t *)ramDestination, dataLength/4U);
+	else
+	{
+		// Send ACK for END packet
+		sendAckPacket(uart, header.sequence_count);
+	}
+	
+	// Write to flash
+	printf("Writing to flash...\r\n");
+	writeFlashSector(UPDATE_FLASH_SECTOR, UPDATE_FLASH_ADDRESS, 
+	                 (uint32_t *)ramDestination, dataLength/4U);
+	printf("Flash write complete!\r\n");
+	
 	return 0;
 }
 
@@ -248,6 +332,9 @@ int16_t checkUpdateVersion()
 uint32_t getLowestAllowedVersion()
 {
 	uint32_t counterValue = getCounterValue();
+	if (ROLLBACK_WINDOW >= counterValue) {
+		return 0;
+	}
 	uint32_t lowestAllowedVersion = counterValue - ROLLBACK_WINDOW;
 	return lowestAllowedVersion;
 }
