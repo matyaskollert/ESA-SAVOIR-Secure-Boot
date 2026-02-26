@@ -11,6 +11,7 @@
 
 int16_t receiveData(UART_HandleTypeDef* uart, uint8_t* receiveBuffer, uint32_t bufferLength)
 {
+	// TODO: NO POLLING
 	HAL_StatusTypeDef ret = HAL_UART_Receive(uart, receiveBuffer, bufferLength, HAL_MAX_DELAY);
 	if (ret != HAL_OK)
 	{
@@ -38,6 +39,7 @@ int16_t receivePacketHeader(UART_HandleTypeDef* uart, ECSSPacketHeader* header)
 {
 	uint8_t buffer[ECSS_HEADER_SIZE];
 	
+	// TODO: NO POLLING
 	// Receive header bytes
 	HAL_StatusTypeDef ret = HAL_UART_Receive(uart, buffer, ECSS_HEADER_SIZE, HAL_MAX_DELAY);
 	if (ret != HAL_OK)
@@ -63,6 +65,7 @@ int16_t receivePacketData(UART_HandleTypeDef* uart, uint8_t* buffer, uint16_t le
 		return 0;  // No data to receive
 	}
 	
+	// TODO: NO POLLING
 	HAL_StatusTypeDef ret = HAL_UART_Receive(uart, buffer, length, HAL_MAX_DELAY);
 	if (ret != HAL_OK)
 	{
