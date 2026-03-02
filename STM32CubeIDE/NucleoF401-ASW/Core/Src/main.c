@@ -22,6 +22,8 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 
+#include <stdio.h>
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -31,8 +33,6 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-
-#define IMAGE_MAGIC 0xABCD
 
 /* USER CODE END PD */
 
@@ -71,25 +71,6 @@ int _write(int fd, char *ptr, int len) {
     }
     return -1;
 }
-
-typedef struct __attribute__((packed)){
-    uint16_t image_magic;
-    uint16_t image_version;
-    uint32_t image_size;
-    uint32_t crc;
-    uint32_t num_sections;
-    //uint16_t signature_alg;
-    //uint8_t signature[4096];
-} image_hdr_t;
-
-image_hdr_t image_hdr __attribute__((section(".fw_header")))= {
-    .image_magic = IMAGE_MAGIC,
-    .image_version = 0,
-    .image_size = 0, //to be added manually using crc.py script after build
-    .crc = 0,                       //-do-
-	.num_sections = 9,
-	//.signature_alg = 0
-};
 
 /* USER CODE END 0 */
 
@@ -136,7 +117,7 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-	printf("App STARTED - version %d - CRC 0x%lx\n", image_hdr.image_version, image_hdr.crc);
+	printf("App STARTED\n");
 
     //CDC_Transmit_FS(buffer, sizeof(buffer));
     HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);

@@ -5,11 +5,32 @@
  *      Author: Matyas
  */
 
+#include "image.h"
 #include "boot.h"
 
-void boot() {
-	imageValidate(IMAGE_SLOT_1);
-	imageLoad(IMAGE_SLOT_1);
-	imageValidateInRAM(IMAGE_SLOT_1);
-	imageStart(IMAGE_SLOT_1);
+
+int16_t boot()
+{
+	int16_t ret;
+	ret = imageValidate();
+	if (ret != 0)
+	{
+		return -1;
+	}
+	ret = imageLoad();
+	if (ret != 0)
+	{
+		return -2;
+	}
+	ret = imageValidateInRAM();
+	if (ret != 0)
+	{
+		return -3;
+	}
+	imageStart();
+	return 0;
 }
+
+
+
+

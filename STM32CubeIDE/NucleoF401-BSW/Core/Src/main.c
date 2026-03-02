@@ -22,7 +22,12 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 
+#include <stdio.h>
 #include "boot.h"
+#include "input.h"
+#include "update.h"
+#include "report.h"
+#include "self_test.h"
 
 /* USER CODE END Includes */
 
@@ -63,10 +68,12 @@ static void MX_CRC_Init(void);
 /* USER CODE BEGIN 0 */
 
 // Send printf to uart2
-int _write(int fd, char *ptr, int len) {
+int _write(int fd, char *ptr, int len)
+{
     HAL_StatusTypeDef hstatus;
 
-    if (fd == 1 || fd == 2) {
+    if (fd == 1 || fd == 2)
+    {
         hstatus = HAL_UART_Transmit(&huart2, (uint8_t*) ptr, len, HAL_MAX_DELAY);
         if (hstatus == HAL_OK)
             return len;
@@ -76,14 +83,8 @@ int _write(int fd, char *ptr, int len) {
     return -1;
 }
 
-#define SMALL_RX_BUFFER_SIZE 1//0x10000;
-uint8_t my_small_rx_buffer[SMALL_RX_BUFFER_SIZE];
-
-#define RX_BUFFER_SIZE 13864//0x10000;
-uint8_t my_rx_buffer[RX_BUFFER_SIZE];
-
-#define FLASH_ADDR  0x08020000U
-#define FLASH_SECTOR FLASH_SECTOR_5
+#define SMALL_RX_BUFFER_SIZE 1
+uint8_t mySmallRXBuffer[SMALL_RX_BUFFER_SIZE];
 
 /* USER CODE END 0 */
 
@@ -120,28 +121,80 @@ int main(void)
   MX_CRC_Init();
   /* USER CODE BEGIN 2 */
 
-  HAL_Delay(3000);
 
-  printf("Bootloader loaded, enter '1' for boot or '2' for upload\r\n");
 
-  HAL_UART_Receive(&huart2, my_small_rx_buffer, SMALL_RX_BUFFER_SIZE, HAL_MAX_DELAY);
+  	int16_t testResult = performSelfTests(0);
+  	if (testResult != 0)
+  	{
+  		printf("System is in an invalid state\r\n");
+  		NVIC_SystemReset();
+  	}
 
-  char* choice = (char *)my_small_rx_buffer;
+    HAL_Delay(3000);
 
-  if (choice[0] == '1') {
-	  boot();
-  } else if (choice[0] == '2') {
-	  HAL_UART_Receive(&huart2, my_rx_buffer, RX_BUFFER_SIZE, HAL_MAX_DELAY);
+  	printf("Bootloader loaded, enter '1' for boot or '2' for upload, '3' for revert, '4' to check image versions\r\n");
 
-	  printf("First Word: 0x%04x\r\n", ((uint32_t *)my_rx_buffer)[0]);
-	  writeFlashSector(FLASH_SECTOR, FLASH_ADDR, (uint32_t *)my_rx_buffer, 13864/4);
+	int8_t ret = receiveData(&huart2, mySmallRXBuffer, SMALL_RX_BUFFER_SIZE);
+	if (ret != 0)
+	{
+		printf("Getting input from user failed\r\n");
+	}
 
-	  boot();
-  } else {
-	  printf("ERROR, reset\r\n");
-	  HAL_Delay(1000);
-	  NVIC_SystemReset();
-  }
+	char* choice = (char *)mySmallRXBuffer;
+
+	if (choice[0] == '1')
+	{
+		int16_t ret = boot();
+		if (ret != 0)
+		{
+			printf("Booting image failed\r\n");
+		}
+	}
+	else if (choice[0] == '2')
+	{
+		int16_t ret = receiveUpdateData(&huart2);
+		if (ret != 0)
+		{
+			printf("Receiving image failed\r\n");
+		}
+		ret = swapBootWithUpdate();
+		if (ret != 0)
+		{
+			printf("Swapping images failed\r\n");
+		}
+
+		ret = boot();
+		if (ret != 0)
+		{
+			printf("Booting image failed\r\n");
+		}
+	}
+	else if (choice[0] == '3')
+	{
+		int16_t ret = swapBootWithUpdate();
+		if (ret != 0)
+		{
+			printf("Swapping images failed\r\n");
+		}
+
+		ret = boot();
+		if (ret != 0)
+		{
+			printf("Booting image failed\r\n");
+		}
+	}
+	else if (choice[0] == '4')
+	{
+		printImageHeaders();
+		HAL_Delay(1000);
+		NVIC_SystemReset();
+	}
+	else
+	{
+		printf("ERROR, reset\r\n");
+		HAL_Delay(1000);
+		NVIC_SystemReset();
+	}
 
 
 

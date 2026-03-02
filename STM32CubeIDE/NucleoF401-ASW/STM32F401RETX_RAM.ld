@@ -44,15 +44,13 @@ _Min_Stack_Size = 0x400; /* required amount of stack */
 /* Memories definition */
 MEMORY
 {
-  RAM    (xrw)    : ORIGIN = 0x20000000,   LENGTH = 96K
-  FLASH    (rx)    : ORIGIN = 0x8000000,   LENGTH = 512K
+  RAM    (xrw)    : ORIGIN = 0x20009400,   LENGTH = 59K
 }
 
 /* Sections */
 SECTIONS
 {
-
-  /* The startup code into "RAM" Ram type memory */
+  /* The startup code into "FLASH" Rom type memory */
   .isr_vector :
   {
     . = ALIGN(4);
@@ -60,7 +58,7 @@ SECTIONS
     . = ALIGN(4);
   } >RAM
 
-  /* The program code and other data into "RAM" Ram type memory */
+  /* The program code and other data into "FLASH" Rom type memory */
   .text :
   {
     . = ALIGN(4);
@@ -69,8 +67,6 @@ SECTIONS
     *(.glue_7)         /* glue arm to thumb code */
     *(.glue_7t)        /* glue thumb to arm code */
     *(.eh_frame)
-    *(.RamFunc)        /* .RamFunc sections */
-    *(.RamFunc*)       /* .RamFunc* sections */
 
     KEEP (*(.init))
     KEEP (*(.fini))
@@ -79,7 +75,7 @@ SECTIONS
     _etext = .;        /* define a global symbols at end of code */
   } >RAM
 
-  /* Constant data into "RAM" Ram type memory */
+  /* Constant data into "FLASH" Rom type memory */
   .rodata :
   {
     . = ALIGN(4);
@@ -143,6 +139,8 @@ SECTIONS
     _sdata = .;        /* create a global symbol at data start */
     *(.data)           /* .data sections */
     *(.data*)          /* .data* sections */
+    *(.RamFunc)        /* .RamFunc sections */
+    *(.RamFunc*)       /* .RamFunc* sections */
 
     . = ALIGN(4);
     _edata = .;        /* define a global symbol at data end */
