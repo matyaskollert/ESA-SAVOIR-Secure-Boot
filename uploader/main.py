@@ -728,7 +728,7 @@ class MainWindow(QMainWindow):
         try:
             # Create TEXT_COMMAND packet (using DEBUG_LOG type for bidirectional text)
             # Add newline to match printf format
-            message = text + "\r\n"
+            message = text
             packet = ECSSPacket(PacketType.DEBUG_LOG, 0, message.encode('utf-8'), is_telecommand=True)
             
             # Send header first, then data (to avoid UART FIFO overflow)

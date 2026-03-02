@@ -67,7 +67,7 @@ int16_t writeFlashSector(uint32_t sector, uint32_t address, uint32_t* buffer, ui
 		return 1;
 	}
 
-	printf("First address: 0x%08lx and first word: 0x%08lx\r\n", address, buffer[0]);
+	// printf("First address: 0x%08lx and first word: 0x%08lx\r\n", address, buffer[0]);
 
 	for (uint32_t i = 0; i < bufferSize; i++)
 	{

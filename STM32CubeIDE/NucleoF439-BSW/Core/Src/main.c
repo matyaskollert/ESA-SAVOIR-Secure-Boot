@@ -91,7 +91,7 @@ int _write(int fd, char *ptr, int len)
     return -1;
 }
 
-#define SMALL_RX_BUFFER_SIZE 3
+#define SMALL_RX_BUFFER_SIZE 1
 uint8_t mySmallRXBuffer[SMALL_RX_BUFFER_SIZE];
 
 /* USER CODE END 0 */
@@ -164,11 +164,6 @@ int main(void)
   			printf("Getting command packet data failed\r\n");
   		}
   	}
-  	
-  	printf("Received command packet: service_type=0x%02X, data_length=%d\r\n", 
-  	       cmd_header.service_type, cmd_header.data_length);
-
-  	// TODO: Split code into NOMINAL and STANDBY
 
   	char* choice = (char *)mySmallRXBuffer;
 

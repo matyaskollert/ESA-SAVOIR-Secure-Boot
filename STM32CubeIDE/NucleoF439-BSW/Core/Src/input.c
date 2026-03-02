@@ -73,12 +73,12 @@ int16_t receivePacketData(UART_HandleTypeDef* uart, uint8_t* buffer, uint16_t le
 		return 1;
 	}
 	
-	for (int i = 0; i < length; i++)
-	{
-		printf("%02X", buffer[i]);
-	}
-
-	printf("\r\n");
+//	for (int i = 0; i < length; i++)
+//	{
+//		printf("%02X", buffer[i]);
+//	}
+//
+//	printf("\r\n");
 
 	return 0;
 }
