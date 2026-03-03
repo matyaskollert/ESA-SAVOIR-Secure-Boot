@@ -401,7 +401,7 @@ class MainWindow(QMainWindow):
         self.keys_dir = Path(__file__).parent / "keys"
         
         self.setWindowTitle("STM32F4 Binary Uploader")
-        self.setMinimumSize(700, 750)
+        self.setMinimumSize(700, 600)
         
         self.init_ui()
         
@@ -411,13 +411,13 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central_widget)
         
         main_layout = QVBoxLayout(central_widget)
-        main_layout.setSpacing(15)
-        main_layout.setContentsMargins(20, 20, 20, 20)
+        main_layout.setSpacing(8)
+        main_layout.setContentsMargins(12, 10, 12, 10)
         
         # Title
         title_label = QLabel("STM32F4 Binary Uploader")
         title_font = QFont()
-        title_font.setPointSize(16)
+        title_font.setPointSize(13)
         title_font.setBold(True)
         title_label.setFont(title_font)
         title_label.setAlignment(Qt.AlignCenter)
@@ -426,6 +426,8 @@ class MainWindow(QMainWindow):
         # Connection group
         connection_group = QGroupBox("0. Serial Connection")
         connection_layout = QVBoxLayout()
+        connection_layout.setSpacing(6)
+        connection_layout.setContentsMargins(8, 8, 8, 8)
         
         # COM port selection row
         port_layout = QHBoxLayout()
@@ -434,11 +436,11 @@ class MainWindow(QMainWindow):
         
         self.com_port_combobox = QComboBox()
         self.com_port_combobox.setEditable(True)  # Allow custom input
-        self.com_port_combobox.setMinimumHeight(30)
+        self.com_port_combobox.setMinimumHeight(26)
         self.populate_com_ports()
         
         self.refresh_ports_button = QPushButton("Refresh")
-        self.refresh_ports_button.setMinimumHeight(30)
+        self.refresh_ports_button.setMinimumHeight(26)
         self.refresh_ports_button.clicked.connect(self.populate_com_ports)
         
         port_layout.addWidget(port_label)
@@ -450,11 +452,11 @@ class MainWindow(QMainWindow):
         button_layout = QHBoxLayout()
         
         self.connect_button = QPushButton("Connect")
-        self.connect_button.setMinimumHeight(35)
+        self.connect_button.setMinimumHeight(28)
         self.connect_button.clicked.connect(self.connect_to_board)
         
         self.disconnect_button = QPushButton("Disconnect")
-        self.disconnect_button.setMinimumHeight(35)
+        self.disconnect_button.setMinimumHeight(28)
         self.disconnect_button.setEnabled(False)
         self.disconnect_button.clicked.connect(self.disconnect_from_board)
         
@@ -472,10 +474,11 @@ class MainWindow(QMainWindow):
         # File selection group
         file_group = QGroupBox("1. Select Binary File")
         file_layout = QVBoxLayout()
+        file_layout.setContentsMargins(8, 8, 8, 8)
         
         file_select_layout = QHBoxLayout()
         self.select_button = QPushButton("Browse...")
-        self.select_button.setMinimumHeight(35)
+        self.select_button.setMinimumHeight(28)
         self.select_button.clicked.connect(self.select_file)
         
         self.file_label = QLabel("No file selected")
@@ -490,11 +493,14 @@ class MainWindow(QMainWindow):
         # Signature group
         sig_group = QGroupBox("2. Digital Signature")
         sig_layout = QVBoxLayout()
+        sig_layout.setContentsMargins(8, 8, 8, 8)
+        sig_layout.setSpacing(4)
         
         # Key options container
         self.key_options_widget = QWidget()
         key_options_layout = QVBoxLayout(self.key_options_widget)
-        key_options_layout.setContentsMargins(20, 0, 0, 0)
+        key_options_layout.setContentsMargins(12, 0, 0, 0)
+        key_options_layout.setSpacing(4)
         
         # Radio buttons for key generation/use
         self.key_button_group = QButtonGroup()
@@ -530,6 +536,8 @@ class MainWindow(QMainWindow):
         # Process group
         process_group = QGroupBox("3. Add Header and Process File")
         process_layout = QVBoxLayout()
+        process_layout.setContentsMargins(8, 8, 8, 8)
+        process_layout.setSpacing(6)
         
         # Version input
         version_layout = QHBoxLayout()
@@ -545,7 +553,7 @@ class MainWindow(QMainWindow):
         process_layout.addLayout(version_layout)
         
         self.process_button = QPushButton("Process File")
-        self.process_button.setMinimumHeight(40)
+        self.process_button.setMinimumHeight(32)
         self.process_button.setEnabled(False)
         self.process_button.clicked.connect(self.process_file)
         
@@ -556,15 +564,17 @@ class MainWindow(QMainWindow):
         # Upload group
         upload_group = QGroupBox("4. Upload to Device")
         upload_layout = QVBoxLayout()
+        upload_layout.setContentsMargins(8, 8, 8, 8)
+        upload_layout.setSpacing(6)
         
         # Upload and cancel buttons
         self.upload_button = QPushButton("UPLOAD to COM6")
-        self.upload_button.setMinimumHeight(40)
+        self.upload_button.setMinimumHeight(32)
         self.upload_button.setEnabled(False)
         self.upload_button.clicked.connect(self.upload_to_device)
         
         self.cancel_button = QPushButton("Cancel Upload")
-        self.cancel_button.setMinimumHeight(35)
+        self.cancel_button.setMinimumHeight(28)
         self.cancel_button.setEnabled(False)
         self.cancel_button.clicked.connect(self.cancel_upload)
         
@@ -575,7 +585,7 @@ class MainWindow(QMainWindow):
         
         # Progress bar
         self.progress_bar = QProgressBar()
-        self.progress_bar.setMinimumHeight(25)
+        self.progress_bar.setMinimumHeight(20)
         self.progress_bar.setValue(0)
         upload_layout.addWidget(self.progress_bar)
         
@@ -585,10 +595,11 @@ class MainWindow(QMainWindow):
         # Status/Log group
         log_group = QGroupBox("Status Log")
         log_layout = QVBoxLayout()
+        log_layout.setContentsMargins(8, 8, 8, 8)
         
         self.log_text = QTextEdit()
         self.log_text.setReadOnly(True)
-        self.log_text.setMinimumHeight(200)
+        self.log_text.setMinimumHeight(150)
         log_layout.addWidget(self.log_text)
         
         log_group.setLayout(log_layout)
@@ -597,13 +608,14 @@ class MainWindow(QMainWindow):
         # Text input group for sending commands
         input_group = QGroupBox("Send Command to Board")
         input_layout = QHBoxLayout()
+        input_layout.setContentsMargins(8, 8, 8, 8)
         
         self.text_input = QLineEdit()
         self.text_input.setPlaceholderText("Type command and press Enter...")
         self.text_input.returnPressed.connect(self.send_text_command)
         
         self.send_button = QPushButton("Send")
-        self.send_button.setMinimumHeight(30)
+        self.send_button.setMinimumHeight(26)
         self.send_button.clicked.connect(self.send_text_command)
         
         input_layout.addWidget(self.text_input, 1)
