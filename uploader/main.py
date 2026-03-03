@@ -9,7 +9,8 @@ from pathlib import Path
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QFileDialog, QTextEdit, QProgressBar, QGroupBox,
-    QSpinBox, QMessageBox, QCheckBox, QLineEdit, QRadioButton, QButtonGroup
+    QSpinBox, QMessageBox, QCheckBox, QLineEdit, QRadioButton, QButtonGroup,
+    QComboBox
 )
 from PySide6.QtCore import QThread, Signal, Qt
 from PySide6.QtGui import QFont
@@ -403,7 +404,6 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(700, 750)
         
         self.init_ui()
-        self.connect_to_board()  # Auto-connect on startup
         
     def init_ui(self):
         """Initialize the user interface."""
@@ -422,6 +422,52 @@ class MainWindow(QMainWindow):
         title_label.setFont(title_font)
         title_label.setAlignment(Qt.AlignCenter)
         main_layout.addWidget(title_label)
+        
+        # Connection group
+        connection_group = QGroupBox("0. Serial Connection")
+        connection_layout = QVBoxLayout()
+        
+        # COM port selection row
+        port_layout = QHBoxLayout()
+        port_label = QLabel("COM Port:")
+        port_label.setMinimumWidth(80)
+        
+        self.com_port_combobox = QComboBox()
+        self.com_port_combobox.setEditable(True)  # Allow custom input
+        self.com_port_combobox.setMinimumHeight(30)
+        self.populate_com_ports()
+        
+        self.refresh_ports_button = QPushButton("Refresh")
+        self.refresh_ports_button.setMinimumHeight(30)
+        self.refresh_ports_button.clicked.connect(self.populate_com_ports)
+        
+        port_layout.addWidget(port_label)
+        port_layout.addWidget(self.com_port_combobox, 1)
+        port_layout.addWidget(self.refresh_ports_button)
+        connection_layout.addLayout(port_layout)
+        
+        # Connect/Disconnect buttons row
+        button_layout = QHBoxLayout()
+        
+        self.connect_button = QPushButton("Connect")
+        self.connect_button.setMinimumHeight(35)
+        self.connect_button.clicked.connect(self.connect_to_board)
+        
+        self.disconnect_button = QPushButton("Disconnect")
+        self.disconnect_button.setMinimumHeight(35)
+        self.disconnect_button.setEnabled(False)
+        self.disconnect_button.clicked.connect(self.disconnect_from_board)
+        
+        self.connection_status_label = QLabel("Not connected")
+        self.connection_status_label.setStyleSheet("color: #cc0000; font-weight: bold; padding: 5px;")
+        
+        button_layout.addWidget(self.connect_button)
+        button_layout.addWidget(self.disconnect_button)
+        button_layout.addWidget(self.connection_status_label, 1)
+        connection_layout.addLayout(button_layout)
+        
+        connection_group.setLayout(connection_layout)
+        main_layout.addWidget(connection_group)
         
         # File selection group
         file_group = QGroupBox("1. Select Binary File")
@@ -686,34 +732,118 @@ class MainWindow(QMainWindow):
             self.log(f"ERROR: {str(e)}")
             self.reset_ui()
     
+    def populate_com_ports(self):
+        """Populate the COM port combobox with available ports."""
+        current_text = self.com_port_combobox.currentText()
+        self.com_port_combobox.clear()
+        
+        available_ports = [p.device for p in serial.tools.list_ports.comports()]
+        if available_ports:
+            self.com_port_combobox.addItems(available_ports)
+            # Try to restore previous selection
+            if current_text:
+                index = self.com_port_combobox.findText(current_text)
+                if index >= 0:
+                    self.com_port_combobox.setCurrentIndex(index)
+            # Only log if log_text widget exists (not during initial UI setup)
+            if hasattr(self, 'log_text'):
+                self.log(f"Found {len(available_ports)} COM port(s): {', '.join(available_ports)}")
+        else:
+            self.com_port_combobox.addItem("COM6")  # Default fallback
+            if hasattr(self, 'log_text'):
+                self.log("No COM ports detected. You can enter one manually.")
+    
     def connect_to_board(self):
         """Connect to the board and start packet receiver thread."""
+        port = self.com_port_combobox.currentText().strip()
+        if not port:
+            self.log("ERROR: Please select or enter a COM port")
+            return
+        
         try:
-            port = 'COM6'  # Default port
             baudrate = 115200
             
+            # Check if already connected
+            if self.serial_port and self.serial_port.is_open:
+                self.log(f"Already connected to {self.serial_port.port}")
+                return
+            
+            self.log(f"Attempting to connect to {port}...")
+            
             # Try to open serial port
-            ports = [p.device for p in serial.tools.list_ports.comports()]
-            if port in ports:
-                self.serial_port = serial.Serial(port, baudrate, timeout=1)
-                time.sleep(0.5)
-                
-                # Start packet receiver thread
-                self.receiver_thread = PacketReceiverThread(self.serial_port)
-                self.receiver_thread.debug_message.connect(self.log_uart_data)
-                self.receiver_thread.connection_lost.connect(self.on_connection_lost)
-                self.receiver_thread.start()
-                
-                self.log(f"Connected to {port} at {baudrate} baud")
-                self.log("Packet receiver thread started")
-            else:
-                self.log(f"Warning: {port} not found. Connect board and restart application.")
+            self.serial_port = serial.Serial(port, baudrate, timeout=1)
+            time.sleep(0.5)
+            
+            # Start packet receiver thread
+            self.receiver_thread = PacketReceiverThread(self.serial_port)
+            self.receiver_thread.debug_message.connect(self.log_uart_data)
+            self.receiver_thread.connection_lost.connect(self.on_connection_lost)
+            self.receiver_thread.start()
+            
+            self.log(f"✓ Connected to {port} at {baudrate} baud")
+            self.log("Packet receiver thread started")
+            
+            # Update UI
+            self.connect_button.setEnabled(False)
+            self.disconnect_button.setEnabled(True)
+            self.com_port_combobox.setEnabled(False)
+            self.refresh_ports_button.setEnabled(False)
+            self.connection_status_label.setText(f"Connected to {port}")
+            self.connection_status_label.setStyleSheet("color: #00aa00; font-weight: bold; padding: 5px;")
+            self.upload_button.setText(f"UPLOAD to {port}")
+            
+        except serial.SerialException as e:
+            self.log(f"ERROR: Failed to connect to {port}: {str(e)}")
+            QMessageBox.critical(
+                self,
+                "Connection Error",
+                f"Failed to open {port}\n\n{str(e)}\n\n"
+                "Please check that:\n"
+                "• The device is connected\n"
+                "• The correct COM port is selected\n"
+                "• No other application is using this port"
+            )
         except Exception as e:
-            self.log(f"Error connecting to board: {str(e)}")
+            self.log(f"ERROR: Unexpected error connecting to board: {str(e)}")
+    
+    def disconnect_from_board(self):
+        """Disconnect from the board."""
+        try:
+            # Stop receiver thread
+            if self.receiver_thread and self.receiver_thread.isRunning():
+                self.receiver_thread.stop()
+                self.receiver_thread.wait()
+                self.receiver_thread = None
+            
+            # Close serial port
+            if self.serial_port and self.serial_port.is_open:
+                port_name = self.serial_port.port
+                self.serial_port.close()
+                self.serial_port = None
+                self.log(f"✓ Disconnected from {port_name}")
+            
+            # Update UI
+            self.connect_button.setEnabled(True)
+            self.disconnect_button.setEnabled(False)
+            self.com_port_combobox.setEnabled(True)
+            self.refresh_ports_button.setEnabled(True)
+            self.connection_status_label.setText("Not connected")
+            self.connection_status_label.setStyleSheet("color: #cc0000; font-weight: bold; padding: 5px;")
+            self.upload_button.setText("UPLOAD")
+            
+        except Exception as e:
+            self.log(f"ERROR: Error while disconnecting: {str(e)}")
     
     def on_connection_lost(self):
         """Handle connection loss."""
         self.log("ERROR: Connection to board lost!")
+        # Reset UI to disconnected state
+        self.connect_button.setEnabled(True)
+        self.disconnect_button.setEnabled(False)
+        self.com_port_combobox.setEnabled(True)
+        self.refresh_ports_button.setEnabled(True)
+        self.connection_status_label.setText("Connection lost")
+        self.connection_status_label.setStyleSheet("color: #cc0000; font-weight: bold; padding: 5px;")
         
     def send_text_command(self):
         """Send text command to board as ECSS packet."""
@@ -827,12 +957,8 @@ class MainWindow(QMainWindow):
             self.uploader_thread.stop()
             self.uploader_thread.wait()
         
-        if self.receiver_thread and self.receiver_thread.isRunning():
-            self.receiver_thread.stop()
-            self.receiver_thread.wait()
-        
-        if self.serial_port and self.serial_port.is_open:
-            self.serial_port.close()
+        # Disconnect from board
+        self.disconnect_from_board()
         
         event.accept()
 
