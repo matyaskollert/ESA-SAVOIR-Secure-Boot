@@ -108,7 +108,7 @@ int main(void)
   MX_USART3_UART_Init();
   /* USER CODE BEGIN 2 */
 
-  HAL_Delay(2000);
+  HAL_Delay(200);
 
   /* USER CODE END 2 */
 

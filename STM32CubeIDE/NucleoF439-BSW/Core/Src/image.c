@@ -140,7 +140,6 @@ void imageStart()
 	uint32_t appVector = BOOT_RAM_ADDRESS + IMAGE_OFFSET;
 
 	printf("App Vector: 0x%08lX\r\n", appVector);
-	HAL_Delay(1000);
 
 	// Disable interrupts
 	__disable_irq();

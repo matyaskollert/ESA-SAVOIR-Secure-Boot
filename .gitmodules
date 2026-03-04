@@ -1,3 +1,0 @@
-[submodule "STM32CubeIDE/BSW/tinyusb"]
-	path = STM32CubeIDE/BSW/tinyusb
-	url = git@github.com:hathach/tinyusb.git

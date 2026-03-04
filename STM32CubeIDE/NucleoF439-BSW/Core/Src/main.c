@@ -143,8 +143,6 @@ int main(void)
 		NVIC_SystemReset();
 	}
 
-    HAL_Delay(3000);
-
     printf("Bootloader loaded, enter '1' for boot or '2' for upload, '3' for swap, '4' to check image versions\r\n");
 
   	// Receive command as ECSS packet
@@ -258,7 +256,6 @@ int main(void)
   	else if (choice[0] == '4')
   	{
   		printImageHeaders();
-  		HAL_Delay(1000);
   		NVIC_SystemReset();
   	}
   	else
