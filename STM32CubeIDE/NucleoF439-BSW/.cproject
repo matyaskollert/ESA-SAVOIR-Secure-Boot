@@ -183,6 +183,9 @@
 		</scannerConfigBuildInfo>
 	</storageModule>
 	<storageModule moduleId="refreshScope" versionNumber="2">
+		<configuration configurationName="ReleaseFromDebug">
+			<resource resourceType="PROJECT" workspacePath="/NucleoF439-BSW"/>
+		</configuration>
 		<configuration configurationName="Debug">
 			<resource resourceType="PROJECT" workspacePath="/NucleoF439-BSW"/>
 		</configuration>

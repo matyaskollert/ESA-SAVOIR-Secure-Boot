@@ -226,19 +226,22 @@ int main(void)
   			NVIC_SystemReset();
   		}
   		
+  		if (checkUpdateVersion() != 0)
+		{
+			printf("Cannot update - rollback protection\r\n");
+			sendNackPacket(&huart3, cmd_header.sequence_count, 9);
+			// no point staying in SWAP mode
+			setupSystemForNominal();
+			NVIC_SystemReset();
+		}
+
   		// System ready - send ACK
   		if (sendAckPacket(&huart3, cmd_header.sequence_count) != 0)
   		{
   			printf("Error sending ACK for command\r\n");
   		}
   		
-  		if (checkUpdateVersion() != 0)
-  		{
-  			printf("Cannot update - rollback protection");
-  			// no point staying in SWAP mode
-  			setupSystemForNominal();
-  			NVIC_SystemReset();
-  		}
+
   		if (swapBootWithUpdate() != 0)
   		{
   			printf("Swapping images failed\r\n");
@@ -255,6 +258,10 @@ int main(void)
   	}
   	else if (choice[0] == '4')
   	{
+  		if (sendAckPacket(&huart3, cmd_header.sequence_count) != 0)
+		{
+			printf("Error sending ACK for command\r\n");
+		}
   		printImageHeaders();
   		NVIC_SystemReset();
   	}

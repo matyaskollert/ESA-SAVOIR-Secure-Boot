@@ -135,29 +135,39 @@ int16_t imageLoad(ImageSlot slot) {
 	return 0;
 }
 
-void imageStart()
+__attribute__((noreturn))
+void imageStart(void)
 {
-	uint32_t appVector = BOOT_RAM_ADDRESS + IMAGE_OFFSET;
+    uint32_t appVector = BOOT_RAM_ADDRESS + IMAGE_OFFSET;
 
-	printf("App Vector: 0x%08lX\r\n", appVector);
+    printf("App Vector: 0x%08lX\r\n", appVector);
 
-	// Disable interrupts
-	__disable_irq();
+    __disable_irq();
 
-	// (optional) Disable SysTick
-	SysTick->CTRL = 0;
+    SysTick->CTRL = 0;
 
-	// Set vector table for the ASW
-	SCB->VTOR = appVector;
+    /* Disable all interrupts */
+    for (int i = 0; i < 8; i++) {
+        NVIC->ICER[i] = 0xFFFFFFFF;
+        NVIC->ICPR[i] = 0xFFFFFFFF;
+    }
 
-	// Fetch MSP and ResetHandler
-	uint32_t mspValue = *(volatile uint32_t *)(appVector);
-	uint32_t resetHandler = *(volatile uint32_t *)(appVector + 4);
+    HAL_DeInit();
 
-	HAL_DeInit();
+    uint32_t mspValue     = *(volatile uint32_t *)(appVector);
+    uint32_t resetHandler = *(volatile uint32_t *)(appVector + 4);
 
-	__set_MSP(mspValue);
+    SCB->VTOR = appVector;
 
-	// Jump to ASW
-	((void (*)(void))resetHandler)();
+    __DSB();
+    __ISB();
+
+    __set_MSP(mspValue);
+
+    __DSB();
+    __ISB();
+
+    ((void (*)(void))resetHandler)();
+
+    while (1);  // Should never reach here
 }

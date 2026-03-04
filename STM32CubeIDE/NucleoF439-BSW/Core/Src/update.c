@@ -175,6 +175,8 @@ int16_t receiveUpdateData(UART_HandleTypeDef* uart)
 		sendAckPacket(uart, header.sequence_count);
 	}
 	
+	// TODO: Check CRC and Digital Signature before storing in flash
+
 	// Write to flash
 	printf("Writing to flash...\r\n");
 	writeFlashSector(UPDATE_FLASH_SECTOR, UPDATE_FLASH_ADDRESS, 

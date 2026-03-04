@@ -1,11 +1,13 @@
 LaunchTargetManager/org.eclipse.launchbar.core.launchTargetType.local,Local/arch=x86_64
 LaunchTargetManager/org.eclipse.launchbar.core.launchTargetType.local,Local/name=Local
 LaunchTargetManager/org.eclipse.launchbar.core.launchTargetType.local,Local/os=win32
-configDescList=org.eclipse.cdt.dsf.gdb.gdbRemotedescriptorType\:Custom-stm32f4-bootloader,org.eclipse.cdt.dsf.gdb.gdbRemotedescriptorType\:NucleoF439-BSW (1),org.eclipse.cdt.dsf.gdb.gdbRemotedescriptorType\:NucleoF439-BSW Debug,org.eclipse.cdt.dsf.gdb.gdbRemotedescriptorType\:NucleoF439-ASW
+configDescList=org.eclipse.cdt.dsf.gdb.gdbRemotedescriptorType\:NucleoF439-ASW,org.eclipse.cdt.dsf.gdb.gdbRemotedescriptorType\:NucleoF439-BSW-Debug,org.eclipse.cdt.dsf.gdb.gdbRemotedescriptorType\:NucleoF439-BSW-Release
 eclipse.preferences.version=1
 org.eclipse.cdt.dsf.gdb.gdbRemotedescriptorType\:Custom-stm32f4-bootloader/activeLaunchMode=run
 org.eclipse.cdt.dsf.gdb.gdbRemotedescriptorType\:Custom-stm32f4-bootloader/activeLaunchTarget=null\:---
+org.eclipse.cdt.dsf.gdb.gdbRemotedescriptorType\:NucleoF439-ASW/activeLaunchMode=debug
 org.eclipse.cdt.dsf.gdb.gdbRemotedescriptorType\:NucleoF439-BSW\ Debug/activeLaunchMode=run
+org.eclipse.cdt.dsf.gdb.gdbRemotedescriptorType\:NucleoF439-BSW/activeLaunchMode=run
 org.eclipse.cdt.dsf.gdb.gdbRemotedescriptorType\:SecureBoot-1-App/activeLaunchMode=run
 org.eclipse.cdt.dsf.gdb.gdbRemotedescriptorType\:app1\ Debug/activeLaunchTarget=null\:---
 org.eclipse.launchbar.core.descriptorType.default\:Custom-stm32f4-bootloader/activeLaunchMode=run

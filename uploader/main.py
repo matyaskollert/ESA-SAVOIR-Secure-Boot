@@ -386,6 +386,57 @@ class UploaderThread(QThread):
         self._is_running = False
 
 
+class CommandSenderThread(QThread):
+    """Worker thread for sending a command packet and waiting for ACK/NACK."""
+    finished = Signal(bool, str)  # success, message
+
+    def __init__(self, serial_port, receiver_thread, command_text):
+        super().__init__()
+        self.serial_port = serial_port
+        self.receiver_thread = receiver_thread
+        self.command_text = command_text
+        self.ack_timeout = 2.0
+
+    def run(self):
+        try:
+            ser = self.serial_port
+            if not ser or not ser.is_open:
+                self.finished.emit(False, "Not connected to board!")
+                return
+
+            packet = create_command_packet(0, self.command_text)
+            header = packet.pack_header()
+            data = packet.data
+
+            ser.write(header)
+            ser.flush()
+            time.sleep(0.01)
+            if len(data) > 0:
+                ser.write(data)
+                ser.flush()
+
+            # Wait for ACK/NACK
+            start_time = time.time()
+            while (time.time() - start_time) < self.ack_timeout:
+                pkt = self.receiver_thread.get_packet(timeout=0.1)
+                if pkt:
+                    if pkt.service_type == PacketType.ACK:
+                        self.finished.emit(True, f"ACK received (seq {pkt.sequence_count})")
+                        return
+                    elif pkt.service_type == PacketType.NACK:
+                        error_code = pkt.data[0] if len(pkt.data) > 0 else 0
+                        desc = NackReceivedException.ERROR_DESCRIPTIONS.get(error_code, f"Unknown error code: {error_code}")
+                        self.finished.emit(False, f"NACK received - error {error_code}: {desc}")
+                        return
+                    else:
+                        self.finished.emit(False, f"Unexpected packet type: {pkt.service_type}")
+                        return
+
+            self.finished.emit(False, "Timeout waiting for ACK")
+        except Exception as e:
+            self.finished.emit(False, f"Error: {str(e)}")
+
+
 class MainWindow(QMainWindow):
     """Main application window."""
     
@@ -394,6 +445,7 @@ class MainWindow(QMainWindow):
         self.selected_file = None
         self.patched_file = None
         self.uploader_thread = None
+        self.command_thread = None
         self.receiver_thread = None
         self.serial_port = None
         self.image_version = 1
@@ -858,37 +910,39 @@ class MainWindow(QMainWindow):
         self.connection_status_label.setStyleSheet("color: #cc0000; font-weight: bold; padding: 5px;")
         
     def send_text_command(self):
-        """Send text command to board as ECSS packet."""
+        """Send text command to board as ECSS command packet and wait for ACK/NACK."""
         if not self.serial_port or not self.serial_port.is_open:
             self.log("ERROR: Not connected to board!")
             return
-        
+
+        if not self.receiver_thread:
+            self.log("ERROR: Receiver thread not running!")
+            return
+
         text = self.text_input.text().strip()
         if not text:
             return
-        
+
         try:
-            # Create TEXT_COMMAND packet (using DEBUG_LOG type for bidirectional text)
-            # Add newline to match printf format
-            message = text
-            packet = ECSSPacket(PacketType.DEBUG_LOG, 0, message.encode('utf-8'), is_telecommand=True)
-            
-            # Send header first, then data (to avoid UART FIFO overflow)
-            header = packet.pack_header()
-            data = packet.data
-            
-            self.serial_port.write(header)
-            self.serial_port.flush()
-            time.sleep(0.01)  # Small delay for firmware to start receiving
-            if len(data) > 0:
-                self.serial_port.write(data)
-                self.serial_port.flush()
-            
-            self.log(f"Sent: {text}")
+            self.log(f"Sending command: {text}")
             self.text_input.clear()
-            
+            self.send_button.setEnabled(False)
+
+            self.command_thread = CommandSenderThread(self.serial_port, self.receiver_thread, text)
+            self.command_thread.finished.connect(self.on_command_finished)
+            self.command_thread.start()
+
         except Exception as e:
             self.log(f"Error sending command: {str(e)}")
+            self.send_button.setEnabled(True)
+
+    def on_command_finished(self, success, message):
+        """Handle command send completion."""
+        if success:
+            self.log(f"\u2713 Command acknowledged: {message}")
+        else:
+            self.log(f"\u2717 Command failed: {message}")
+        self.send_button.setEnabled(True)
     
     def cancel_upload(self):
         """Cancel the ongoing upload."""
