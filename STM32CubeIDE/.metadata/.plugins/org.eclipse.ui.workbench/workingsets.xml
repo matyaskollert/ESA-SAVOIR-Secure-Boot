@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<workingSetManager>
-<workingSet editPageId="org.eclipse.ui.resourceWorkingSetPage" factoryID="org.eclipse.ui.internal.WorkingSetFactory" id="1772114355900_2" label="MainBSW" name="MainBSW">
-<item factoryID="org.eclipse.ui.internal.model.ResourceFactory" path="/NucleoF439-ASW/Core" type="2"/>
-<item factoryID="org.eclipse.ui.internal.model.ResourceFactory" path="/NucleoF439-BSW/Core" type="2"/>
-</workingSet>
-<workingSet aggregate="true" factoryID="org.eclipse.ui.internal.WorkingSetFactory" id="1764160666392_0" label="Window Working Set" name="Aggregate for window 1764160666392"/>
-<workingSet aggregate="true" factoryID="org.eclipse.ui.internal.WorkingSetFactory" id="1764614711651_1" label="Window Working Set" name="Aggregate for window 1764614711651"/>
-</workingSetManager>
