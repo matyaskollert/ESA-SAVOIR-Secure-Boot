@@ -1,3 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<session version="1.0">&#x0A;<refactoring comment="Delete resource &apos;Custom-stm32f4-bootloader&apos;" deleteContents="false" description="Delete resource &apos;Custom-stm32f4-bootloader&apos;" element1="/Custom-stm32f4-bootloader" flags="7" id="org.eclipse.ltk.core.refactoring.delete.resources" resources="1" stamp="1764161928645"/>&#x0A;<refactoring comment="Delete resource &apos;app&apos;" deleteContents="false" description="Delete resource &apos;app&apos;" element1="/app" flags="7" id="org.eclipse.ltk.core.refactoring.delete.resources" resources="1" stamp="1764161933512"/>
-</session>

@@ -21,6 +21,9 @@ const image_header_t* imageGetHeader(ImageSlot slot)
 		break;
 	case SWAP:
 		header = (const image_header_t *)SWAP_FLASH_ADDRESS;
+		break;
+	default:
+		return NULL;
 	}
 
 	if (header && header->imageMagic == IMAGE_MAGIC)
@@ -171,3 +174,30 @@ void imageStart(void)
 
     while (1);  // Should never reach here
 }
+
+//void imageStart()
+//{
+//	uint32_t appVector = BOOT_RAM_ADDRESS + IMAGE_OFFSET;
+//
+//	printf("App Vector: 0x%08lX\r\n", appVector);
+//
+//	// Disable interrupts
+//	__disable_irq();
+//
+//	// (optional) Disable SysTick
+//	SysTick->CTRL = 0;
+//
+//	// Set vector table for the ASW
+//	SCB->VTOR = appVector;
+//
+//	// Fetch MSP and ResetHandler
+//	uint32_t mspValue = *(volatile uint32_t *)(appVector);
+//	uint32_t resetHandler = *(volatile uint32_t *)(appVector + 4);
+//
+//	HAL_DeInit();
+//
+//	__set_MSP(mspValue);
+//
+//	// Jump to ASW
+//	((void (*)(void))resetHandler)();
+//}
