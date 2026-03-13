@@ -10,6 +10,6 @@
 
 #include "stm32f4xx_hal.h"
 
-int16_t boot();
+int16_t boot(void);
 
 #endif /* INC_BOOT_H_ */

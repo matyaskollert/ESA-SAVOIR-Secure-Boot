@@ -16,8 +16,8 @@ int16_t enableSectorWriteProtection(uint32_t sectorMask);
 
 int16_t checkSectorWriteProtection(uint32_t sectorMask);
 
-int16_t prepareOBForSwap();
+int16_t prepareOBForSwap(void);
 
-int16_t lockOBAfterSwap();
+int16_t lockOBAfterSwap(void);
 
 #endif /* INC_OPTION_BYTES_H_ */

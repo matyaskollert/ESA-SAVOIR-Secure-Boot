@@ -8,7 +8,7 @@
 
 #include "self_test.h"
 
-int16_t performSelfTests()
+int16_t performSelfTests(void)
 {
 	return 0;
 }

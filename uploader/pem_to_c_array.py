@@ -2,10 +2,12 @@
 Convert a public key file to a C byte array suitable for embedding in firmware.
 
 Supported key formats:
-  .pem  — ECDSA P-256 public key (DER-encoded SubjectPublicKeyInfo).
+  .pem  — ECDSA P-256 public key (PEM-encoded SubjectPublicKeyInfo).
           Consumed by wolfSSL's wc_EccPublicKeyDecode().
-  .bin  — ML-DSA raw public key (1312 bytes for ML-DSA-44 / 1952 for ML-DSA-65).
-          Consumed by wolfSSL's wc_dilithium_import_public().
+  .der  — DER-encoded SubjectPublicKeyInfo (ECDSA or RSA public key).
+          Consumed by wolfSSL's wc_EccPublicKeyDecode() / wc_RsaPublicKeyDecode().
+  .bin  — Raw public key bytes (ML-DSA or LMS).
+          Consumed by wolfSSL's wc_dilithium_import_public() / wc_LmsKey_ImportPubRaw().
 
 Usage:
   python pem_to_c_array.py <key_file> [array_name]
@@ -15,11 +17,12 @@ from pathlib import Path
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.backends import default_backend
 
-# ML-DSA raw public-key sizes by parameter set
-_MLDSA_PK_SIZES = {
-    1312: "ML-DSA-44 (NIST level 2)",
-    1952: "ML-DSA-65 (NIST level 3)",
-    2592: "ML-DSA-87 (NIST level 5)",
+# Known raw public-key sizes → human-readable label
+_RAW_PK_LABELS = {
+    60:   "LMS-SHA256-H5-W8 public key — raw bytes for wc_LmsKey_ImportPubRaw()",
+    1312: "ML-DSA-44 public key — raw bytes for wc_dilithium_import_public()",
+    1952: "ML-DSA-65 public key — raw bytes for wc_dilithium_import_public()",
+    2592: "ML-DSA-87 public key — raw bytes for wc_dilithium_import_public()",
 }
 
 
@@ -64,22 +67,45 @@ def pem_to_c_array(pem_file_path: str, array_name: str = "pubKey") -> None:
     )
 
 
-def mldsa_bin_to_c_array(bin_file_path: str, array_name: str = "pubKey") -> None:
+def bin_to_c_array(bin_file_path: str, array_name: str = "pubKey") -> None:
     """
-    Convert an ML-DSA raw public-key binary file (.bin) to a C byte array.
-    The raw bytes are passed directly to wolfSSL's wc_dilithium_import_public().
+    Convert a raw public-key binary file (.bin) to a C byte array.
+    Supports ML-DSA (wc_dilithium_import_public) and LMS (wc_LmsKey_ImportPubRaw).
     """
     raw_bytes = Path(bin_file_path).read_bytes()
+    label = _RAW_PK_LABELS.get(len(raw_bytes), f"raw public key ({len(raw_bytes)} bytes)")
+    _print_c_array(label=label, source_name=Path(bin_file_path).name,
+                   raw_bytes=raw_bytes, array_name=array_name)
 
-    param_set = _MLDSA_PK_SIZES.get(len(raw_bytes), f"ML-DSA (unknown — {len(raw_bytes)} bytes)")
-    label = f"ML-DSA Public Key — raw bytes for wc_dilithium_import_public() — {param_set}"
 
-    _print_c_array(
-        label=label,
-        source_name=Path(bin_file_path).name,
-        raw_bytes=raw_bytes,
-        array_name=array_name,
-    )
+def mldsa_bin_to_c_array(bin_file_path: str, array_name: str = "pubKey") -> None:
+    """Alias kept for backwards compatibility."""
+    bin_to_c_array(bin_file_path, array_name)
+
+
+def der_to_c_array(der_file_path: str, array_name: str = "pubKey") -> None:
+    """
+    Convert a DER-encoded SubjectPublicKeyInfo file (.der) to a C byte array.
+    Works for both ECDSA (wc_EccPublicKeyDecode) and RSA (wc_RsaPublicKeyDecode).
+    """
+    raw_bytes = Path(der_file_path).read_bytes()
+
+    # Try to determine algorithm from the DER for a nicer label
+    try:
+        from cryptography.hazmat.primitives.asymmetric import ec, rsa
+        key = serialization.load_der_public_key(raw_bytes, backend=default_backend())
+        if isinstance(key, ec.EllipticCurvePublicKey):
+            label = f"ECDSA {key.curve.name} public key — DER SubjectPublicKeyInfo for wc_EccPublicKeyDecode()"
+        elif isinstance(key, rsa.RSAPublicKey):
+            bits = key.key_size
+            label = f"RSA-{bits} public key — DER SubjectPublicKeyInfo for wc_RsaPublicKeyDecode()"
+        else:
+            label = f"DER SubjectPublicKeyInfo ({len(raw_bytes)} bytes)"
+    except Exception:
+        label = f"DER SubjectPublicKeyInfo ({len(raw_bytes)} bytes)"
+
+    _print_c_array(label=label, source_name=Path(der_file_path).name,
+                   raw_bytes=raw_bytes, array_name=array_name)
 
 
 if __name__ == "__main__":
@@ -98,7 +124,9 @@ if __name__ == "__main__":
     if suffix == ".pem":
         pem_to_c_array(key_file, arr_name)
     elif suffix == ".bin":
-        mldsa_bin_to_c_array(key_file, arr_name)
+        bin_to_c_array(key_file, arr_name)
+    elif suffix == ".der":
+        der_to_c_array(key_file, arr_name)
     else:
-        print(f"Error: Unsupported file extension '{suffix}'. Use .pem (ECDSA) or .bin (ML-DSA).")
+        print(f"Error: Unsupported file extension '{suffix}'. Use .pem, .der, or .bin.")
         sys.exit(1)

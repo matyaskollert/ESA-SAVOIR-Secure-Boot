@@ -10,6 +10,6 @@
 
 #include "stm32f4xx_hal.h"
 
-int16_t performSelfTests();
+int16_t performSelfTests(void);
 
 #endif /* INC_SELF_TEST_H_ */

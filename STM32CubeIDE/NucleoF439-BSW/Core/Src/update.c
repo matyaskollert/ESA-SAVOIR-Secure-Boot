@@ -186,7 +186,7 @@ int16_t receiveUpdateData(UART_HandleTypeDef* uart)
 	return 0;
 }
 
-int16_t swapBootWithUpdate()
+int16_t swapBootWithUpdate(void)
 {
 	// TODO: Error handling?
 	writeFlashSector(SWAP_FLASH_SECTOR, SWAP_FLASH_ADDRESS, (uint32_t *)BOOT_FLASH_ADDRESS, FLASH_SECTOR_SIZE);
@@ -195,7 +195,7 @@ int16_t swapBootWithUpdate()
 	return 0;
 }
 
-uint32_t getBootloaderStatus() {
+uint32_t getBootloaderStatus(void) {
 	uint32_t status = *((uint32_t*)COMM_FLASH_ADDRESS);
 	return status;
 }
@@ -221,7 +221,7 @@ int16_t setBootloaderStatus(uint32_t newStatus)
 	return 0;
 }
 
-int16_t setupSystemForImageSwap()
+int16_t setupSystemForImageSwap(void)
 {
 	if (setBootloaderStatus(123) != 0)
 	{
@@ -239,7 +239,7 @@ int16_t setupSystemForImageSwap()
 	return 0;
 }
 
-int16_t checkSystemForImageSwap()
+int16_t checkSystemForImageSwap(void)
 {
 	if (getBootloaderStatus() != 123)
 	{
@@ -255,7 +255,7 @@ int16_t checkSystemForImageSwap()
 	return 0;
 }
 
-int16_t setupSystemForNominal()
+int16_t setupSystemForNominal(void)
 {
 	if (setBootloaderStatus(321) != 0)
 	{
@@ -274,7 +274,7 @@ int16_t setupSystemForNominal()
 	return 0;
 }
 
-int16_t checkSystemForNominal()
+int16_t checkSystemForNominal(void)
 {
 	// TODO: Decide if we should check the STATUS here
 	uint32_t sectorMask = COUNTER_FLASH_OB_SECTOR | BOOT_FLASH_OB_SECTOR;
@@ -286,13 +286,13 @@ int16_t checkSystemForNominal()
 	return 0;
 }
 
-int16_t setupSystemForUpdate()
+int16_t setupSystemForUpdate(void)
 {
 	// TODO: Do we need to UNLOCK update and swap since they should never be locked??
 	return setupSystemForNominal();
 }
 
-int16_t checkSystemForUpdate()
+int16_t checkSystemForUpdate(void)
 {
 	// TODO: Decide if we should check the STATUS here
 	// TODO: This could be done in one step?
@@ -312,7 +312,7 @@ int16_t checkSystemForUpdate()
 	return 0;
 }
 
-int16_t checkUpdateVersion()
+int16_t checkUpdateVersion(void)
 {
 	// First we need to Verify the CRC + digital signature so the version cannot be modified
 	if (imageLoad(UPDATE) != 0)
@@ -331,7 +331,7 @@ int16_t checkUpdateVersion()
 	return 0;
 }
 
-uint32_t getLowestAllowedVersion()
+uint32_t getLowestAllowedVersion(void)
 {
 	uint32_t counterValue = getCounterValue();
 	if (ROLLBACK_WINDOW >= counterValue) {
@@ -341,7 +341,7 @@ uint32_t getLowestAllowedVersion()
 	return lowestAllowedVersion;
 }
 
-uint32_t getCounterValue() {
+uint32_t getCounterValue(void) {
 	uint32_t counterValue = *((uint32_t*)COUNTER_FLASH_ADDRESS);
 	return counterValue;
 }
@@ -367,7 +367,7 @@ int16_t setCounterValue(uint32_t newValue)
 	return 0;
 }
 
-int32_t updateRollbackCounter()
+int32_t updateRollbackCounter(void)
 {
 	uint32_t counterValue = getCounterValue();
 	const image_header_t* bootImage = (const image_header_t *)(BOOT_FLASH_ADDRESS);
