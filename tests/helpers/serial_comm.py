@@ -50,7 +50,7 @@ def _parse_header(raw: bytes) -> dict:
     vtf, svc, seq, dlen, chk = struct.unpack(">BBHHB", raw)
     calc = 0
     for b in raw[:6]:
-        print(f"0x{b:02X}")
+        # print(f"0x{b:02X}")
         calc ^= b
     if chk != calc:
         print(f"Header checksum mismatch: raw={raw.hex()} vtf={vtf:02X} svc={svc:02X} seq={seq} dlen={dlen} chk={chk:02X} calc={calc:02X}")
@@ -134,15 +134,13 @@ class BootloaderSession:
         """Read exactly *n* bytes, raising TimeoutError if not received in time."""
         buf = b""
         deadline = time.monotonic() + timeout
-        while len(buf) < n:
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                raise TimeoutError(
-                    f"Timed out waiting for {n} bytes; received {len(buf)}"
-                )
-            self._ser.timeout = min(remaining, 0.05)
-            chunk = self._ser.read(n - len(buf))
-            buf += chunk
+        while self._ser.in_waiting < n:
+            if time.monotonic() > deadline:
+                raise TimeoutError(f"Timed out waiting for {n} bytes (got {len(buf)})")
+            time.sleep(0.001)
+        
+        if self._ser.in_waiting >= n:
+            buf = self._ser.read(n)
         return buf
 
     def _receive_packet(self, timeout: float) -> dict:
@@ -157,6 +155,7 @@ class BootloaderSession:
         if meta["service_type"] == PacketType.DEBUG_LOG:
             meta["raw_debug"] = data.decode("utf-8", errors="replace")
             print(f"Received DEBUG_LOG: {meta['raw_debug']}")
+            # print("Raw DEBUG_LOG:", " ".join(f"0x{b:02X}" for b in data))
         return meta
 
     def wait_for_ack(self, expected_sequence: Optional[int] = None, timeout: Optional[float] = None) -> dict:
@@ -199,6 +198,12 @@ class BootloaderSession:
             try:
                 pkt = self._receive_packet(0.1)
             except TimeoutError:
+                # No data in the 0.1s slice — keep waiting until outer deadline.
+                continue
+            except ValueError as e:
+                # Invalid/corrupt header: the BSW has handed off to the ASW
+                # which is sending non-ECSS bytes.  The stream is done.
+                print(f"Invalid packet header: {e}")
                 break
             if pkt["service_type"] == PacketType.DEBUG_LOG:
                 lines.append(pkt.get("raw_debug", ""))

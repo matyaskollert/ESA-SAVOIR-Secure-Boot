@@ -42,7 +42,7 @@ class TestBootValidImage:
         board.reset_board(delay=1.0)
         bsw.send_command('1', sequence=0)
         bsw.wait_for_ack(expected_sequence=0)
-        log = "".join(bsw.drain_debug_log(timeout=5.0))
+        log = "".join(bsw.drain_debug_log(timeout=3.0))
         assert "Digital signature valid" in log
 
 
