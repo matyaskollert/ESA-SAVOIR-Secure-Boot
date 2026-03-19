@@ -864,10 +864,11 @@
  * These MUST stay in sync with Core/Inc/benchmark.h.                        */
 #ifndef ALGO_ECDSA
 #define ALGO_ECDSA      1
-#define ALGO_RSA        2
-#define ALGO_ML_DSA_44  3
-#define ALGO_ML_DSA_65  4
-#define ALGO_LMS        5
+#define ALGO_RSA_2048   2
+#define ALGO_RSA_3072   3
+#define ALGO_ML_DSA_44  4
+#define ALGO_ML_DSA_65  5
+#define ALGO_LMS        6
 #endif
 
 
