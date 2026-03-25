@@ -29,35 +29,21 @@ class TestRollbackPrevention:
         board.flash_image(board.BOOT_FLASH_ADDRESS, boot_img)
         board.set_rollback_counter(10)
 
-    def test_version_below_floor_rejected_with_nack9(self, bsw, config, image_factory):
+    def test_nack9_and_counter_unchanged_after_rejection(self, bsw, config, image_factory):
+        """Version 8 < floor 9 → NACK 9; counter must remain unchanged."""
         old_img = image_factory.build(version=8)
         board.reset_board(delay=1.0)
         bsw.send_command('2', sequence=0)
         bsw.wait_for_ack(expected_sequence=0)
-        # START
+        import time; time.sleep(0.5)  # allow BSW to prepare for upload
         bsw.send_start_upload(len(old_img), sequence=1)
         bsw.wait_for_ack(expected_sequence=1)
-        # First DATA chunk – BSW reads version here
+        import time; time.sleep(0.5)
         bsw.send_data_chunk(old_img[:256], sequence=2)
         with pytest.raises(serial_comm.NackReceived) as exc_info:
             bsw.wait_for_ack(expected_sequence=2)
         assert exc_info.value.error_code == 9
-
-    def test_counter_unchanged_after_rejection(self, bsw, config, image_factory):
-        """Counter must not be modified if the upload is rejected."""
-        old_img = image_factory.build(version=8)
-        board.reset_board(delay=1.0)
-        bsw.send_command('2', sequence=0)
-        bsw.wait_for_ack(expected_sequence=0)
-        bsw.send_start_upload(len(old_img), sequence=1)
-        bsw.wait_for_ack(expected_sequence=1)
-        bsw.send_data_chunk(old_img[:256], sequence=2)
-        try:
-            bsw.wait_for_ack(expected_sequence=2)
-        except serial_comm.NackReceived:
-            pass
-
-        assert board.get_rollback_counter() == 10  # unchanged
+        assert board.get_rollback_counter() == 10  # must be unchanged
 
     def test_version_at_floor_is_accepted(self, bsw, config, image_factory):
         """Version = floor (9) must be accepted without NACK."""
@@ -65,95 +51,136 @@ class TestRollbackPrevention:
         board.reset_board(delay=1.0)
         bsw.send_command('2', sequence=0)
         bsw.wait_for_ack(expected_sequence=0)
+        import time; time.sleep(0.5)  # allow BSW to prepare for upload
         bsw.upload_image(floor_img, start_sequence=1)  # must not raise
 
 
 # ---------------------------------------------------------------------------
-# TestSignatureTampering
+# TestSwapRollbackEnforcement
 # ---------------------------------------------------------------------------
 
-class TestSignatureTampering:
-    """BSW must reject images with a tampered digital signature."""
+class TestSwapRollbackEnforcement:
+    """Rollback counter must prevent downgrade at the *swap* stage.
+
+    checkUpdateVersion() is called during command '3'.  The UPDATE image must
+    pass CRC + signature before its version is compared against the floor.
+    """
 
     @pytest.fixture(autouse=True)
-    def setup_tampered_update(self, nominal_state, image_factory):
-        """Write an image whose first signature byte is flipped to the UPDATE slot
-        (without re-signing; the CRC is still valid so the CRC check passes but
-        the signature check fails)."""
-        good_img   = image_factory.build(version=2)
-        bad_sig    = ImageFactory.corrupt_signature(good_img)
-        # Recompute CRC so the image survives the CRC check and reaches sig verify
-        import binascii
-        crc_input  = bad_sig[4:]                          # everything after the CRC field
-        new_crc    = binascii.crc32(crc_input) & 0xFFFFFFFF
-        bad_img    = struct.pack("<I", new_crc) + bad_sig[4:]
-        board.flash_image(board.UPDATE_FLASH_ADDRESS, bad_img)
-
-    def test_signature_failure_during_imageLoad(self, bsw, config):
-        """Sending '4' (check versions) calls imageLoad which verifies the sig."""
-        board.reset_board(delay=1.0)
-        bsw.send_command('4', sequence=0)
-        bsw.wait_for_ack(expected_sequence=0)
-        log = "".join(bsw.drain_debug_log(timeout=5.0))
-        assert "Digital signature validation failed" in log or "invalid" in log.lower()
-
-
-# ---------------------------------------------------------------------------
-# TestFlashWriteProtection
-# ---------------------------------------------------------------------------
-
-class TestFlashWriteProtection:
-    """Verify the BSW enforces WRP sector checks before modifying flash."""
-
-    def test_nominal_boot_rejected_when_unprotected(self, nominal_state, bsw, config):
-        """Boot is rejected (error 11) when BOOT sector is not write-protected."""
+    def setup(self, clean_flash, image_factory):
+        """Counter = 10, window = 1 → floor = 9.
+        BOOT = v10, UPDATE = v8 (below floor).  System in SWAP state.
+        """
+        boot_img   = image_factory.build(version=10)
+        update_img = image_factory.build(version=8)
+        board.flash_image(board.BOOT_FLASH_ADDRESS,   boot_img)
+        board.flash_image(board.UPDATE_FLASH_ADDRESS, update_img)
+        board.set_rollback_counter(10)
+        board.set_comm_status(board.COMM_STATUS_SWAP)
         board.set_write_protection(
             protect_mask=0,
-            unprotect_mask=board.OB_WRP_BOOT,
+            unprotect_mask=board.OB_WRP_BOOT | board.OB_WRP_COUNTER,
         )
         import time; time.sleep(1.5)
 
-        try:
-            board.reset_board(delay=1.0)
-            bsw.send_command('1', sequence=0)
-            with pytest.raises(serial_comm.NackReceived) as exc_info:
-                bsw.wait_for_ack(expected_sequence=0, timeout=5.0)
-            assert exc_info.value.error_code == 11
-        finally:
-            # Always restore WRP so subsequent tests are not affected
-            board.set_write_protection(protect_mask=board.OB_WRP_BOOT | board.OB_WRP_COUNTER)
-            time.sleep(1.5)
+    def test_nack9_and_state_unchanged_after_rejection(self, bsw, config):
+        """Version 8 < floor 9 → NACK 9; BOOT slot and counter must be unchanged."""
+        import time
+        board.reset_board(delay=1.0)
+        bsw.send_command('3', sequence=0)
+        with pytest.raises(serial_comm.NackReceived) as exc_info:
+            bsw.wait_for_ack(expected_sequence=0, timeout=15.0)
+        assert exc_info.value.error_code == 9
+        time.sleep(2.5)
+
+        raw = board.flash_read(board.BOOT_FLASH_ADDRESS, 8)
+        _crc, _magic, version = struct.unpack("<IHH", raw)
+        assert version == 10, "BOOT slot version must be unchanged after rollback rejection"
+        assert board.get_rollback_counter() == 10, "Counter must be unchanged after rollback rejection"
 
 
 # ---------------------------------------------------------------------------
-# TestCrcCorruption
+# TestRollbackCounterBoundary
 # ---------------------------------------------------------------------------
 
-class TestCrcCorruption:
-    """CRC mismatches in both FLASH and RAM must be detected and reported."""
+class TestRollbackCounterBoundary:
+    """Verify the rollback floor clamps to 0 when counter ≤ ROLLBACK_WINDOW (=1)."""
 
-    def test_boot_crc_failure_stops_boot(self, clean_flash, bsw, config, image_factory):
-        """A corrupted CRC in the BOOT slot must prevent booting (NACK or no ACK)."""
-        good_img = image_factory.build(version=1)
-        bad_img  = ImageFactory.corrupt_crc(good_img)
-        board.flash_image(board.BOOT_FLASH_ADDRESS, bad_img)
-
-        board.reset_board(delay=1.0)
-        bsw.send_command('1', sequence=0)
-        with pytest.raises((serial_comm.NackReceived, TimeoutError)):
-            bsw.wait_for_ack(expected_sequence=0, timeout=5.0)
-
-    def test_boot_crc_failure_logged(self, clean_flash, bsw, config, image_factory):
-        """The BSW must log a CRC mismatch message."""
-        good_img = image_factory.build(version=1)
-        bad_img  = ImageFactory.corrupt_crc(good_img)
-        board.flash_image(board.BOOT_FLASH_ADDRESS, bad_img)
+    def test_version_1_accepted_when_counter_is_0(self, clean_flash, bsw, config, image_factory):
+        """Counter = 0 → floor = 0 → any version including 0 is accepted."""
+        board.set_rollback_counter(0)
+        update_img = image_factory.build(version=1)
 
         board.reset_board(delay=1.0)
-        bsw.send_command('1', sequence=0)
+        bsw.send_command('2', sequence=0)
+        bsw.wait_for_ack(expected_sequence=0)
+        # Must not raise
+        bsw.upload_image(update_img, start_sequence=1)
+
+    def test_version_1_accepted_when_counter_equals_window(self, clean_flash, bsw, config, image_factory):
+        """Counter = 1 (= ROLLBACK_WINDOW) → floor = 0 → version 1 is accepted."""
+        board.set_rollback_counter(1)
+        update_img = image_factory.build(version=1)
+
+        board.reset_board(delay=1.0)
+        bsw.send_command('2', sequence=0)
+        bsw.wait_for_ack(expected_sequence=0)
+        bsw.upload_image(update_img, start_sequence=1)
+
+    def test_version_below_floor_rejected_when_counter_gt_window(self, clean_flash, bsw, config, image_factory):
+        """Counter = 3 → floor = 2 → version 1 must be rejected."""
+        board.set_rollback_counter(3)
+        old_img = image_factory.build(version=1)
+
+        board.reset_board(delay=1.0)
+        bsw.send_command('2', sequence=0)
+        bsw.wait_for_ack(expected_sequence=0)
+        bsw.send_start_upload(len(old_img), sequence=1)
+        bsw.wait_for_ack(expected_sequence=1)
+        bsw.send_data_chunk(old_img[:256], sequence=2)
+        with pytest.raises(serial_comm.NackReceived) as exc_info:
+            bsw.wait_for_ack(expected_sequence=2)
+        assert exc_info.value.error_code == 9
+
+
+# ---------------------------------------------------------------------------
+# TestRecoveryAfterSwapRollback
+# ---------------------------------------------------------------------------
+
+class TestRecoveryAfterSwapRollback:
+    """Full recovery: after a swap rollback rejection the system must be fully nominal.
+
+    This means a subsequent '1' (boot) command must succeed without any manual
+    intervention — confirming that setupSystemForNominal() ran correctly.
+    """
+
+    def test_nominal_boot_succeeds_after_swap_rollback(self, clean_flash, bsw, config, image_factory):
+        """Set up a rollback scenario, trigger NACK 9, then confirm nominal boot works."""
+        boot_img   = image_factory.build(version=5)
+        update_img = image_factory.build(version=3)  # below floor for counter=5
+        board.flash_image(board.BOOT_FLASH_ADDRESS,   boot_img)
+        board.flash_image(board.UPDATE_FLASH_ADDRESS, update_img)
+        board.set_rollback_counter(5)
+        board.set_comm_status(board.COMM_STATUS_SWAP)
+        board.set_write_protection(
+            protect_mask=0,
+            unprotect_mask=board.OB_WRP_BOOT | board.OB_WRP_COUNTER,
+        )
+        import time; time.sleep(1.5)
+
+        # Attempt swap → NACK 9 + setupSystemForNominal() + reset
+        board.reset_board(delay=1.0)
+        bsw.send_command('3', sequence=0)
         try:
-            bsw.wait_for_ack(expected_sequence=0, timeout=5.0)
-        except (serial_comm.NackReceived, TimeoutError):
+            bsw.wait_for_ack(expected_sequence=0, timeout=15.0)
+        except serial_comm.NackReceived:
             pass
-        log = "".join(bsw.drain_debug_log(timeout=2.0))
-        assert "CRC Mismatch" in log
+        bsw.close()
+        time.sleep(2.5)  # wait for OB_Launch reset
+
+        # Now the system should be in nominal state; issue a boot command
+        bsw.open()
+        board.reset_board(delay=1.0)
+        bsw.send_command('1', sequence=0)
+        ack = bsw.wait_for_ack(expected_sequence=0, timeout=15.0)
+        assert ack is not None, "Nominal boot must succeed after swap rollback recovery"

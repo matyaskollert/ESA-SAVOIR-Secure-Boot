@@ -58,6 +58,30 @@ int16_t receivePacketHeader(UART_HandleTypeDef* uart, ECSSPacketHeader* header)
 	return 0;
 }
 
+int16_t receivePacketHeaderWithTimeout(UART_HandleTypeDef* uart, ECSSPacketHeader* header, uint32_t timeout_ms)
+{
+	uint8_t buffer[ECSS_HEADER_SIZE];
+
+	HAL_StatusTypeDef ret = HAL_UART_Receive(uart, buffer, ECSS_HEADER_SIZE, timeout_ms);
+	if (ret == HAL_TIMEOUT)
+	{
+		return -1;  // No data received within timeout
+	}
+	if (ret != HAL_OK)
+	{
+		printf("Error receiving packet header: %d\r\n", ret);
+		return 1;
+	}
+
+	if (ecss_parse_header(buffer, header) != 0)
+	{
+		printf("Error: Invalid packet header checksum\r\n");
+		return 2;
+	}
+
+	return 0;
+}
+
 int16_t receivePacketData(UART_HandleTypeDef* uart, uint8_t* buffer, uint16_t length)
 {
 	if (length == 0)

@@ -17,6 +17,12 @@ Optional environment variables:
     KEY_TYPE           - "ecdsa" (default) or "mldsa"
     MLDSA_PARAM_SET    - "ML-DSA-44" (default) or "ML-DSA-65"
     IMAGE_PAYLOAD_SIZE - size of the synthetic raw image, default 256 bytes
+    REAL_ASW_BIN       - path to the raw (no-header) ASW binary, e.g.
+                         example-asw/NucleoF439-ASW.bin.  When set, the
+                         real_asw_image fixture signs it with the test key
+                         so it can be flashed and booted in tests.
+    REAL_ASW_VERSION   - version number embedded in the signed real-ASW image,
+                         default 1
 """
 
 import os
@@ -25,6 +31,12 @@ import time
 from pathlib import Path
 
 import pytest
+from dotenv import load_dotenv
+
+# Load .env from the repository root (one level above tests/).  Values in
+# .env are *not* overridden by variables that are already set in the shell,
+# so real CI environment variables always take precedence.
+load_dotenv(Path(__file__).parent / ".env", override=False)
 
 # Make the helpers package importable even when pytest is invoked from the
 # repository root.
@@ -64,6 +76,8 @@ def config():
         "key_type":       _env("KEY_TYPE", "ecdsa"),
         "mldsa_param":    _env("MLDSA_PARAM_SET", "ML-DSA-44"),
         "image_size":     int(_env("IMAGE_PAYLOAD_SIZE", "256")),
+        "real_asw_bin":   _env("REAL_ASW_BIN"),       # optional – may be ""
+        "real_asw_version": int(_env("REAL_ASW_VERSION", "1")),
     }
 
 
@@ -75,6 +89,23 @@ def image_factory(config):
         mldsa_param_set=config["mldsa_param"],
         minimal_image_size=config["image_size"],
     )
+
+
+@pytest.fixture(scope="session")
+def real_asw_image(config, image_factory):
+    """Return a fully signed image built from the real ASW binary.
+
+    The raw payload from REAL_ASW_BIN is wrapped with the BSW header
+    (CRC + magic + version + signature) using the configured private key,
+    producing a byte string ready to be flashed directly to the BOOT slot.
+
+    Skips all tests that depend on this fixture when REAL_ASW_BIN is not set.
+    """
+    path = config["real_asw_bin"]
+    if not path:
+        pytest.skip("REAL_ASW_BIN not set – skipping real-ASW tests")
+    raw = Path(path).read_bytes()
+    return image_factory.build(version=config["real_asw_version"], image_payload=raw)
 
 
 # ---------------------------------------------------------------------------
@@ -141,6 +172,18 @@ def nominal_state(clean_flash, image_factory):
 
 
 @pytest.fixture
+def real_asw_state(clean_flash, real_asw_image):
+    """Flash the real signed ASW image to the BOOT slot with nominal WRP.
+
+    Depends on real_asw_image (session-scoped); the whole test is skipped
+    automatically when REAL_ASW_BIN is not configured.
+    Yields the signed image bytes.
+    """
+    board.flash_image(board.BOOT_FLASH_ADDRESS, real_asw_image)
+    yield real_asw_image
+
+
+@pytest.fixture
 def update_ready_state(nominal_state, image_factory):
     """Extend nominal_state by placing a version-2 image in the UPDATE slot.
 
@@ -151,6 +194,58 @@ def update_ready_state(nominal_state, image_factory):
     update_img = image_factory.build(version=2)
     board.flash_image(board.UPDATE_FLASH_ADDRESS, update_img)
     yield nominal_state, update_img
+
+
+@pytest.fixture
+def swap_ready_state(clean_flash, image_factory):
+    """BOOT=v1, UPDATE=v2, COMM=SWAP(123), WRP unlocked for BOOT+COUNTER.
+
+    Mirrors the state left by a successful upload + setupSystemForImageSwap():
+      - BOOT slot has a valid signed v1 image
+      - UPDATE slot has a valid signed v2 image
+      - COMM status word = 123 (SWAP)
+      - BOOT (sector 5) and COUNTER (sector 9) write-protection lifted
+
+    Yields (boot_image_bytes, update_image_bytes).
+    """
+    boot_img   = image_factory.build(version=1)
+    update_img = image_factory.build(version=2)
+    board.flash_image(board.BOOT_FLASH_ADDRESS,   boot_img)
+    board.flash_image(board.UPDATE_FLASH_ADDRESS, update_img)
+    board.set_rollback_counter(1)
+    board.set_comm_status(board.COMM_STATUS_SWAP)
+    board.set_write_protection(
+        protect_mask=0,
+        unprotect_mask=board.OB_WRP_BOOT | board.OB_WRP_COUNTER,
+    )
+    time.sleep(1.5)
+    yield boot_img, update_img
+
+
+@pytest.fixture
+def interrupted_swap_state(clean_flash, image_factory):
+    """Simulate a power cut between a completed upload and the swap command.
+
+    The BSW has already run setupSystemForImageSwap() (COMM=123, sectors
+    unlocked) but the board was reset before '3' was issued.  The BOOT slot
+    still contains v1; UPDATE contains the freshly uploaded v2.
+
+    Identical to swap_ready_state; named separately to make intent explicit
+    in lifecycle tests.
+    Yields (boot_image_bytes, update_image_bytes).
+    """
+    boot_img   = image_factory.build(version=1)
+    update_img = image_factory.build(version=2)
+    board.flash_image(board.BOOT_FLASH_ADDRESS,   boot_img)
+    board.flash_image(board.UPDATE_FLASH_ADDRESS, update_img)
+    board.set_rollback_counter(1)
+    board.set_comm_status(board.COMM_STATUS_SWAP)
+    board.set_write_protection(
+        protect_mask=0,
+        unprotect_mask=board.OB_WRP_BOOT | board.OB_WRP_COUNTER,
+    )
+    time.sleep(1.5)
+    yield boot_img, update_img
 
 
 # ---------------------------------------------------------------------------

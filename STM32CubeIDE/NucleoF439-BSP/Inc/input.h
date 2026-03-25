@@ -16,6 +16,7 @@ int16_t sendAck(UART_HandleTypeDef* uart);
 
 /* ECSS packet functions */
 int16_t receivePacketHeader(UART_HandleTypeDef* uart, ECSSPacketHeader* header);
+int16_t receivePacketHeaderWithTimeout(UART_HandleTypeDef* uart, ECSSPacketHeader* header, uint32_t timeout_ms);
 int16_t receivePacketData(UART_HandleTypeDef* uart, uint8_t* buffer, uint16_t length);
 int16_t sendPacket(UART_HandleTypeDef* uart, const ECSSPacketHeader* header, const uint8_t* data);
 int16_t sendAckPacket(UART_HandleTypeDef* uart, uint16_t sequence);

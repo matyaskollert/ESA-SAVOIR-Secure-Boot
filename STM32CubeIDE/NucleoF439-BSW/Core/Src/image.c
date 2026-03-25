@@ -109,7 +109,6 @@ int16_t imageVerify(ImageSlot slot) {
 }
 
 int16_t imageLoad(ImageSlot slot) {
-	// TODO: Check the performance since it is taking quite long. Is it the memcpy or verify?
 	const image_header_t* header = imageGetHeader(slot);
 	if (header == NULL) {
 		return 2;

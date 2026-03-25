@@ -2,5 +2,6 @@
 pytest>=8.0
 pyserial>=3.5
 cryptography>=41.0.0
+python-dotenv>=1.0
 # wolfcrypt-py is only needed when testing ML-DSA signing (POST_QUANTUM firmware build)
 # wolfcrypt>=5.7.0

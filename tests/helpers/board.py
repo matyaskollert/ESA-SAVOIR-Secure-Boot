@@ -78,8 +78,10 @@ _ADDR_TO_OB_MASK = {
 }
 
 # BSW status words
-COMM_STATUS_NOMINAL = 321
-COMM_STATUS_SWAP    = 123
+COMM_STATUS_NOMINAL        = 321
+COMM_STATUS_SWAP           = 123
+COMM_STATUS_STANDBY        = 111
+COMM_STATUS_BOOT_ATTEMPTED = 456
 
 
 # ---------------------------------------------------------------------------
@@ -89,7 +91,12 @@ COMM_STATUS_SWAP    = 123
 def _run(extra_args, check=True):
     """Run STM32_Programmer_CLI with extra_args and return the result."""
     cmd = [STM32CUBEPROG] + _CONNECT + extra_args
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    result = subprocess.run(cmd, capture_output=True)
+    # STM32CubeProgrammer outputs non-UTF-8 bytes on Windows (e.g. Windows-1252
+    # symbols in its banner).  Decode as cp1252 with a fallback replacement so
+    # we never get a UnicodeDecodeError, and the output is always a str.
+    result.stdout = result.stdout.decode("cp1252", errors="replace") if result.stdout else ""
+    result.stderr = result.stderr.decode("cp1252", errors="replace") if result.stderr else ""
     if check and result.returncode != 0:
         raise RuntimeError(
             f"STM32CubeProgrammer failed (exit {result.returncode}):\n"

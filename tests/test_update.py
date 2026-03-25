@@ -33,48 +33,23 @@ def _read_header_from_slot(address: int) -> dict:
 class TestUpdateHappyPath:
     """Upload a valid version-2 image and verify it lands in the UPDATE slot."""
 
-    def test_upload_complete(self, nominal_state, bsw, config, image_factory):
-        """Full upload sequence must complete without NACK."""
+    def test_upload_completes_and_update_slot_correct(self, nominal_state, bsw, config, image_factory):
+        """Upload must complete without NACK; UPDATE slot must have correct header and bytes."""
         update_img = image_factory.build(version=2)
         board.reset_board(delay=1.0)
-
-        # Command: enter update mode
         bsw.send_command('2', sequence=0)
         bsw.wait_for_ack(expected_sequence=0)
-
-        # Upload
+        import time; time.sleep(0.5)  # allow BSW to prepare for upload
         bsw.upload_image(update_img, start_sequence=1, verbose=True)
 
-    def test_update_slot_contains_correct_magic(self, nominal_state, bsw, config, image_factory):
-        """After upload the UPDATE slot header must have the correct magic number."""
-        update_img = image_factory.build(version=2)
-        board.reset_board(delay=1.0)
-        bsw.send_command('2', sequence=0)
-        bsw.wait_for_ack(expected_sequence=0)
-        bsw.upload_image(update_img, start_sequence=1)
+        log = "".join(bsw.drain_debug_log(timeout=3.0))
+
+        assert "Writing to flash" in log
+        assert "Flash write complete" in log
 
         hdr = _read_header_from_slot(board.UPDATE_FLASH_ADDRESS)
-        assert hdr["magic"] == 0xABCD
-
-    def test_update_slot_contains_correct_version(self, nominal_state, bsw, config, image_factory):
-        """After upload the UPDATE slot must report version 2."""
-        update_img = image_factory.build(version=2)
-        board.reset_board(delay=1.0)
-        bsw.send_command('2', sequence=0)
-        bsw.wait_for_ack(expected_sequence=0)
-        bsw.upload_image(update_img, start_sequence=1)
-
-        hdr = _read_header_from_slot(board.UPDATE_FLASH_ADDRESS)
+        assert hdr["magic"]   == 0xABCD
         assert hdr["version"] == 2
-
-    def test_update_raw_bytes_match_image(self, nominal_state, bsw, config, image_factory):
-        """Raw flash content of the UPDATE slot must equal the uploaded image."""
-        update_img = image_factory.build(version=2)
-        board.reset_board(delay=1.0)
-        bsw.send_command('2', sequence=0)
-        bsw.wait_for_ack(expected_sequence=0)
-        bsw.upload_image(update_img, start_sequence=1)
-
         flash_content = board.flash_read(board.UPDATE_FLASH_ADDRESS, len(update_img))
         assert flash_content == update_img
 
@@ -103,9 +78,13 @@ class TestUpdateVersionTooLow:
         bsw.send_command('2', sequence=0)
         bsw.wait_for_ack(expected_sequence=0)
 
+        import time; time.sleep(0.5)  # allow BSW to prepare for upload
+
         # START the upload (BSW reads version from first chunk)
         bsw.send_start_upload(len(old_img), sequence=1)
         bsw.wait_for_ack(expected_sequence=1)
+
+        import time; time.sleep(0.5)
 
         # Send first chunk – this is where BSW inspects the version
         chunk = old_img[:256]
@@ -120,6 +99,7 @@ class TestUpdateVersionTooLow:
         board.reset_board(delay=1.0)
         bsw.send_command('2', sequence=0)
         bsw.wait_for_ack(expected_sequence=0)
+        import time; time.sleep(0.5)  # allow BSW to prepare for upload
         bsw.upload_image(floor_img, start_sequence=1)  # should not raise
 
 
@@ -150,3 +130,103 @@ class TestUpdateSystemNotConfigured:
         with pytest.raises(serial_comm.NackReceived) as exc_info:
             bsw.wait_for_ack(expected_sequence=0, timeout=5.0)
         assert exc_info.value.error_code == 10
+
+
+# ---------------------------------------------------------------------------
+# TestUpdateCounterSectorUnprotected
+# ---------------------------------------------------------------------------
+
+class TestUpdateCounterSectorUnprotected:
+    """BSW must reject update when COUNTER sector is unprotected (BOOT is still ok).
+
+    checkSystemForUpdate() requires both BOOT and COUNTER to be write-protected.
+    """
+
+    @pytest.fixture(autouse=True)
+    def setup_counter_unprotected(self, nominal_state):
+        board.set_write_protection(
+            protect_mask=0,
+            unprotect_mask=board.OB_WRP_COUNTER,
+        )
+        import time; time.sleep(1.5)
+        yield
+        board.set_write_protection(protect_mask=board.OB_WRP_BOOT | board.OB_WRP_COUNTER)
+        import time; time.sleep(1.5)
+
+    def test_nack_and_sectors_reprotected(self, bsw, config):
+        """BSW must NACK 10 and then re-protect both sectors via setupSystemForNominal()."""
+        import time
+        board.reset_board(delay=1.0)
+        bsw.send_command('2', sequence=0)
+        with pytest.raises(serial_comm.NackReceived) as exc_info:
+            bsw.wait_for_ack(expected_sequence=0, timeout=5.0)
+        assert exc_info.value.error_code == 10
+        time.sleep(2.5)
+        assert board.is_write_protected(board.OB_WRP_BOOT)
+        assert board.is_write_protected(board.OB_WRP_COUNTER)
+
+
+# ---------------------------------------------------------------------------
+# TestUpdateSectorProtectedDuringUpdate
+# ---------------------------------------------------------------------------
+
+class TestUpdateSectorProtectedDuringUpdate:
+    """BSW must reject update when UPDATE sector is write-protected.
+
+    This is the 'should never happen' branch
+    (checkSystemForUpdate: 'Cannot update with UPDATE protected').
+    """
+
+    @pytest.fixture(autouse=True)
+    def setup_update_protected(self, nominal_state):
+        # Protect the UPDATE sector in addition to the already-protected BOOT+COUNTER
+        board.set_write_protection(
+            protect_mask=board.OB_WRP_BOOT | board.OB_WRP_COUNTER | (1 << 6),
+        )
+        import time; time.sleep(1.5)
+        yield
+        board.set_write_protection(
+            protect_mask=board.OB_WRP_BOOT | board.OB_WRP_COUNTER,
+            unprotect_mask=(1 << 6),
+        )
+        import time; time.sleep(1.5)
+
+    def test_nack_and_log_mentions_update_protected(self, bsw, config):
+        """BSW must NACK 10 and log that the UPDATE sector is protected."""
+        board.reset_board(delay=1.0)
+        bsw.send_command('2', sequence=0)
+        with pytest.raises(serial_comm.NackReceived) as exc_info:
+            bsw.wait_for_ack(expected_sequence=0, timeout=5.0)
+        assert exc_info.value.error_code == 10
+        log = "".join(bsw.drain_debug_log(timeout=2.0))
+        assert "UPDATE" in log or "protected" in log.lower()
+
+
+# ---------------------------------------------------------------------------
+# TestUpdateStateAfterSuccess
+# ---------------------------------------------------------------------------
+
+class TestUpdateStateAfterSuccess:
+    """After a successful upload the system must be in swap-ready state.
+
+    setupSystemForImageSwap() is called before the reset:
+      - COMM word = 123 (COMM_STATUS_SWAP)
+      - BOOT (sector 5) and COUNTER (sector 9) write-protection must be lifted
+    """
+
+    def test_system_state_after_successful_upload(self, nominal_state, bsw, config, image_factory):
+        """After upload: COMM=SWAP, BOOT+COUNTER unlocked, UPDATE slot has correct version."""
+        import time
+        update_img = image_factory.build(version=2)
+        board.reset_board(delay=1.0)
+        bsw.send_command('2', sequence=0)
+        bsw.wait_for_ack(expected_sequence=0)
+        import time; time.sleep(0.5)  # allow BSW to prepare for upload
+        bsw.upload_image(update_img, start_sequence=1)
+        time.sleep(2.5)  # allow OB_Launch reset from setupSystemForImageSwap
+
+        assert board.get_comm_status() == board.COMM_STATUS_SWAP
+        assert not board.is_write_protected(board.OB_WRP_BOOT),    "BOOT sector must be unlocked after upload"
+        assert not board.is_write_protected(board.OB_WRP_COUNTER), "COUNTER sector must be unlocked after upload"
+        hdr = _read_header_from_slot(board.UPDATE_FLASH_ADDRESS)
+        assert hdr["version"] == 2

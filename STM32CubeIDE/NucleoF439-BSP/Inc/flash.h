@@ -31,12 +31,21 @@
 #define REPORT_FLASH_SECTOR 	FLASH_SECTOR_10
 #define REPORT_FLASH_OB_SECTOR  OB_WRP_SECTOR_10
 
+typedef enum {
+    BOOTLOADER_STATUS_NOMINAL        = 321,   /* Boot the application image */
+    BOOTLOADER_STATUS_SWAP           = 123,   /* Automatic image swap required */
+    BOOTLOADER_STATUS_STANDBY        = 111,   /* Stay in standby, await commands */
+    BOOTLOADER_STATUS_BOOT_ATTEMPTED = 456,   /* Boot was attempted; app must clear this on successful start */
+} BootloaderStatus;
+
 int16_t eraseFlashSector(uint32_t sector);
 
 int16_t writeFlashSector(uint32_t sector, uint32_t address, uint32_t* buffer, uint32_t bufferLength);
 int16_t writeFlashBlock(uint32_t address, uint32_t* buffer, uint32_t bufferLength);
 int16_t writeFlashWord(uint32_t address, uint32_t value);
 
+BootloaderStatus getBootloaderStatus(void);
 
+int16_t setBootloaderStatus(BootloaderStatus newStatus);
 
 #endif /* INC_FLASH_H_ */

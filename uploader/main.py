@@ -438,6 +438,32 @@ class CommandSenderThread(QThread):
             self.finished.emit(False, f"Error: {str(e)}")
 
 
+class ReconnectThread(QThread):
+    """Periodically tries to re-open a serial port after connection loss."""
+    reconnected = Signal(object)  # passes the new serial.Serial instance
+
+    def __init__(self, port, baudrate=115200, interval_ms=1000):
+        super().__init__()
+        self.port = port
+        self.baudrate = baudrate
+        self.interval_ms = interval_ms
+        self._is_running = True
+
+    def run(self):
+        while self._is_running:
+            try:
+                ser = serial.Serial(self.port, self.baudrate, timeout=1)
+                time.sleep(0.3)  # let the port settle
+                self.reconnected.emit(ser)
+                return
+            except serial.SerialException:
+                pass
+            self.msleep(self.interval_ms)
+
+    def stop(self):
+        self._is_running = False
+
+
 class MainWindow(QMainWindow):
     """Main application window."""
     
@@ -448,6 +474,7 @@ class MainWindow(QMainWindow):
         self.uploader_thread = None
         self.command_thread = None
         self.receiver_thread = None
+        self.reconnect_thread = None
         self.serial_port = None
         self.image_version = 1
         self.signature_algo = ECDSASignature()  # updated when process_file() runs
@@ -647,37 +674,6 @@ class MainWindow(QMainWindow):
         process_group.setLayout(process_layout)
         main_layout.addWidget(process_group)
         
-        # Upload group
-        upload_group = QGroupBox("4. Upload to Device")
-        upload_layout = QVBoxLayout()
-        upload_layout.setContentsMargins(8, 8, 8, 8)
-        upload_layout.setSpacing(6)
-        
-        # Upload and cancel buttons
-        self.upload_button = QPushButton("UPLOAD to COM6")
-        self.upload_button.setMinimumHeight(32)
-        self.upload_button.setEnabled(False)
-        self.upload_button.clicked.connect(self.upload_to_device)
-        
-        self.cancel_button = QPushButton("Cancel Upload")
-        self.cancel_button.setMinimumHeight(28)
-        self.cancel_button.setEnabled(False)
-        self.cancel_button.clicked.connect(self.cancel_upload)
-        
-        button_layout = QHBoxLayout()
-        button_layout.addWidget(self.upload_button, 2)
-        button_layout.addWidget(self.cancel_button, 1)
-        upload_layout.addLayout(button_layout)
-        
-        # Progress bar
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setMinimumHeight(20)
-        self.progress_bar.setValue(0)
-        upload_layout.addWidget(self.progress_bar)
-        
-        upload_group.setLayout(upload_layout)
-        main_layout.addWidget(upload_group)
-        
         # Status/Log group
         log_group = QGroupBox("Status Log")
         log_layout = QVBoxLayout()
@@ -691,23 +687,86 @@ class MainWindow(QMainWindow):
         log_group.setLayout(log_layout)
         main_layout.addWidget(log_group, 1)
         
-        # Text input group for sending commands
-        input_group = QGroupBox("Send Command to Board")
-        input_layout = QHBoxLayout()
-        input_layout.setContentsMargins(8, 8, 8, 8)
-        
-        self.text_input = QLineEdit()
-        self.text_input.setPlaceholderText("Type command and press Enter...")
-        self.text_input.returnPressed.connect(self.send_text_command)
-        
-        self.send_button = QPushButton("Send")
-        self.send_button.setMinimumHeight(26)
-        self.send_button.clicked.connect(self.send_text_command)
-        
-        input_layout.addWidget(self.text_input, 1)
-        input_layout.addWidget(self.send_button)
-        input_group.setLayout(input_layout)
-        main_layout.addWidget(input_group)
+        # Command buttons group
+        cmd_group = QGroupBox("Send Command to Board")
+        cmd_layout = QVBoxLayout()
+        cmd_layout.setContentsMargins(8, 8, 8, 8)
+        cmd_layout.setSpacing(6)
+
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(6)
+
+        self.cmd_boot_btn      = QPushButton("1 - Boot")
+        self.cmd_update_btn    = QPushButton("2 - Update")
+        self.cmd_swap_btn      = QPushButton("3 - Swap")
+        self.cmd_versions_btn  = QPushButton("4 - Check Versions")
+        self.cmd_reset_btn     = QPushButton("5 - Reset")
+        self.cmd_skip_btn      = QPushButton("6 - Skip Timeout")
+
+        for btn, char in [
+            (self.cmd_boot_btn,     '1'),
+            (self.cmd_swap_btn,     '3'),
+            (self.cmd_versions_btn, '4'),
+            (self.cmd_reset_btn,    '5'),
+            (self.cmd_skip_btn,     '6'),
+        ]:
+            btn.setMinimumHeight(32)
+            btn.clicked.connect(lambda checked=False, c=char: self._send_command(c))
+
+        self.cmd_update_btn.setMinimumHeight(32)
+        self.cmd_update_btn.clicked.connect(self.upload_to_device)
+
+        for btn in [self.cmd_boot_btn, self.cmd_update_btn, self.cmd_swap_btn,
+                    self.cmd_versions_btn, self.cmd_reset_btn, self.cmd_skip_btn]:
+            btn_row.addWidget(btn)
+
+        cmd_layout.addLayout(btn_row)
+
+        # Progress bar and cancel button (shown during upload)
+        progress_row = QHBoxLayout()
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setMinimumHeight(20)
+        self.progress_bar.setValue(0)
+        self.cancel_button = QPushButton("Cancel Upload")
+        self.cancel_button.setMinimumHeight(26)
+        self.cancel_button.setEnabled(False)
+        self.cancel_button.clicked.connect(self.cancel_upload)
+        progress_row.addWidget(self.progress_bar, 1)
+        progress_row.addWidget(self.cancel_button)
+        cmd_layout.addLayout(progress_row)
+
+        self._cmd_buttons = [
+            self.cmd_boot_btn,  self.cmd_update_btn,
+            self.cmd_swap_btn,  self.cmd_versions_btn,
+            self.cmd_reset_btn, self.cmd_skip_btn,
+        ]
+
+        cmd_group.setLayout(cmd_layout)
+        main_layout.addWidget(cmd_group)
+
+        # ASW command group
+        asw_group = QGroupBox("Send Command to ASW")
+        asw_layout = QHBoxLayout()
+        asw_layout.setContentsMargins(8, 8, 8, 8)
+        asw_layout.setSpacing(6)
+
+        asw_label = QLabel("Command:")
+        self.asw_cmd_input = QLineEdit()
+        self.asw_cmd_input.setPlaceholderText("1 = OK (set NOMINAL)   2 = FAULT (reset only)")
+        self.asw_cmd_input.setMaxLength(1)
+        self.asw_cmd_input.setFixedWidth(36)
+        self.asw_send_btn = QPushButton("Send")
+        self.asw_send_btn.setMinimumHeight(30)
+        self.asw_send_btn.clicked.connect(self._send_asw_command)
+
+        asw_layout.addWidget(asw_label)
+        asw_layout.addWidget(self.asw_cmd_input)
+        asw_layout.addWidget(self.asw_send_btn)
+        asw_layout.addStretch()
+        asw_group.setLayout(asw_layout)
+        main_layout.addWidget(asw_group)
+
+        self._cmd_buttons.append(self.asw_send_btn)
         
         # Initialize key path selection state
         self.toggle_key_path_selection()
@@ -798,11 +857,10 @@ class MainWindow(QMainWindow):
                 image_version=self.image_version,
             )
             self.log(f"Created patched file: {self.patched_file}")
-            self.log("Ready to upload. Click UPLOAD.")
+            self.log("Ready to upload. Click '2 - Update' to start the upload.")
             self.log("You can change the version and click Process again to create a new patched file.")
             
             # Enable buttons (allow re-processing with different version)
-            self.upload_button.setEnabled(True)
             self.process_button.setEnabled(True)
             self.version_spinbox.setEnabled(True)
             
@@ -829,7 +887,6 @@ class MainWindow(QMainWindow):
             # Disable buttons during upload
             self.select_button.setEnabled(False)
             self.process_button.setEnabled(False)
-            self.upload_button.setEnabled(False)
             self.cancel_button.setEnabled(True)
             self.progress_bar.setValue(0)
             
@@ -903,7 +960,6 @@ class MainWindow(QMainWindow):
             self.refresh_ports_button.setEnabled(False)
             self.connection_status_label.setText(f"Connected to {port}")
             self.connection_status_label.setStyleSheet("color: #00aa00; font-weight: bold; padding: 5px;")
-            self.upload_button.setText(f"UPLOAD to {port}")
             
         except serial.SerialException as e:
             self.log(f"ERROR: Failed to connect to {port}: {str(e)}")
@@ -920,8 +976,14 @@ class MainWindow(QMainWindow):
             self.log(f"ERROR: Unexpected error connecting to board: {str(e)}")
     
     def disconnect_from_board(self):
-        """Disconnect from the board."""
+        """Disconnect from the board (also cancels any in-progress reconnect)."""
         try:
+            # Stop reconnect thread if active
+            if self.reconnect_thread and self.reconnect_thread.isRunning():
+                self.reconnect_thread.stop()
+                self.reconnect_thread.wait()
+                self.reconnect_thread = None
+
             # Stop receiver thread
             if self.receiver_thread and self.receiver_thread.isRunning():
                 self.receiver_thread.stop()
@@ -942,48 +1004,83 @@ class MainWindow(QMainWindow):
             self.refresh_ports_button.setEnabled(True)
             self.connection_status_label.setText("Not connected")
             self.connection_status_label.setStyleSheet("color: #cc0000; font-weight: bold; padding: 5px;")
-            self.upload_button.setText("UPLOAD")
             
         except Exception as e:
             self.log(f"ERROR: Error while disconnecting: {str(e)}")
     
     def on_connection_lost(self):
-        """Handle connection loss."""
-        self.log("ERROR: Connection to board lost!")
-        # Reset UI to disconnected state
-        self.connect_button.setEnabled(True)
-        self.disconnect_button.setEnabled(False)
-        self.com_port_combobox.setEnabled(True)
-        self.refresh_ports_button.setEnabled(True)
-        self.connection_status_label.setText("Connection lost")
-        self.connection_status_label.setStyleSheet("color: #cc0000; font-weight: bold; padding: 5px;")
-        
-    def send_text_command(self):
-        """Send text command to board as ECSS command packet and wait for ACK/NACK."""
+        """Handle connection loss - start automatic reconnect loop."""
+        self.log("Connection to board lost! Attempting to reconnect...")
+
+        # Clean up dead receiver and port
+        if self.receiver_thread:
+            self.receiver_thread.stop()
+            self.receiver_thread = None
+        if self.serial_port:
+            try:
+                self.serial_port.close()
+            except Exception:
+                pass
+            self.serial_port = None
+
+        port = self.com_port_combobox.currentText().strip()
+        self.connection_status_label.setText(f"Reconnecting to {port}...")
+        self.connection_status_label.setStyleSheet("color: #cc6600; font-weight: bold; padding: 5px;")
+        # Keep Disconnect available so the user can cancel
+        self.connect_button.setEnabled(False)
+        self.disconnect_button.setEnabled(True)
+
+        self.reconnect_thread = ReconnectThread(port)
+        self.reconnect_thread.reconnected.connect(self.on_reconnected)
+        self.reconnect_thread.start()
+
+    def on_reconnected(self, ser):
+        """Called by ReconnectThread when the port is successfully reopened."""
+        self.serial_port = ser
+        port = ser.port
+
+        self.receiver_thread = PacketReceiverThread(self.serial_port)
+        self.receiver_thread.debug_message.connect(self.log_uart_data)
+        self.receiver_thread.connection_lost.connect(self.on_connection_lost)
+        self.receiver_thread.start()
+
+        self.log(f"✓ Reconnected to {port}")
+        self.connection_status_label.setText(f"Connected to {port}")
+        self.connection_status_label.setStyleSheet("color: #00aa00; font-weight: bold; padding: 5px;")
+        self.connect_button.setEnabled(False)
+        self.disconnect_button.setEnabled(True)
+
+    def _send_command(self, char):
+        """Send a single-character command to the board as an ECSS command packet."""
         if not self.serial_port or not self.serial_port.is_open:
             self.log("ERROR: Not connected to board!")
             return
-
         if not self.receiver_thread:
             self.log("ERROR: Receiver thread not running!")
             return
 
-        text = self.text_input.text().strip()
-        if not text:
-            return
-
         try:
-            self.log(f"Sending command: {text}")
-            self.text_input.clear()
-            self.send_button.setEnabled(False)
+            labels = {'1': 'Boot', '2': 'Update', '3': 'Swap', '4': 'Check Versions', '5': 'Reset', '6': 'Skip Timeout'}
+            self.log(f"Sending command: '{char}' ({labels.get(char, char)})")
+            for btn in self._cmd_buttons:
+                btn.setEnabled(False)
 
-            self.command_thread = CommandSenderThread(self.serial_port, self.receiver_thread, text)
+            self.command_thread = CommandSenderThread(self.serial_port, self.receiver_thread, char)
             self.command_thread.finished.connect(self.on_command_finished)
             self.command_thread.start()
 
         except Exception as e:
             self.log(f"Error sending command: {str(e)}")
-            self.send_button.setEnabled(True)
+            for btn in self._cmd_buttons:
+                btn.setEnabled(True)
+
+    def _send_asw_command(self):
+        """Send the character typed in the ASW command input."""
+        text = self.asw_cmd_input.text().strip()
+        if not text:
+            self.log("ERROR: Enter a command character first (e.g. '1' or '2').")
+            return
+        self._send_command(text[0])
 
     def on_command_finished(self, success, message):
         """Handle command send completion."""
@@ -991,7 +1088,8 @@ class MainWindow(QMainWindow):
             self.log(f"\u2713 Command acknowledged: {message}")
         else:
             self.log(f"\u2717 Command failed: {message}")
-        self.send_button.setEnabled(True)
+        for btn in self._cmd_buttons:
+            btn.setEnabled(True)
     
     def cancel_upload(self):
         """Cancel the ongoing upload."""
@@ -1031,7 +1129,6 @@ class MainWindow(QMainWindow):
         """Reset UI elements to default state."""
         self.select_button.setEnabled(True)
         self.process_button.setEnabled(bool(self.selected_file))
-        self.upload_button.setEnabled(bool(self.patched_file))
         # Allow changing version whenever a file is selected (to re-process with different version)
         self.version_spinbox.setEnabled(bool(self.selected_file))
         self.cancel_button.setEnabled(False)

@@ -28,6 +28,7 @@
 #include "update.h"
 #include "report.h"
 #include "self_test.h"
+#include "flash.h"
 
 /* USER CODE END Includes */
 
@@ -38,7 +39,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-
+#define STANDBY_TIMEOUT_MS  15000
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -94,6 +95,179 @@ int _write(int fd, char *ptr, int len)
 #define SMALL_RX_BUFFER_SIZE 1
 uint8_t mySmallRXBuffer[SMALL_RX_BUFFER_SIZE];
 
+/* Handle a swap command: verify preconditions, perform swap, reset */
+static void handleSwap(UART_HandleTypeDef* uart, uint16_t sequence_count)
+{
+	if (checkSystemForImageSwap() != 0)
+	{
+		printf("Setting up system for image swap\r\n");
+		sendNackPacket(uart, sequence_count, 12);
+		setupSystemForImageSwap();
+		NVIC_SystemReset();
+	}
+	if (checkUpdateVersion() != 0)
+	{
+		printf("Cannot update - rollback protection\r\n");
+		sendNackPacket(uart, sequence_count, 9);
+		setupSystemForNominal();
+		NVIC_SystemReset();
+	}
+	if (sendAckPacket(uart, sequence_count) != 0)
+	{
+		printf("Error sending ACK for swap command\r\n");
+	}
+	if (swapBootWithUpdate() != 0)
+	{
+		printf("Swapping images failed\r\n");
+		NVIC_SystemReset();
+	}
+	if (updateRollbackCounter() != 0)
+	{
+		printf("Updating rollback counter failed\r\n");
+		NVIC_SystemReset();
+	}
+	setupSystemForNominal();
+	NVIC_SystemReset();
+}
+
+/*
+ * Standby command loop.
+ * If initial_header is non-NULL its command is processed first,
+ * then the loop waits for further commands indefinitely.
+ * Commands: '1'=boot, '2'=update, '3'=swap, '4'=check image versions, '5'=reset, '6'=skip/no-op
+ */
+static void standbyLoop(UART_HandleTypeDef* uart, ECSSPacketHeader* initial_header)
+{
+	ECSSPacketHeader header;
+	uint8_t use_initial = (initial_header != NULL);
+
+	printf("Entering standby mode. Send: 1=boot, 2=update, 3=swap, 4=check versions, 5=reset, 6=skip\r\n");
+
+	while (1)
+	{
+		if (use_initial)
+		{
+			header = *initial_header;
+			use_initial = 0;
+		}
+		else
+		{
+			if (receivePacketHeader(uart, &header) != 0)
+			{
+				printf("Error receiving command header, retrying\r\n");
+				continue;
+			}
+		}
+
+		if (header.data_length > 0 && header.data_length <= SMALL_RX_BUFFER_SIZE)
+		{
+			if (receivePacketData(uart, mySmallRXBuffer, header.data_length) != 0)
+			{
+				printf("Error receiving command data\r\n");
+				continue;
+			}
+		}
+
+		char* choice = (char*)mySmallRXBuffer;
+
+		if (choice[0] == '1')
+		{
+			/* Boot */
+			if (checkSystemForNominal() != 0)
+			{
+				printf("ERROR: System not configured for nominal mode\r\n");
+				sendNackPacket(uart, header.sequence_count, 11);
+				setupSystemForNominal();
+				NVIC_SystemReset();
+			}
+			if (sendAckPacket(uart, header.sequence_count) != 0)
+				printf("Error sending ACK\r\n");
+			if (boot() != 0)
+				printf("Booting image failed\r\n");
+		}
+		else if (choice[0] == '2')
+		{
+			/* Update */
+			if (checkSystemForUpdate() != 0)
+			{
+				printf("ERROR: System not configured for update\r\n");
+				sendNackPacket(uart, header.sequence_count, 10);
+				setupSystemForUpdate();
+				NVIC_SystemReset();
+			}
+			printf("System ready for update\r\n");
+			if (sendAckPacket(uart, header.sequence_count) != 0)
+				printf("Error sending ACK for command\r\n");
+			if (receiveUpdateData(uart) != 0)
+				printf("Receiving image failed\r\n");
+			setupSystemForImageSwap();
+			NVIC_SystemReset();
+		}
+		else if (choice[0] == '3')
+		{
+			/* Swap */
+			handleSwap(uart, header.sequence_count);
+		}
+		else if (choice[0] == '4')
+		{
+			/* Check image versions */
+			if (sendAckPacket(uart, header.sequence_count) != 0)
+				printf("Error sending ACK for command\r\n");
+			printImageHeaders();
+			/* Stay in loop - no reset */
+		}
+		else if (choice[0] == '5')
+		{
+			/* Reset */
+			if (sendAckPacket(uart, header.sequence_count) != 0)
+				printf("Error sending ACK\r\n");
+			NVIC_SystemReset();
+		}
+		else if (choice[0] == '6')
+		{
+			/* Skip / no-op – useful for testing; sends ACK and stays in standby */
+			if (sendAckPacket(uart, header.sequence_count) != 0)
+				printf("Error sending ACK\r\n");
+			/* Stay in loop */
+		}
+		else
+		{
+			printf("Unknown command\r\n");
+			sendNackPacket(uart, header.sequence_count, 15);
+		}
+	}
+}
+
+/*
+ * Check the rollback condition and act:
+ *   - Rollback possible: configure for swap (sets status=123, re-arms OBs) and reset.
+ *     The next boot will see status=123 and take the standard handleSwap path.
+ *   - Rollback not possible: set status to STANDBY and enter the command loop.
+ */
+static void handleRollback(UART_HandleTypeDef* uart)
+{
+  printf("Boot failed - evaluating rollback\r\n");
+  if (checkRollbackCondition() == 0)
+  {
+    printf("Initiating rollback swap\r\n");
+    if (setupSystemForImageSwap() != 0)
+    {
+        printf("ERROR: Could not configure system for rollback, entering standby\r\n");
+        setBootloaderStatus(BOOTLOADER_STATUS_STANDBY);
+        standbyLoop(uart, NULL);
+        return;
+    }
+    /* OB change takes effect after reset; on next boot status=123 → handleSwap */
+    NVIC_SystemReset();
+  }
+  else
+  {
+    printf("Rollback not applicable - entering standby\r\n");
+    setBootloaderStatus(BOOTLOADER_STATUS_STANDBY);
+    standbyLoop(uart, NULL);
+  }
+}
+
 /* USER CODE END 0 */
 
 /**
@@ -143,134 +317,86 @@ int main(void)
 		NVIC_SystemReset();
 	}
 
-    printf("Bootloader loaded, enter '1' for boot or '2' for upload, '3' for swap, '4' to check image versions\r\n");
+	/* Wait up to STANDBY_TIMEOUT_MS for a user-initiated packet.
+	 * If a packet arrives → enter standby (bootloader status is ignored).
+	 * If the timeout expires → decide based on bootloader status. */
+	BootloaderStatus status = getBootloaderStatus();
+	printf("Waiting %d ms for manual input... (current status: %d)\r\n", STANDBY_TIMEOUT_MS, (int)status);
 
-  	// Receive command as ECSS packet
-  	ECSSPacketHeader cmd_header;
-  	int8_t ret = receivePacketHeader(&huart3, &cmd_header);
-  	if (ret != 0)
-  	{
-  		printf("Getting command packet header failed\r\n");
-  	}
+	ECSSPacketHeader cmd_header;
+	int8_t inputReceived = receivePacketHeaderWithTimeout(&huart3, &cmd_header, STANDBY_TIMEOUT_MS);
 
-  	// Receive packet data (command character)
-  	if (cmd_header.data_length > 0 && cmd_header.data_length <= SMALL_RX_BUFFER_SIZE)
-  	{
-  		ret = receivePacketData(&huart3, mySmallRXBuffer, cmd_header.data_length);
-  		if (ret != 0)
-  		{
-  			printf("Getting command packet data failed\r\n");
-  		}
-  	}
-
-  	char* choice = (char *)mySmallRXBuffer;
-
-  	if (choice[0] == '1')
-  	{
-  		// NOMINAL MODE - Check if system is configured for nominal
-  		if (checkSystemForNominal() != 0)
-  		{
-  			printf("ERROR: System not configured for nominal mode\r\n");
-  			sendNackPacket(&huart3, cmd_header.sequence_count, 11);
-  			// TODO: Decide if we want to LOCK or if UPDATE has to happen
-  			setupSystemForNominal();
-  			NVIC_SystemReset();
-  		}
-  		
-  		// System ready - send ACK
-  		if (sendAckPacket(&huart3, cmd_header.sequence_count) != 0)
-  		{
-  			printf("Error sending ACK for command\r\n");
-  		}
-  		
-  		if (boot() != 0)
-  		{
-  			printf("Booting image failed\r\n");
-  			// TODO: Create ERROR report
-  			// TODO: REVERT if the versions allow it
-  		}
-  	}
-  	else if (choice[0] == '2')
-  	{
-  		// UPDATE MODE - Check if system is configured for update
-  		if (checkSystemForUpdate() != 0)
+	/* '6' during the window = skip to automatic status-based decision */
+	if (inputReceived == 0 && cmd_header.data_length <= 1)
+	{
+		uint8_t tmp = 0;
+		if (cmd_header.data_length == 1)
+			receivePacketData(&huart3, &tmp, 1);
+		if (tmp == '6')
 		{
-			printf("ERROR: System not configured for update\r\n");
-			sendNackPacket(&huart3, cmd_header.sequence_count, 10);
-			setupSystemForUpdate();
-			NVIC_SystemReset();
+			sendAckPacket(&huart3, cmd_header.sequence_count);
+			printf("Skipping timeout, continuing with status: %d\r\n", (int)status);
+			inputReceived = 1; /* treat as no-user-input */
 		}
-		
-		// System is ready - send ACK
-		printf("System ready for update\r\n");
-		if (sendAckPacket(&huart3, cmd_header.sequence_count) != 0)
+		else
 		{
-			printf("Error sending ACK for command\r\n");
+			/* Data already consumed from UART; store in buffer and zero the
+			 * header's data_length so standbyLoop does not attempt a second
+			 * UART read for the same byte. */
+			mySmallRXBuffer[0] = tmp;
+			cmd_header.data_length = 0;
 		}
-		
-  		if (receiveUpdateData(&huart3) != 0)
-  		{
-  			printf("Receiving image failed\r\n");
-  		}
+	}
 
-  		setupSystemForImageSwap();
-  		NVIC_SystemReset();
-  	}
-  	else if (choice[0] == '3')
-  	{
-  		// IMAGE SWAP MODE - Check if system is configured for swap
-  		if (checkSystemForImageSwap() != 0)
-  		{
-  			printf("ERROR: System not setup for swap, aborting\r\n");
-  			sendNackPacket(&huart3, cmd_header.sequence_count, 12);
-  			NVIC_SystemReset();
-  		}
-  		
-  		if (checkUpdateVersion() != 0)
+	if (inputReceived == 0)
+	{
+		/* User sent a packet within the window – enter standby and process it */
+		printf("User input detected, entering standby mode\r\n");
+		standbyLoop(&huart3, &cmd_header);
+	}
+	else
+	{
+		/* No user input – consult bootloader status */
+		printf("No user input detected. Bootloader status: %d\r\n", (int)status);
+
+		if (status == BOOTLOADER_STATUS_NOMINAL)
+    {
+      /* NOMINAL MODE: boot the application */
+      if (checkSystemForNominal() != 0)
+      {
+        printf("ERROR: System not configured for nominal mode\r\n");
+        setupSystemForNominal();
+        NVIC_SystemReset();
+      }
+      if (boot() != 0)
+      {
+        printf("Booting image failed\r\n");
+        handleRollback(&huart3);
+      }
+    }
+  else if (status == BOOTLOADER_STATUS_BOOT_ATTEMPTED)
+  {
+      /* App was launched but the system reset without the app clearing the
+      * BOOT_ATTEMPTED status - treat as a runtime boot failure. */
+      printf("Previous boot attempt failed (app did not clear status), checking rollback\r\n");
+      handleRollback(&huart3);
+  }
+		else
 		{
-			printf("Cannot update - rollback protection\r\n");
-			sendNackPacket(&huart3, cmd_header.sequence_count, 9);
-			// no point staying in SWAP mode
-			setupSystemForNominal();
-			NVIC_SystemReset();
+			/* STANDBY: behaviour driven by status */
+			if (status == BOOTLOADER_STATUS_SWAP)
+			{
+				/* Automatic swap */
+				printf("Status indicates pending swap, performing automatic swap\r\n");
+				handleSwap(&huart3, 0);
+			}
+			else
+			{
+				/* BOOTLOADER_STATUS_STANDBY (111) or unrecognised – await commands */
+				standbyLoop(&huart3, NULL);
+			}
 		}
-
-  		// System ready - send ACK
-  		if (sendAckPacket(&huart3, cmd_header.sequence_count) != 0)
-  		{
-  			printf("Error sending ACK for command\r\n");
-  		}
-  		
-
-  		if (swapBootWithUpdate() != 0)
-  		{
-  			printf("Swapping images failed\r\n");
-  			NVIC_SystemReset();
-  		}
-  		if (updateRollbackCounter() != 0)
-  		{
-  			printf("Updating rollback counter failed\r\n");
-  			// TODO: What needs to happend here?
-  			NVIC_SystemReset();
-  		}
-  		setupSystemForNominal();
-		NVIC_SystemReset();
-  	}
-  	else if (choice[0] == '4')
-  	{
-  		if (sendAckPacket(&huart3, cmd_header.sequence_count) != 0)
-		{
-			printf("Error sending ACK for command\r\n");
-		}
-  		printImageHeaders();
-  		NVIC_SystemReset();
-  	}
-  	else
-  	{
-  		// TODO: Support storing BOOT REPORT
-  		printf("ERROR, reset\r\n");
-  		NVIC_SystemReset();
-  	}
+	}
 
   /* USER CODE END 2 */
 

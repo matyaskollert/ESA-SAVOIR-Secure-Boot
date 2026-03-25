@@ -46,7 +46,7 @@ def _build_header(service_type: int, sequence: int, data_len: int, is_tc: bool =
 def _parse_header(raw: bytes) -> dict:
     if len(raw) != HEADER_SIZE:
         raise ValueError(f"Header must be {HEADER_SIZE} bytes, got {len(raw)}")
-    print("Raw header bytes:", " ".join(f"0x{b:02X}" for b in raw))
+    # print("Raw header bytes:", " ".join(f"0x{b:02X}" for b in raw))
     vtf, svc, seq, dlen, chk = struct.unpack(">BBHHB", raw)
     calc = 0
     for b in raw[:6]:
@@ -108,6 +108,8 @@ class BootloaderSession:
             time.sleep(0.01)
             self._ser.write(data)
             self._ser.flush()
+
+        print(f"Sent packet: header={header.hex()} data={data.hex() if data else '(none)'}")
 
     def send_command(self, command: str, sequence: int = 0) -> None:
         """Send a DEBUG_LOG telecommand (the BSW's 'command input' path)."""
@@ -207,16 +209,18 @@ class BootloaderSession:
                 break
             if pkt["service_type"] == PacketType.DEBUG_LOG:
                 lines.append(pkt.get("raw_debug", ""))
-                deadline = time.monotonic() + timeout  # reset on new data
         return lines
 
     # ------------------------------------------------------------------ complete upload sequence
 
     def upload_image(self, image_data: bytes, start_sequence: int = 1,
-                     chunk_size: int = 256, verbose: bool = False) -> None:
+                     chunk_size: int = 256, verbose: bool = False,
+                     max_retries: int = 3) -> None:
         """Upload a fully prepared (header + signed) image binary with ACK per chunk.
 
-        This mirrors the UploaderThread.run() logic in uploader/main.py.
+        Mirrors UploaderThread.run() in uploader/main.py: each packet is retried
+        up to *max_retries* times and a small inter-chunk delay is inserted so the
+        firmware has time to process each chunk before the next one arrives.
 
         Raises NackReceived or TimeoutError on failure.
         """
@@ -224,24 +228,59 @@ class BootloaderSession:
         total = len(image_data)
 
         # START
-        self.send_start_upload(total, seq)
-        self.wait_for_ack(expected_sequence=seq)
+        start_sent = False
+        for attempt in range(max_retries):
+            self.send_start_upload(total, seq)
+            try:
+                self.wait_for_ack(expected_sequence=seq)
+                start_sent = True
+                break
+            except TimeoutError:
+                if attempt < max_retries - 1:
+                    time.sleep(0.5)
+        if not start_sent:
+            raise TimeoutError("Failed to send START packet after multiple retries")
         if verbose:
             print(f"  [upload] START acked (seq={seq})")
         seq += 1
+        time.sleep(0.1)  # let firmware settle before first chunk
 
         # DATA chunks
-        for offset in range(0, total, chunk_size):
+        total_chunks = (total + chunk_size - 1) // chunk_size
+        bytes_sent = 0
+        for chunk_num, offset in enumerate(range(0, total, chunk_size), start=1):
             chunk = image_data[offset:offset + chunk_size]
-            self.send_data_chunk(chunk, seq)
-            self.wait_for_ack(expected_sequence=seq)
-            if verbose and (offset // chunk_size) % 10 == 0:
-                print(f"  [upload] {offset + len(chunk)}/{total} bytes")
+            chunk_sent = False
+            for attempt in range(max_retries):
+                self.send_data_chunk(chunk, seq)
+                try:
+                    self.wait_for_ack(expected_sequence=seq)
+                    chunk_sent = True
+                    break
+                except TimeoutError:
+                    if attempt < max_retries - 1:
+                        time.sleep(0.3)
+            if not chunk_sent:
+                raise TimeoutError(f"Failed to send chunk {chunk_num}/{total_chunks} after {max_retries} retries")
+            bytes_sent += len(chunk)
+            if verbose and chunk_num % 10 == 0:
+                print(f"  [upload] {bytes_sent}/{total} bytes (chunk {chunk_num}/{total_chunks})")
             seq += 1
+            time.sleep(0.05)  # inter-chunk delay
 
         # END
-        self.send_end_upload(seq)
-        self.wait_for_ack(expected_sequence=seq)
+        end_sent = False
+        for attempt in range(max_retries):
+            self.send_end_upload(seq)
+            try:
+                self.wait_for_ack(expected_sequence=seq)
+                end_sent = True
+                break
+            except TimeoutError:
+                if attempt < max_retries - 1:
+                    time.sleep(0.3)
+        if not end_sent:
+            raise TimeoutError("Failed to send END packet after multiple retries")
         if verbose:
             print(f"  [upload] END acked (seq={seq})")
 

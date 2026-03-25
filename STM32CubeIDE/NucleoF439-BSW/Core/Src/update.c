@@ -195,35 +195,9 @@ int16_t swapBootWithUpdate(void)
 	return 0;
 }
 
-uint32_t getBootloaderStatus(void) {
-	uint32_t status = *((uint32_t*)COMM_FLASH_ADDRESS);
-	return status;
-}
-
-int16_t setBootloaderStatus(uint32_t newStatus)
-{
-	if (HAL_FLASH_Unlock() != HAL_OK)
-	{
-		return 1;
-	}
-	if (eraseFlashSector(COMM_FLASH_SECTOR) != 0)
-	{
-		return 1;
-	}
-	if (writeFlashWord(COMM_FLASH_ADDRESS, newStatus) != 0)
-	{
-		return 1;
-	}
-	if (HAL_FLASH_Lock() != HAL_OK)
-	{
-		return 1;
-	}
-	return 0;
-}
-
 int16_t setupSystemForImageSwap(void)
 {
-	if (setBootloaderStatus(123) != 0)
+	if (setBootloaderStatus(BOOTLOADER_STATUS_SWAP) != 0)
 	{
 		printf("Setting bootloader status failed\r\n");
 		return 1;
@@ -241,11 +215,6 @@ int16_t setupSystemForImageSwap(void)
 
 int16_t checkSystemForImageSwap(void)
 {
-	if (getBootloaderStatus() != 123)
-	{
-		printf("Bootloader status is not set to SWAP\r\n");
-		return 1;
-	}
 	uint32_t sectorMask = COUNTER_FLASH_OB_SECTOR | BOOT_FLASH_OB_SECTOR;
 	if (checkSectorWriteProtection(sectorMask) != 1)
 	{
@@ -257,7 +226,7 @@ int16_t checkSystemForImageSwap(void)
 
 int16_t setupSystemForNominal(void)
 {
-	if (setBootloaderStatus(321) != 0)
+	if (setBootloaderStatus(BOOTLOADER_STATUS_NOMINAL) != 0)
 	{
 		printf("Setting bootloader status failed\r\n");
 		return 1;
@@ -276,7 +245,6 @@ int16_t setupSystemForNominal(void)
 
 int16_t checkSystemForNominal(void)
 {
-	// TODO: Decide if we should check the STATUS here
 	uint32_t sectorMask = COUNTER_FLASH_OB_SECTOR | BOOT_FLASH_OB_SECTOR;
 	if (checkSectorWriteProtection(sectorMask) != 0)
 	{
@@ -294,7 +262,6 @@ int16_t setupSystemForUpdate(void)
 
 int16_t checkSystemForUpdate(void)
 {
-	// TODO: Decide if we should check the STATUS here
 	// TODO: This could be done in one step?
 	uint32_t sectorMask = COUNTER_FLASH_OB_SECTOR | BOOT_FLASH_OB_SECTOR;
 	if (checkSectorWriteProtection(sectorMask) != 0)
@@ -387,4 +354,23 @@ int32_t updateRollbackCounter(void)
 		// TODO: can this happen?
 		return -1;
 	}
+}
+
+int16_t checkRollbackCondition(void)
+{
+    const image_header_t* bootImage   = (const image_header_t *)(BOOT_FLASH_ADDRESS);
+    const image_header_t* updateImage = (const image_header_t *)(UPDATE_FLASH_ADDRESS);
+    uint32_t bootVersion   = (uint32_t)bootImage->imageVersion;
+    uint32_t updateVersion = (uint32_t)updateImage->imageVersion;
+    uint32_t lowestAllowed = getLowestAllowedVersion();
+
+    if (bootVersion > updateVersion && updateVersion >= lowestAllowed)
+    {
+        printf("Rollback condition met: BOOT v%lu > UPDATE v%lu, UPDATE v%lu >= floor v%lu\r\n",
+               bootVersion, updateVersion, updateVersion, lowestAllowed);
+        return 0;
+    }
+    printf("Rollback not possible: BOOT v%lu, UPDATE v%lu, floor v%lu\r\n",
+           bootVersion, updateVersion, lowestAllowed);
+    return 1;
 }
