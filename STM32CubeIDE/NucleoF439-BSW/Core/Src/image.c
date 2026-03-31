@@ -68,7 +68,7 @@ int16_t imageValidateInRAM(ImageSlot slot)
 		return 2;
 	}
 
-	void* image_address = (void *)(header) + 4;
+	void* image_address = (void *)BOOT_RAM_ADDRESS + 4;
 	// header size + image size - CRC
 	uint32_t dataSize = header->imageSize + IMAGE_OFFSET - 4;
 
