@@ -156,7 +156,7 @@ class BootloaderSession:
         meta["data"] = data
         if meta["service_type"] == PacketType.DEBUG_LOG:
             meta["raw_debug"] = data.decode("utf-8", errors="replace")
-            print(f"Received DEBUG_LOG: {meta['raw_debug']}")
+            print(f"[{time.monotonic():.3f}] Received DEBUG_LOG: {meta['raw_debug']}")
             # print("Raw DEBUG_LOG:", " ".join(f"0x{b:02X}" for b in data))
         return meta
 
@@ -297,7 +297,7 @@ _NACK_DESCRIPTIONS = {
     6:  "Failed to receive DATA packet header",
     7:  "Wrong packet type (expected DATA_CHUNK)",
     8:  "Failed to receive chunk data",
-    9:  "Invalid image header or version too low",
+    9:  "Invalid image or version too low",
     10: "System not configured for update (option bytes need reconfiguration)",
     11: "System not configured for nominal mode",
     12: "System not configured for image swap",

@@ -21,7 +21,7 @@ class TestBootValidImage:
 
     def test_boot_successful(self, real_asw_state, bsw, config):
         """BSW must ACK, complete all validation steps, and hand off to the real ASW."""
-        board.reset_board(delay=1.0)
+        board.reset_board()
         bsw.send_command('1', sequence=0)
         ack = bsw.wait_for_ack(expected_sequence=0)
         assert ack is not None
@@ -38,13 +38,13 @@ class TestBootNoImage:
     """Boot slot is erased (no magic number) → BSW must send error log."""
 
     # def test_nack_on_missing_image(self, clean_flash, bsw, config):
-    #     board.reset_board(delay=1.0)
+    #     board.reset_board()
     #     bsw.send_command('1', sequence=0)
     #     with pytest.raises(serial_comm.NackReceived):
     #         bsw.wait_for_ack(expected_sequence=0, timeout=5.0)
 
     def test_debug_log_reports_missing_header(self, clean_flash, bsw, config):
-        board.reset_board(delay=1.0)
+        board.reset_board()
         bsw.send_command('1', sequence=0)
         bsw.wait_for_ack(expected_sequence=0, timeout=5.0)
         log = "".join(bsw.drain_debug_log(timeout=2.0))
@@ -62,13 +62,13 @@ class TestBootCorruptCRC:
         board.flash_image(board.BOOT_FLASH_ADDRESS, bad_img)
 
     # def test_nack_on_bad_crc(self, bsw, config):
-    #     board.reset_board(delay=1.0)
+    #     board.reset_board()
     #     bsw.send_command('1', sequence=0)
     #     with pytest.raises(serial_comm.NackReceived):
     #         bsw.wait_for_ack(expected_sequence=0, timeout=5.0)
 
     def test_debug_log_reports_crc_mismatch(self, bsw, config):
-        board.reset_board(delay=1.0)
+        board.reset_board()
         bsw.send_command('1', sequence=0)
         try:
             bsw.wait_for_ack(expected_sequence=0, timeout=5.0)
@@ -89,15 +89,13 @@ class TestBootUnprotectedBootSector:
             protect_mask=0,
             unprotect_mask=board.OB_WRP_BOOT,
         )
-        time.sleep(1.5)  # wait for OB_Launch reset
         yield
         # Restore protection after test
         board.set_write_protection(protect_mask=board.OB_WRP_BOOT | board.OB_WRP_COUNTER)
-        time.sleep(1.5)
 
     def test_nack_when_boot_sector_unprotected(self, bsw, config):
         """BSW must refuse to boot if checkSystemForNominal() fails."""
-        board.reset_board(delay=1.0)
+        board.reset_board()
         bsw.send_command('1', sequence=0)
         with pytest.raises(serial_comm.NackReceived) as exc_info:
             bsw.wait_for_ack(expected_sequence=0, timeout=5.0)
@@ -113,19 +111,17 @@ class TestBootUnprotectedCounterSector:
             protect_mask=0,
             unprotect_mask=board.OB_WRP_COUNTER,
         )
-        time.sleep(1.5)
         yield
         board.set_write_protection(protect_mask=board.OB_WRP_BOOT | board.OB_WRP_COUNTER)
-        time.sleep(1.5)
 
     def test_nack_and_sectors_reprotected(self, bsw, config):
         """BSW must NACK 11 and then re-protect both sectors via setupSystemForNominal()."""
-        board.reset_board(delay=1.0)
+        board.reset_board()
         bsw.send_command('1', sequence=0)
         with pytest.raises(serial_comm.NackReceived) as exc_info:
             bsw.wait_for_ack(expected_sequence=0, timeout=5.0)
         assert exc_info.value.error_code == 11
-        time.sleep(2.0)  # let OB_Launch reset complete
+        time.sleep(1.0)  # let OB_Launch reset complete
         assert board.is_write_protected(board.OB_WRP_COUNTER)
         assert board.is_write_protected(board.OB_WRP_BOOT)
 
@@ -139,19 +135,17 @@ class TestBootBothSectorsUnprotected:
             protect_mask=0,
             unprotect_mask=board.OB_WRP_BOOT | board.OB_WRP_COUNTER,
         )
-        time.sleep(1.5)
         yield
         board.set_write_protection(protect_mask=board.OB_WRP_BOOT | board.OB_WRP_COUNTER)
-        time.sleep(1.5)
 
     def test_nack_wrp_error(self, bsw, config):
         """BSW must NACK 11 and log the WRP error message."""
-        board.reset_board(delay=1.0)
+        board.reset_board()
         bsw.send_command('1', sequence=0)
         with pytest.raises(serial_comm.NackReceived) as exc_info:
             bsw.wait_for_ack(expected_sequence=0, timeout=5.0)
         assert exc_info.value.error_code == 11
-        time.sleep(2.0)  # let OB_Launch reset complete
+        time.sleep(1.0)  # let OB_Launch reset complete
         assert board.is_write_protected(board.OB_WRP_COUNTER)
         assert board.is_write_protected(board.OB_WRP_BOOT)
 
@@ -166,13 +160,13 @@ class TestBootBadMagic:
         board.flash_image(board.BOOT_FLASH_ADDRESS, bad_img)
 
     # def test_nack_on_bad_magic(self, bsw, config):
-    #     board.reset_board(delay=1.0)
+    #     board.reset_board()
     #     bsw.send_command('1', sequence=0)
     #     with pytest.raises(serial_comm.NackReceived):
     #         bsw.wait_for_ack(expected_sequence=0, timeout=5.0)
 
     def test_debug_log_reports_no_valid_header(self, bsw, config):
-        board.reset_board(delay=1.0)
+        board.reset_board()
         bsw.send_command('1', sequence=0)
         try:
             bsw.wait_for_ack(expected_sequence=0, timeout=5.0)
@@ -197,13 +191,13 @@ class TestBootInvalidSignature:
         board.flash_image(board.BOOT_FLASH_ADDRESS, bad_img)
 
     # def test_nack_on_bad_signature(self, bsw, config):
-    #     board.reset_board(delay=1.0)
+    #     board.reset_board()
     #     bsw.send_command('1', sequence=0)
     #     with pytest.raises(serial_comm.NackReceived):
     #         bsw.wait_for_ack(expected_sequence=0, timeout=10.0)
 
     def test_debug_log_reports_signature_failure(self, bsw, config):
-        board.reset_board(delay=1.0)
+        board.reset_board()
         bsw.send_command('1', sequence=0)
         try:
             bsw.wait_for_ack(expected_sequence=0, timeout=10.0)
@@ -226,24 +220,23 @@ class TestBootNominalAutoFix:
             protect_mask=0,
             unprotect_mask=board.OB_WRP_BOOT,
         )
-        time.sleep(1.5)
 
         # First boot: triggers NACK + setupSystemForNominal() + OB_Launch reset
-        board.reset_board(delay=1.0)
+        board.reset_board()
         bsw.send_command('1', sequence=0)
         try:
             bsw.wait_for_ack(expected_sequence=0, timeout=5.0)
         except serial_comm.NackReceived:
             pass
         bsw.close()
-        time.sleep(2.5)  # allow OB_Launch reset to complete
 
+        time.sleep(1.0)  # allow OB_Launch reset to complete
         assert board.is_write_protected(board.OB_WRP_BOOT),    "BOOT sector must be re-protected after auto-fix"
         assert board.is_write_protected(board.OB_WRP_COUNTER), "COUNTER sector must be re-protected after auto-fix"
 
         # Second boot (after auto-fix) must succeed
         bsw.open()
-        board.reset_board(delay=1.0)
+        board.reset_board()
         bsw.send_command('1', sequence=0)
         ack = bsw.wait_for_ack(expected_sequence=0, timeout=10.0)
         assert ack is not None

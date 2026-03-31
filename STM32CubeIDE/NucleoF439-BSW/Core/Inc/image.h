@@ -5,6 +5,7 @@
 
 typedef enum {BOOT, UPDATE, SWAP} ImageSlot;
 
+#define IMAGE_OFFSET 		0x1400
 #define IMAGE_MAGIC 		0xABCD
 #define BOOT_RAM_ADDRESS 	0x20008000
 

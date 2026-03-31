@@ -59,6 +59,7 @@ HASH_HandleTypeDef hhash;
 RNG_HandleTypeDef hrng;
 
 UART_HandleTypeDef huart3;
+DMA_HandleTypeDef hdma_usart3_rx;
 
 /* USER CODE BEGIN PV */
 
@@ -67,6 +68,7 @@ UART_HandleTypeDef huart3;
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
+static void MX_DMA_Init(void);
 static void MX_USART3_UART_Init(void);
 static void MX_CRYP_Init(void);
 static void MX_HASH_Init(void);
@@ -119,9 +121,14 @@ static void handleSwap(UART_HandleTypeDef* uart, uint16_t sequence_count)
 		setupSystemForImageSwap();
 		NVIC_SystemReset();
 	}
+	if (checkUpdateValidity() != 0)
+	{
+		sendNackPacket(uart, sequence_count, 9);
+		setupSystemForNominal();
+		NVIC_SystemReset();
+	}
 	if (checkUpdateVersion() != 0)
 	{
-		printf("Cannot update - rollback protection\r\n");
 		sendNackPacket(uart, sequence_count, 9);
 		setupSystemForNominal();
 		NVIC_SystemReset();
@@ -155,12 +162,11 @@ static void standbyLoop(UART_HandleTypeDef* uart, BootloaderStatus initial_cmd, 
 	uint16_t seq = initial_seq;
 	uint8_t use_initial = (initial_cmd != BOOTLOADER_STATUS_STANDBY);
 
-	printf("Entering standby mode. Send: 1=boot, 2=update, 3=swap, 4=check versions, 5=reset\r\n");
-
 	while (1)
 	{
 		if (!use_initial)
 		{
+			printf("Entering standby mode. Send: 1=boot, 2=update, 3=swap, 4=check versions, 5=reset\r\n");
 			ECSSPacketHeader header;
 			if (receivePacketHeader(uart, &header) != 0)
 			{
@@ -318,12 +324,15 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+  MX_DMA_Init();
   MX_USART3_UART_Init();
   MX_CRYP_Init();
   MX_HASH_Init();
   MX_RNG_Init();
   MX_CRC_Init();
   /* USER CODE BEGIN 2 */
+
+  uart_rx_init(&huart3);
 
   // TODO: Add BSW CRC Check - where should the CRC be stored?
 
@@ -599,6 +608,22 @@ static void MX_USART3_UART_Init(void)
   /* USER CODE BEGIN USART3_Init 2 */
 
   /* USER CODE END USART3_Init 2 */
+
+}
+
+/**
+  * Enable DMA controller clock
+  */
+static void MX_DMA_Init(void)
+{
+
+  /* DMA controller clock enable */
+  __HAL_RCC_DMA1_CLK_ENABLE();
+
+  /* DMA interrupt init */
+  /* DMA1_Stream1_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Stream1_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Stream1_IRQn);
 
 }
 

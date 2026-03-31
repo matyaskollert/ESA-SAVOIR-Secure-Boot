@@ -179,8 +179,16 @@ int16_t receiveUpdateData(UART_HandleTypeDef* uart)
 
 	// Write to flash
 	printf("Writing to flash...\r\n");
+	if (HAL_FLASH_Unlock() != HAL_OK)
+	{
+		return 11;
+	}
 	writeFlashSector(UPDATE_FLASH_SECTOR, UPDATE_FLASH_ADDRESS, 
 	                 (uint32_t *)ramDestination, dataLength/4U);
+	if (HAL_FLASH_Lock() != HAL_OK)
+	{
+		return 11;
+	}
 	printf("Flash write complete!\r\n");
 	
 	return 0;
@@ -189,9 +197,34 @@ int16_t receiveUpdateData(UART_HandleTypeDef* uart)
 int16_t swapBootWithUpdate(void)
 {
 	// TODO: Error handling?
-	writeFlashSector(SWAP_FLASH_SECTOR, SWAP_FLASH_ADDRESS, (uint32_t *)BOOT_FLASH_ADDRESS, FLASH_SECTOR_SIZE);
-	writeFlashSector(BOOT_FLASH_SECTOR, BOOT_FLASH_ADDRESS, (uint32_t *)UPDATE_FLASH_ADDRESS, FLASH_SECTOR_SIZE);
-	writeFlashSector(UPDATE_FLASH_SECTOR, UPDATE_FLASH_ADDRESS, (uint32_t *)SWAP_FLASH_ADDRESS, FLASH_SECTOR_SIZE);
+	printf("Swapping BOOT and UPDATE images...\r\n");
+
+	const image_header_t* bootHeader = imageGetHeader(BOOT);
+	if (bootHeader == NULL)
+	{
+		return 1;
+	}
+	const uint32_t bootImageSizeWords = bootHeader->imageSize/4U + IMAGE_OFFSET/4U;
+
+	const image_header_t* updateHeader = imageGetHeader(UPDATE);
+	if (updateHeader == NULL)
+	{
+		return 1;
+	}
+	const uint32_t updateImageSizeWords = updateHeader->imageSize/4U + IMAGE_OFFSET/4U;
+
+	if (HAL_FLASH_Unlock() != HAL_OK)
+	{
+		return 2;
+	}
+	writeFlashSector(SWAP_FLASH_SECTOR, SWAP_FLASH_ADDRESS, (uint32_t *)BOOT_FLASH_ADDRESS, bootImageSizeWords);
+	writeFlashSector(BOOT_FLASH_SECTOR, BOOT_FLASH_ADDRESS, (uint32_t *)UPDATE_FLASH_ADDRESS, updateImageSizeWords);
+	writeFlashSector(UPDATE_FLASH_SECTOR, UPDATE_FLASH_ADDRESS, (uint32_t *)SWAP_FLASH_ADDRESS, bootImageSizeWords);
+	if (HAL_FLASH_Lock() != HAL_OK)
+	{
+		return 2;
+	}
+	printf("Swap complete!\r\n");
 	return 0;
 }
 
@@ -215,10 +248,10 @@ int16_t setupSystemForImageSwap(void)
 
 int16_t checkSystemForImageSwap(void)
 {
-	uint32_t sectorMask = COUNTER_FLASH_OB_SECTOR | BOOT_FLASH_OB_SECTOR;
-	if (checkSectorWriteProtection(sectorMask) != 1)
+	uint32_t sectorMask = BOOT_FLASH_OB_SECTOR | COUNTER_FLASH_OB_SECTOR;
+	if (checkAllSectorsUnprotected(sectorMask) != 1)
 	{
-		printf("Cannot swap with BOOT and COUNTER protected\r\n");
+		printf("Cannot swap with BOOT or COUNTER protected\r\n");
 		return 1;
 	}
 	return 0;
@@ -279,14 +312,23 @@ int16_t checkSystemForUpdate(void)
 	return 0;
 }
 
-int16_t checkUpdateVersion(void)
+int16_t checkUpdateValidity(void)
 {
-	// First we need to Verify the CRC + digital signature so the version cannot be modified
+	if (imageValidate(UPDATE) != 0) {
+		printf("Update image CRC verification failed");
+		return 1;
+	}
 	if (imageLoad(UPDATE) != 0)
 	{
-		printf("Update image verification failed\r\n");
+		printf("Update image digital signature verification failed\r\n");
 		return 2;
 	}
+	printf("Update image is valid\r\n");
+	return 0;
+}
+
+int16_t checkUpdateVersion(void)
+{
 	uint32_t lowestAllowedVersion = getLowestAllowedVersion();
 	const image_header_t* updateImage = (const image_header_t *)(UPDATE_FLASH_ADDRESS);
 	uint32_t updateImageVersion = (uint32_t)updateImage->imageVersion;
@@ -295,6 +337,7 @@ int16_t checkUpdateVersion(void)
 		printf("UPDATE version: %lu is lower than allowed: %lu\r\n", updateImageVersion, lowestAllowedVersion);
 		return 1;
 	}
+	printf("UPDATE version: %lu is valid (lowest allowed: %lu)\r\n", updateImageVersion, lowestAllowedVersion);
 	return 0;
 }
 
@@ -348,6 +391,7 @@ int32_t updateRollbackCounter(void)
 	}
 	else if (bootImageVersion > counterValue && bootImageVersion > updateImageVersion)
 	{
+		printf("Updating rollback counter from %lu to %lu\r\n", counterValue, bootImageVersion);
 		return setCounterValue(bootImageVersion);
 	} else
 	{

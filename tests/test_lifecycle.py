@@ -57,10 +57,9 @@ def _do_full_upload(bsw, image_data: bytes) -> None:
     """Reset the board, send '2' during the 15 s input window to enter update
     mode, upload the image, then wait for the BSW to reset into SWAP state.
     Caller must ensure COMM=NOMINAL and sectors are protected beforehand."""
-    board.reset_board(delay=1.0)
+    board.reset_board()
     bsw.send_command('2', sequence=0)
     bsw.wait_for_ack(expected_sequence=0)
-    time.sleep(0.5)  # allow BSW to prepare for upload
     bsw.upload_image(image_data, start_sequence=1)
     time.sleep(2.5)  # BSW calls setupSystemForImageSwap() then resets
 
@@ -68,10 +67,10 @@ def _do_full_upload(bsw, image_data: bytes) -> None:
 def _do_swap(bsw) -> None:
     """Reset the board; the BSW auto-swaps when '6' skips the timeout.
     Caller must ensure COMM=SWAP (0xCC) beforehand."""
-    board.reset_board(delay=1.0)
+    board.reset_board()
     _skip_timeout(bsw)
     bsw.drain_debug_log(timeout=10.0)
-    time.sleep(2.5)  # allow OB_Launch reset from setupSystemForNominal
+    time.sleep(1.0)  # allow OB_Launch reset from setupSystemForNominal
 
 
 class TestFullUpdateCycle:
@@ -91,7 +90,7 @@ class TestFullUpdateCycle:
         assert board.is_write_protected(board.OB_WRP_COUNTER), "COUNTER must be protected after cycle"
         assert board.get_comm_status() == board.COMM_STATUS_NOMINAL
 
-        board.reset_board(delay=1.0)
+        board.reset_board()
         _skip_timeout(bsw)
         log = "".join(bsw.drain_debug_log(timeout=10.0))
         assert "CRC validation in RAM successful" in log
@@ -184,7 +183,6 @@ class TestAutomaticRollbackBothFail:
             board.set_write_protection(
                 protect_mask=board.OB_WRP_BOOT | board.OB_WRP_COUNTER
             )
-            time.sleep(1.5)
         yield boot_img, update_img
 
     def test_both_boots_fail_leaves_standby(self, both_fail_state, bsw, config):
@@ -192,7 +190,7 @@ class TestAutomaticRollbackBothFail:
         Round 2: BOOT_ATTEMPTED again → no candidate → COMM=STANDBY."""
         # Round 1: v2 fails → BSW triggers rollback swap
         board.set_comm_status(board.COMM_STATUS_BOOT_ATTEMPTED)
-        board.reset_board(delay=1.0)
+        board.reset_board()
         _skip_timeout(bsw)
         bsw.drain_debug_log(timeout=5.0)
         _skip_timeout(bsw)
@@ -201,10 +199,10 @@ class TestAutomaticRollbackBothFail:
 
         # Round 2: v1 also fails
         board.set_comm_status(board.COMM_STATUS_BOOT_ATTEMPTED)
-        board.reset_board(delay=1.0)
+        board.reset_board()
         _skip_timeout(bsw)
         bsw.drain_debug_log(timeout=5.0)
-        time.sleep(2.5)
+        time.sleep(0.1)
 
         assert board.get_comm_status() == board.COMM_STATUS_STANDBY
 
@@ -231,7 +229,6 @@ class TestAutomaticRollbackSecondSucceeds:
             board.set_write_protection(
                 protect_mask=board.OB_WRP_BOOT | board.OB_WRP_COUNTER
             )
-            time.sleep(1.5)
         yield boot_img, real_asw_image
 
     def test_rollback_swap_then_second_boot_succeeds_and_confirms_nominal(
@@ -241,7 +238,7 @@ class TestAutomaticRollbackSecondSucceeds:
         Step 3: test sends '1' to ASW → ASW sets NOMINAL + resets → COMM=NOMINAL."""
         # Step 1: trigger rollback swap
         board.set_comm_status(board.COMM_STATUS_BOOT_ATTEMPTED)
-        board.reset_board(delay=1.0)
+        board.reset_board()
         _skip_timeout(bsw)
         bsw.drain_debug_log(timeout=5.0)
         _skip_timeout(bsw)
@@ -249,7 +246,7 @@ class TestAutomaticRollbackSecondSucceeds:
         assert _slot_version(board.BOOT_FLASH_ADDRESS) == 1
 
         # Step 2: BOOT slot = real ASW v1, COMM = NOMINAL → BSW boots it
-        board.reset_board(delay=1.0)
+        board.reset_board()
         _skip_timeout(bsw)
         log = "".join(bsw.drain_debug_log(timeout=5.0))
         assert "App STARTED" in log

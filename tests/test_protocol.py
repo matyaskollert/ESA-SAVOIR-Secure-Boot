@@ -30,7 +30,7 @@ class TestUnknownCommand:
 
     def test_unknown_command_does_not_hang(self, nominal_state, bsw, config):
         """Send 'X'; the BSW should reach the else-branch and eventually reset."""
-        board.reset_board(delay=1.0)
+        board.reset_board()
         bsw.send_command('X', sequence=0)
         # Give the BSW up to 5 s to respond or reset; we only care it doesn't hang.
         try:
@@ -42,7 +42,7 @@ class TestUnknownCommand:
         """The BOOT slot must be byte-for-byte intact after an unknown command."""
         golden = board.flash_read(board.BOOT_FLASH_ADDRESS, 32)
 
-        board.reset_board(delay=1.0)
+        board.reset_board()
         bsw.send_command('X', sequence=0)
         try:
             bsw.wait_for_ack(expected_sequence=0, timeout=5.0)
@@ -68,7 +68,7 @@ class TestCommandWithEmptyData:
         bsw._send(hdr)
 
     def test_zero_length_command_does_not_hang(self, nominal_state, bsw, config):
-        board.reset_board(delay=1.0)
+        board.reset_board()
         self._send_zero_length_command(bsw)
         try:
             bsw.wait_for_ack(expected_sequence=0, timeout=5.0)
@@ -81,11 +81,9 @@ class TestUploadStartErrors:
 
     def test_nack_3_when_start_data_length_wrong(self, nominal_state, bsw, config):
         """START_UPLOAD with data_length ≠ 4 must produce NACK error code 3."""
-        board.reset_board(delay=1.0)
+        board.reset_board()
         bsw.send_command('2', sequence=0)
         bsw.wait_for_ack(expected_sequence=0)
-
-        time.sleep(0.5)  # allow BSW to prepare for upload
 
         # Send a START_UPLOAD with an 8-byte payload instead of the expected 4.
         bad_hdr = _build_header(PacketType.START_UPLOAD, sequence=1, data_len=8)
@@ -96,11 +94,9 @@ class TestUploadStartErrors:
 
     def test_nack_2_when_wrong_service_type_at_start(self, nominal_state, bsw, config):
         """Sending DATA_CHUNK where START_UPLOAD is expected → NACK error code 2."""
-        board.reset_board(delay=1.0)
+        board.reset_board()
         bsw.send_command('2', sequence=0)
         bsw.wait_for_ack(expected_sequence=0)
-
-        time.sleep(0.5)  # allow BSW to prepare for upload
 
         # Send DATA_CHUNK instead of START_UPLOAD
         bad_hdr = _build_header(PacketType.DATA_CHUNK, sequence=1, data_len=4)
@@ -116,17 +112,13 @@ class TestUploadChunkErrors:
     def test_nack_7_when_wrong_service_type_in_chunk_phase(self, nominal_state, bsw, config, image_factory):
         """After a valid START, sending START_UPLOAD again → NACK error code 7."""
         update_img = image_factory.build(version=2)
-        board.reset_board(delay=1.0)
+        board.reset_board()
         bsw.send_command('2', sequence=0)
         bsw.wait_for_ack(expected_sequence=0)
-
-        time.sleep(0.5)  # allow BSW to prepare for upload
 
         # Valid START
         bsw.send_start_upload(len(update_img), sequence=1)
         bsw.wait_for_ack(expected_sequence=1)
-
-        time.sleep(0.5)
 
         # Wrong type during chunk phase (send another START)
         bad_hdr = _build_header(PacketType.START_UPLOAD, sequence=2, data_len=4)
@@ -142,30 +134,23 @@ class TestUploadChunkErrors:
     #     The full upload must still complete successfully.
     #     """
     #     update_img = image_factory.build(version=2)
-    #     board.reset_board(delay=1.0)
+    #     board.reset_board()
     #     bsw.send_command('2', sequence=0)
     #     bsw.wait_for_ack(expected_sequence=0)
 
-    #     time.sleep(0.5)  # allow BSW to prepare for upload
-
     #     bsw.send_start_upload(len(update_img), sequence=1)
     #     bsw.wait_for_ack(expected_sequence=1)
-
-    #     time.sleep(0.5)
 
     #     # Send first chunk with seq=2 (correct)
     #     chunk0 = update_img[:256]
     #     bsw.send_data_chunk(chunk0, sequence=2)
     #     bsw.wait_for_ack(expected_sequence=2)
 
-    #     time.sleep(0.5)
-
     #     # Skip seq=3; send seq=5 (gap of 2)
     #     chunk1 = update_img[256:512]
     #     bsw.send_data_chunk(chunk1, sequence=5)
     #     bsw.wait_for_ack(expected_sequence=5)
 
-    #     time.sleep(0.5)  # allow BSW to prepare for upload
     #     # Resume with seq=6 and finish normally
     #     bsw.upload_image(
     #         update_img[512:],
@@ -188,20 +173,17 @@ class TestUploadEndBeforeAllData:
         golden = board.flash_read(board.BOOT_FLASH_ADDRESS, 32)
         update_img = image_factory.build(version=2)
 
-        board.reset_board(delay=1.0)
+        board.reset_board()
         bsw.send_command('2', sequence=0)
         bsw.wait_for_ack(expected_sequence=0)
-        time.sleep(0.5)  # allow BSW to prepare for upload
         bsw.send_start_upload(512, sequence=1)
         bsw.wait_for_ack(expected_sequence=1)
-        time.sleep(0.5)
         bsw.send_data_chunk(update_img[:256], sequence=2)
         bsw.wait_for_ack(expected_sequence=2)
-        time.sleep(0.5)
         bsw.send_end_upload(sequence=3)
         ack = bsw.wait_for_ack(expected_sequence=3, timeout=5.0)
         assert ack is not None
-        time.sleep(2.5)
+        time.sleep(1.0)
 
         after = board.flash_read(board.BOOT_FLASH_ADDRESS, 32)
         assert after == golden

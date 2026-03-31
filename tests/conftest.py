@@ -154,8 +154,6 @@ def clean_flash(config):
         board.set_write_protection(
             protect_mask=board.OB_WRP_BOOT | board.OB_WRP_COUNTER
         )
-        time.sleep(1.5)  # wait for reset after OB_Launch
-
     yield
 
 
@@ -218,7 +216,6 @@ def swap_ready_state(clean_flash, image_factory):
         protect_mask=0,
         unprotect_mask=board.OB_WRP_BOOT | board.OB_WRP_COUNTER,
     )
-    time.sleep(1.5)
     yield boot_img, update_img
 
 
@@ -244,7 +241,6 @@ def interrupted_swap_state(clean_flash, image_factory):
         protect_mask=0,
         unprotect_mask=board.OB_WRP_BOOT | board.OB_WRP_COUNTER,
     )
-    time.sleep(1.5)
     yield boot_img, update_img
 
 
@@ -258,7 +254,7 @@ def reset_and_connect(config: dict) -> serial_comm.BootloaderSession:
     Use this in tests that need a fresh reset *between* steps without the
     bsw fixture lifecycle getting in the way.
     """
-    board.reset_board(delay=1.0)
+    board.reset_board()
     session = serial_comm.BootloaderSession(
         port=config["serial_port"],
         baudrate=config["baudrate"],

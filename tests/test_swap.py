@@ -34,9 +34,8 @@ def _slot_version(address: int) -> int:
 class TestSwapHappyPath:
     """Happy-path swap: BOOT=v1, UPDATE=v2, COMM=SWAP-ready, WRP unlocked for swap."""
 
-    @pytest.fixture(autouse=True)
-    def setup_swap_state(self, clean_flash, image_factory: ImageFactory):
-        """Set up BOOT=v1, UPDATE=v2 and prepare the OB/COMM for a swap."""
+    def test_swap_performs_correctly(self, bsw, clean_flash, image_factory, config):
+        """ACK received; BOOT←UPDATE (v2), SWAP←old BOOT (v1), counter=2, sectors re-protected."""
         boot_img   = image_factory.build(version=1)
         update_img = image_factory.build(version=2)
         board.flash_image(board.BOOT_FLASH_ADDRESS,   boot_img)
@@ -49,19 +48,18 @@ class TestSwapHappyPath:
             protect_mask=0,
             unprotect_mask=board.OB_WRP_BOOT | board.OB_WRP_COUNTER,
         )
-        time.sleep(1.5)
-
-    def test_swap_performs_correctly(self, bsw, config):
-        """ACK received; BOOT←UPDATE (v2), SWAP←old BOOT (v1), counter=2, sectors re-protected."""
-        board.reset_board(delay=1.0)
+        board.reset_board()
         bsw.send_command('3', sequence=0)
         ack = bsw.wait_for_ack(expected_sequence=0)
         assert ack is not None
-        bsw.drain_debug_log(timeout=5.0)  # let the swap finish
-        time.sleep(1.5)  # allow OB_Launch reset to complete
+        bsw.drain_debug_log(timeout=10.0)  # let the swap finish
+        time.sleep(1.0)  # allow OB_Launch reset to complete
 
         assert _slot_version(board.BOOT_FLASH_ADDRESS) == 2,  "BOOT slot must hold UPDATE version after swap"
         assert _slot_version(board.SWAP_FLASH_ADDRESS) == 1,  "SWAP slot must hold old BOOT version after swap"
+        assert board.flash_read(board.BOOT_FLASH_ADDRESS, len(update_img)) == update_img, "BOOT slot contents must match UPDATE image after swap"
+        assert board.flash_read(board.UPDATE_FLASH_ADDRESS, len(boot_img)) == boot_img, "UPDATE slot must hold old BOOT image after swap"
+        assert board.flash_read(board.SWAP_FLASH_ADDRESS, len(boot_img)) == boot_img, "SWAP slot contents must match old BOOT image after swap"
         assert board.get_rollback_counter() == 2,             "Rollback counter must be updated to new BOOT version"
         assert board.is_write_protected(board.OB_WRP_BOOT),   "BOOT sector must be re-protected after swap"
         assert board.is_write_protected(board.OB_WRP_COUNTER), "COUNTER sector must be re-protected after swap"
@@ -83,17 +81,16 @@ class TestSwapBootSectorStillProtected:
             protect_mask=board.OB_WRP_BOOT,
             unprotect_mask=board.OB_WRP_COUNTER,
         )
-        time.sleep(1.5)
         yield
         board.set_write_protection(protect_mask=board.OB_WRP_BOOT | board.OB_WRP_COUNTER)
-        time.sleep(1.5)
 
     def test_nack_when_boot_sector_still_protected(self, bsw, config):
         """COMM=SWAP but BOOT sector is still write-protected → NACK 12."""
-        board.reset_board(delay=1.0)
+        board.reset_board()
         bsw.send_command('3', sequence=0)
         with pytest.raises(serial_comm.NackReceived) as exc_info:
             bsw.wait_for_ack(expected_sequence=0, timeout=5.0)
+        time.sleep(20)
         assert exc_info.value.error_code == 12
 
 
@@ -113,14 +110,12 @@ class TestSwapCounterSectorStillProtected:
             protect_mask=board.OB_WRP_COUNTER,
             unprotect_mask=board.OB_WRP_BOOT,
         )
-        time.sleep(1.5)
         yield
         board.set_write_protection(protect_mask=board.OB_WRP_BOOT | board.OB_WRP_COUNTER)
-        time.sleep(1.5)
 
     def test_nack_when_counter_sector_still_protected(self, bsw, config):
         """COMM=SWAP but COUNTER sector is still write-protected → NACK 12."""
-        board.reset_board(delay=1.0)
+        board.reset_board()
         bsw.send_command('3', sequence=0)
         with pytest.raises(serial_comm.NackReceived) as exc_info:
             bsw.wait_for_ack(expected_sequence=0, timeout=5.0)
@@ -139,7 +134,7 @@ class TestSwapBothSectorsStillProtected:
 
     def test_nack_when_both_sectors_still_protected(self, bsw, config):
         """COMM=SWAP but both sectors still protected → NACK 12."""
-        board.reset_board(delay=1.0)
+        board.reset_board()
         bsw.send_command('3', sequence=0)
         with pytest.raises(serial_comm.NackReceived) as exc_info:
             bsw.wait_for_ack(expected_sequence=0, timeout=5.0)
@@ -157,7 +152,7 @@ class TestSwapBadUpdateSlot:
         """UPDATE slot erased → imageGetHeader fails → NACK (via checkUpdateVersion)."""
         board.flash_erase_slot(board.UPDATE_FLASH_ADDRESS)
 
-        board.reset_board(delay=1.0)
+        board.reset_board()
         bsw.send_command('3', sequence=0)
         with pytest.raises(serial_comm.NackReceived):
             bsw.wait_for_ack(expected_sequence=0, timeout=10.0)
@@ -168,7 +163,7 @@ class TestSwapBadUpdateSlot:
         bad_img  = ImageFactory.corrupt_magic(good_img)
         board.flash_image(board.UPDATE_FLASH_ADDRESS, bad_img)
 
-        board.reset_board(delay=1.0)
+        board.reset_board()
         bsw.send_command('3', sequence=0)
         with pytest.raises(serial_comm.NackReceived):
             bsw.wait_for_ack(expected_sequence=0, timeout=10.0)
@@ -179,7 +174,7 @@ class TestSwapBadUpdateSlot:
         bad_img  = ImageFactory.corrupt_crc(good_img)
         board.flash_image(board.UPDATE_FLASH_ADDRESS, bad_img)
 
-        board.reset_board(delay=1.0)
+        board.reset_board()
         bsw.send_command('3', sequence=0)
         with pytest.raises(serial_comm.NackReceived):
             bsw.wait_for_ack(expected_sequence=0, timeout=10.0)
@@ -192,7 +187,7 @@ class TestSwapBadUpdateSlot:
         bad_img   = struct.pack("<I", new_crc) + bad_sig[4:]
         board.flash_image(board.UPDATE_FLASH_ADDRESS, bad_img)
 
-        board.reset_board(delay=1.0)
+        board.reset_board()
         bsw.send_command('3', sequence=0)
         with pytest.raises(serial_comm.NackReceived):
             bsw.wait_for_ack(expected_sequence=0, timeout=15.0)
@@ -201,14 +196,14 @@ class TestSwapBadUpdateSlot:
         """Debug log must mention a header or image validation failure."""
         board.flash_erase_slot(board.UPDATE_FLASH_ADDRESS)
 
-        board.reset_board(delay=1.0)
+        board.reset_board()
         bsw.send_command('3', sequence=0)
         try:
             bsw.wait_for_ack(expected_sequence=0, timeout=10.0)
         except serial_comm.NackReceived:
             pass
         log = "".join(bsw.drain_debug_log(timeout=3.0))
-        assert "No valid header" in log or "failed" in log.lower() or "invalid" in log.lower()
+        assert "CRC verification failed" in log
 
 
 class TestSwapVersionRejectionRecovery:
@@ -230,10 +225,9 @@ class TestSwapVersionRejectionRecovery:
             protect_mask=0,
             unprotect_mask=board.OB_WRP_BOOT | board.OB_WRP_COUNTER,
         )
-        time.sleep(1.5)
 
     def test_nack_9_on_version_below_floor(self, bsw, config):
-        board.reset_board(delay=1.0)
+        board.reset_board()
         bsw.send_command('3', sequence=0)
         with pytest.raises(serial_comm.NackReceived) as exc_info:
             bsw.wait_for_ack(expected_sequence=0, timeout=10.0)
@@ -241,24 +235,24 @@ class TestSwapVersionRejectionRecovery:
 
     def test_comm_reset_to_nominal_after_rejection(self, bsw, config):
         """COMM word must revert to NOMINAL (0xAA) after the rollback rejection."""
-        board.reset_board(delay=1.0)
+        board.reset_board()
         bsw.send_command('3', sequence=0)
         try:
             bsw.wait_for_ack(expected_sequence=0, timeout=10.0)
         except serial_comm.NackReceived:
             pass
-        time.sleep(2.5)  # allow OB_Launch reset
+        time.sleep(1.0)  # allow OB_Launch reset
         assert board.get_comm_status() == board.COMM_STATUS_NOMINAL
 
     def test_sectors_reprotected_after_rejection(self, bsw, config):
         """BOOT and COUNTER must be re-protected after the rollback rejection."""
-        board.reset_board(delay=1.0)
+        board.reset_board()
         bsw.send_command('3', sequence=0)
         try:
             bsw.wait_for_ack(expected_sequence=0, timeout=10.0)
         except serial_comm.NackReceived:
             pass
-        time.sleep(2.5)
+        time.sleep(1.0)
         assert board.is_write_protected(board.OB_WRP_BOOT),    "BOOT sector must be re-protected"
         assert board.is_write_protected(board.OB_WRP_COUNTER), "COUNTER sector must be re-protected"
 
@@ -273,11 +267,11 @@ class TestSwapRollbackCounterEdges:
         # Pre-set counter = 2 so the new BOOT version == counter.
         board.set_rollback_counter(2)
 
-        board.reset_board(delay=1.0)
+        board.reset_board()
         bsw.send_command('3', sequence=0)
         bsw.wait_for_ack(expected_sequence=0)
         bsw.drain_debug_log(timeout=5.0)
-        time.sleep(2.0)
+        time.sleep(1.0)
 
         # Counter was already 2 (== new BOOT version 2); must stay 2.
         assert board.get_rollback_counter() == 2
@@ -285,11 +279,11 @@ class TestSwapRollbackCounterEdges:
     def test_counter_updated_when_new_boot_is_higher(self, swap_ready_state, bsw, config):
         """Counter must advance to the new BOOT version when it is higher."""
         # swap_ready_state already has counter=1, BOOT=v1, UPDATE=v2.
-        board.reset_board(delay=1.0)
+        board.reset_board()
         bsw.send_command('3', sequence=0)
         bsw.wait_for_ack(expected_sequence=0)
         bsw.drain_debug_log(timeout=5.0)
-        time.sleep(2.0)
+        time.sleep(1.0)
 
         assert board.get_rollback_counter() == 2
 
@@ -316,16 +310,15 @@ class TestSwapRollbackEnforcement:
             protect_mask=0,
             unprotect_mask=board.OB_WRP_BOOT | board.OB_WRP_COUNTER,
         )
-        time.sleep(1.5)
 
     def test_nack9_and_state_unchanged_after_rejection(self, bsw, config):
         """Version 8 < floor 9 → NACK 9; BOOT slot and counter must be unchanged."""
-        board.reset_board(delay=1.0)
+        board.reset_board()
         bsw.send_command('3', sequence=0)
         with pytest.raises(serial_comm.NackReceived) as exc_info:
             bsw.wait_for_ack(expected_sequence=0, timeout=15.0)
         assert exc_info.value.error_code == 9
-        time.sleep(2.5)
+        time.sleep(1.0)
 
         raw = board.flash_read(board.BOOT_FLASH_ADDRESS, 8)
         _crc, _magic, version = struct.unpack("<IHH", raw)
@@ -352,21 +345,20 @@ class TestRecoveryAfterSwapRollback:
             protect_mask=0,
             unprotect_mask=board.OB_WRP_BOOT | board.OB_WRP_COUNTER,
         )
-        time.sleep(1.5)
 
         # Attempt swap → NACK 9 + setupSystemForNominal() + reset
-        board.reset_board(delay=1.0)
+        board.reset_board()
         bsw.send_command('3', sequence=0)
         try:
             bsw.wait_for_ack(expected_sequence=0, timeout=15.0)
         except serial_comm.NackReceived:
             pass
         bsw.close()
-        time.sleep(2.5)  # wait for OB_Launch reset
+        time.sleep(1.0)  # wait for OB_Launch reset
 
         # Now the system should be in nominal state; issue a boot command
         bsw.open()
-        board.reset_board(delay=1.0)
+        board.reset_board()
         bsw.send_command('1', sequence=0)
         ack = bsw.wait_for_ack(expected_sequence=0, timeout=15.0)
         assert ack is not None, "Nominal boot must succeed after swap rollback recovery"

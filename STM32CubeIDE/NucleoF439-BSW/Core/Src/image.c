@@ -6,8 +6,6 @@
 #include "crypto.h"
 #include "flash.h"
 
-#define IMAGE_OFFSET 		0x1400
-
 const image_header_t* imageGetHeader(ImageSlot slot)
 {
 	const image_header_t *header;

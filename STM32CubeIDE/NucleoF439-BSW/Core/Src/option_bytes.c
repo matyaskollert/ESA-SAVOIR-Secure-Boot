@@ -96,3 +96,11 @@ int16_t checkSectorWriteProtection(uint32_t sectorMask)
 	// printf("Sector %lu is NOT write protected\r\n", sectorMask);
 	return 1;
 }
+
+int16_t checkAllSectorsUnprotected(uint32_t sectorMask)
+{
+	FLASH_OBProgramInitTypeDef obInit;
+	HAL_FLASHEx_OBGetConfig(&obInit);
+
+	return ((obInit.WRPSector & sectorMask) == sectorMask) ? 1 : 0;
+}

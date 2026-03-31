@@ -11,6 +11,8 @@
 #include "stm32f4xx_hal.h"
 #include "ecss_packet.h"
 
+void    uart_rx_init(UART_HandleTypeDef* uart);
+
 int16_t receiveData(UART_HandleTypeDef* uart, uint8_t* receiveBuffer, uint32_t bufferLength);
 int16_t sendAck(UART_HandleTypeDef* uart);
 

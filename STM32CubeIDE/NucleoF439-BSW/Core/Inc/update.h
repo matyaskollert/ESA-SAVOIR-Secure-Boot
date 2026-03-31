@@ -28,6 +28,8 @@ int16_t setupSystemForUpdate(void);
 
 int16_t checkSystemForUpdate(void);
 
+int16_t checkUpdateValidity(void);
+
 int16_t checkUpdateVersion(void);
 
 uint32_t getLowestAllowedVersion(void);
