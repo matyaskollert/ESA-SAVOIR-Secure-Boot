@@ -89,10 +89,10 @@ int16_t checkSectorWriteProtection(uint32_t sectorMask)
 
 	if ((obInit.WRPSector & sectorMask) == 0)
 	{
-		printf("Sector %lu is write protected\r\n", sectorMask);
+		// printf("Sector %lu is write protected\r\n", sectorMask);
 		return 0;
 	}
 
-	printf("Sector %lu is NOT write protected\r\n", sectorMask);
+	// printf("Sector %lu is NOT write protected\r\n", sectorMask);
 	return 1;
 }

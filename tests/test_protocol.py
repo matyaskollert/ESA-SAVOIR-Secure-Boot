@@ -25,10 +25,6 @@ from helpers.image_factory import ImageFactory
 from helpers.serial_comm import PacketType, _build_header
 
 
-# ---------------------------------------------------------------------------
-# TestUnknownCommand
-# ---------------------------------------------------------------------------
-
 class TestUnknownCommand:
     """BSW must not hang or crash when an unrecognised command character is sent."""
 
@@ -58,10 +54,6 @@ class TestUnknownCommand:
         assert after == golden, "BOOT slot must not be modified by an unknown command"
 
 
-# ---------------------------------------------------------------------------
-# TestCommandWithEmptyData
-# ---------------------------------------------------------------------------
-
 class TestCommandWithEmptyData:
     """Command packet with data_length = 0 must not crash the BSW.
 
@@ -83,10 +75,6 @@ class TestCommandWithEmptyData:
         except (serial_comm.NackReceived, TimeoutError, AssertionError):
             pass  # any outcome is acceptable; the BSW just must not block
 
-
-# ---------------------------------------------------------------------------
-# TestUploadStartErrors
-# ---------------------------------------------------------------------------
 
 class TestUploadStartErrors:
     """Verify that the BSW correctly rejects malformed START_UPLOAD packets."""
@@ -121,10 +109,6 @@ class TestUploadStartErrors:
             bsw.wait_for_ack(expected_sequence=1, timeout=5.0)
         assert exc_info.value.error_code == 2
 
-
-# ---------------------------------------------------------------------------
-# TestUploadChunkErrors
-# ---------------------------------------------------------------------------
 
 class TestUploadChunkErrors:
     """Verify error handling during the DATA_CHUNK phase."""
@@ -189,10 +173,6 @@ class TestUploadChunkErrors:
     #         chunk_size=256,
     #     )
 
-
-# ---------------------------------------------------------------------------
-# TestUploadEndBeforeAllData
-# ---------------------------------------------------------------------------
 
 class TestUploadEndBeforeAllData:
     """END_UPLOAD received before the declared total size is transferred.

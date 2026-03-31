@@ -8,6 +8,7 @@ Flow under test:
 """
 
 import struct
+import time
 import pytest
 
 from conftest import reset_and_connect
@@ -26,10 +27,6 @@ def _read_header_from_slot(address: int) -> dict:
     return {"crc": crc, "magic": magic, "version": version, "size": size}
 
 
-# ---------------------------------------------------------------------------
-# TestUpdateHappyPath
-# ---------------------------------------------------------------------------
-
 class TestUpdateHappyPath:
     """Upload a valid version-2 image and verify it lands in the UPDATE slot."""
 
@@ -39,7 +36,7 @@ class TestUpdateHappyPath:
         board.reset_board(delay=1.0)
         bsw.send_command('2', sequence=0)
         bsw.wait_for_ack(expected_sequence=0)
-        import time; time.sleep(0.5)  # allow BSW to prepare for upload
+        time.sleep(0.5)  # allow BSW to prepare for upload
         bsw.upload_image(update_img, start_sequence=1, verbose=True)
 
         log = "".join(bsw.drain_debug_log(timeout=3.0))
@@ -53,10 +50,6 @@ class TestUpdateHappyPath:
         flash_content = board.flash_read(board.UPDATE_FLASH_ADDRESS, len(update_img))
         assert flash_content == update_img
 
-
-# ---------------------------------------------------------------------------
-# TestUpdateVersionTooLow
-# ---------------------------------------------------------------------------
 
 class TestUpdateVersionTooLow:
     """BSW must reject an image whose version is below the rollback floor."""
@@ -78,13 +71,13 @@ class TestUpdateVersionTooLow:
         bsw.send_command('2', sequence=0)
         bsw.wait_for_ack(expected_sequence=0)
 
-        import time; time.sleep(0.5)  # allow BSW to prepare for upload
+        time.sleep(0.5)  # allow BSW to prepare for upload
 
         # START the upload (BSW reads version from first chunk)
         bsw.send_start_upload(len(old_img), sequence=1)
         bsw.wait_for_ack(expected_sequence=1)
 
-        import time; time.sleep(0.5)
+        time.sleep(0.5)
 
         # Send first chunk – this is where BSW inspects the version
         chunk = old_img[:256]
@@ -99,32 +92,27 @@ class TestUpdateVersionTooLow:
         board.reset_board(delay=1.0)
         bsw.send_command('2', sequence=0)
         bsw.wait_for_ack(expected_sequence=0)
-        import time; time.sleep(0.5)  # allow BSW to prepare for upload
+        time.sleep(0.5)  # allow BSW to prepare for upload
         bsw.upload_image(floor_img, start_sequence=1)  # should not raise
 
 
-# ---------------------------------------------------------------------------
-# TestUpdateSystemNotConfigured
-# ---------------------------------------------------------------------------
-
-class TestUpdateSystemNotConfigured:
-    """BSW must reject the update command when option bytes are wrong."""
+class TestUpdateUnprotectedBootSector:
+    """BSW must reject the update command when the BOOT sector is unprotected."""
 
     @pytest.fixture(autouse=True)
-    def setup_wrong_ob(self, nominal_state):
-        """Unprotect the BOOT sector so checkSystemForUpdate() fails.
-        (The BSW expects BOOT+COUNTER to be protected during update mode.)
-        """
+    def setup_boot_unprotected(self, nominal_state):
+        """Temporarily remove write-protection from the BOOT sector."""
         board.set_write_protection(
             protect_mask=0,
             unprotect_mask=board.OB_WRP_BOOT,
         )
-        import time; time.sleep(1.5)
+        time.sleep(1.5)
         yield
         board.set_write_protection(protect_mask=board.OB_WRP_BOOT | board.OB_WRP_COUNTER)
-        import time; time.sleep(1.5)
+        time.sleep(1.5)
 
-    def test_nack_when_update_sector_protected(self, bsw, config):
+    def test_nack_when_boot_sector_unprotected(self, bsw, config):
+        """BSW must refuse to update if checkSystemForUpdate() fails."""
         board.reset_board(delay=1.0)
         bsw.send_command('2', sequence=0)
         with pytest.raises(serial_comm.NackReceived) as exc_info:
@@ -132,30 +120,23 @@ class TestUpdateSystemNotConfigured:
         assert exc_info.value.error_code == 10
 
 
-# ---------------------------------------------------------------------------
-# TestUpdateCounterSectorUnprotected
-# ---------------------------------------------------------------------------
-
-class TestUpdateCounterSectorUnprotected:
-    """BSW must reject update when COUNTER sector is unprotected (BOOT is still ok).
-
-    checkSystemForUpdate() requires both BOOT and COUNTER to be write-protected.
-    """
+class TestUpdateUnprotectedCounterSector:
+    """BSW must reject the update command when the COUNTER sector is unprotected."""
 
     @pytest.fixture(autouse=True)
     def setup_counter_unprotected(self, nominal_state):
+        """Temporarily remove write-protection from the COUNTER sector."""
         board.set_write_protection(
             protect_mask=0,
             unprotect_mask=board.OB_WRP_COUNTER,
         )
-        import time; time.sleep(1.5)
+        time.sleep(1.5)
         yield
         board.set_write_protection(protect_mask=board.OB_WRP_BOOT | board.OB_WRP_COUNTER)
-        import time; time.sleep(1.5)
+        time.sleep(1.5)
 
     def test_nack_and_sectors_reprotected(self, bsw, config):
         """BSW must NACK 10 and then re-protect both sectors via setupSystemForNominal()."""
-        import time
         board.reset_board(delay=1.0)
         bsw.send_command('2', sequence=0)
         with pytest.raises(serial_comm.NackReceived) as exc_info:
@@ -165,10 +146,6 @@ class TestUpdateCounterSectorUnprotected:
         assert board.is_write_protected(board.OB_WRP_BOOT)
         assert board.is_write_protected(board.OB_WRP_COUNTER)
 
-
-# ---------------------------------------------------------------------------
-# TestUpdateSectorProtectedDuringUpdate
-# ---------------------------------------------------------------------------
 
 class TestUpdateSectorProtectedDuringUpdate:
     """BSW must reject update when UPDATE sector is write-protected.
@@ -183,13 +160,13 @@ class TestUpdateSectorProtectedDuringUpdate:
         board.set_write_protection(
             protect_mask=board.OB_WRP_BOOT | board.OB_WRP_COUNTER | (1 << 6),
         )
-        import time; time.sleep(1.5)
+        time.sleep(1.5)
         yield
         board.set_write_protection(
             protect_mask=board.OB_WRP_BOOT | board.OB_WRP_COUNTER,
             unprotect_mask=(1 << 6),
         )
-        import time; time.sleep(1.5)
+        time.sleep(1.5)
 
     def test_nack_and_log_mentions_update_protected(self, bsw, config):
         """BSW must NACK 10 and log that the UPDATE sector is protected."""
@@ -202,26 +179,21 @@ class TestUpdateSectorProtectedDuringUpdate:
         assert "UPDATE" in log or "protected" in log.lower()
 
 
-# ---------------------------------------------------------------------------
-# TestUpdateStateAfterSuccess
-# ---------------------------------------------------------------------------
-
 class TestUpdateStateAfterSuccess:
     """After a successful upload the system must be in swap-ready state.
 
     setupSystemForImageSwap() is called before the reset:
-      - COMM word = 123 (COMM_STATUS_SWAP)
+      - COMM word = 0xCC (COMM_STATUS_SWAP)
       - BOOT (sector 5) and COUNTER (sector 9) write-protection must be lifted
     """
 
     def test_system_state_after_successful_upload(self, nominal_state, bsw, config, image_factory):
         """After upload: COMM=SWAP, BOOT+COUNTER unlocked, UPDATE slot has correct version."""
-        import time
         update_img = image_factory.build(version=2)
         board.reset_board(delay=1.0)
         bsw.send_command('2', sequence=0)
         bsw.wait_for_ack(expected_sequence=0)
-        import time; time.sleep(0.5)  # allow BSW to prepare for upload
+        time.sleep(0.5)  # allow BSW to prepare for upload
         bsw.upload_image(update_img, start_sequence=1)
         time.sleep(2.5)  # allow OB_Launch reset from setupSystemForImageSwap
 
@@ -230,3 +202,79 @@ class TestUpdateStateAfterSuccess:
         assert not board.is_write_protected(board.OB_WRP_COUNTER), "COUNTER sector must be unlocked after upload"
         hdr = _read_header_from_slot(board.UPDATE_FLASH_ADDRESS)
         assert hdr["version"] == 2
+
+
+class TestRollbackPrevention:
+    """The rollback counter must prevent downgrades beyond the allowed window."""
+
+    @pytest.fixture(autouse=True)
+    def setup(self, clean_flash, image_factory):
+        """Counter = 10, window = 1 → floor = 9.  Upload version 8 → should fail."""
+        boot_img = image_factory.build(version=10)
+        board.flash_image(board.BOOT_FLASH_ADDRESS, boot_img)
+        board.set_rollback_counter(10)
+
+    def test_nack9_and_counter_unchanged_after_rejection(self, bsw, config, image_factory):
+        """Version 8 < floor 9 → NACK 9; counter must remain unchanged."""
+        old_img = image_factory.build(version=8)
+        board.reset_board(delay=1.0)
+        bsw.send_command('2', sequence=0)
+        bsw.wait_for_ack(expected_sequence=0)
+        time.sleep(0.5)  # allow BSW to prepare for upload
+        bsw.send_start_upload(len(old_img), sequence=1)
+        bsw.wait_for_ack(expected_sequence=1)
+        time.sleep(0.5)
+        bsw.send_data_chunk(old_img[:256], sequence=2)
+        with pytest.raises(serial_comm.NackReceived) as exc_info:
+            bsw.wait_for_ack(expected_sequence=2)
+        assert exc_info.value.error_code == 9
+        assert board.get_rollback_counter() == 10  # must be unchanged
+
+    def test_version_at_floor_is_accepted(self, bsw, config, image_factory):
+        """Version = floor (9) must be accepted without NACK."""
+        floor_img = image_factory.build(version=9)
+        board.reset_board(delay=1.0)
+        bsw.send_command('2', sequence=0)
+        bsw.wait_for_ack(expected_sequence=0)
+        time.sleep(0.5)  # allow BSW to prepare for upload
+        bsw.upload_image(floor_img, start_sequence=1)  # must not raise
+
+
+class TestRollbackCounterBoundary:
+    """Verify the rollback floor clamps to 0 when counter ≤ ROLLBACK_WINDOW (=1)."""
+
+    def test_version_1_accepted_when_counter_is_0(self, clean_flash, bsw, config, image_factory):
+        """Counter = 0 → floor = 0 → any version including 0 is accepted."""
+        board.set_rollback_counter(0)
+        update_img = image_factory.build(version=1)
+
+        board.reset_board(delay=1.0)
+        bsw.send_command('2', sequence=0)
+        bsw.wait_for_ack(expected_sequence=0)
+        # Must not raise
+        bsw.upload_image(update_img, start_sequence=1)
+
+    def test_version_1_accepted_when_counter_equals_window(self, clean_flash, bsw, config, image_factory):
+        """Counter = 1 (= ROLLBACK_WINDOW) → floor = 0 → version 1 is accepted."""
+        board.set_rollback_counter(1)
+        update_img = image_factory.build(version=1)
+
+        board.reset_board(delay=1.0)
+        bsw.send_command('2', sequence=0)
+        bsw.wait_for_ack(expected_sequence=0)
+        bsw.upload_image(update_img, start_sequence=1)
+
+    def test_version_below_floor_rejected_when_counter_gt_window(self, clean_flash, bsw, config, image_factory):
+        """Counter = 3 → floor = 2 → version 1 must be rejected."""
+        board.set_rollback_counter(3)
+        old_img = image_factory.build(version=1)
+
+        board.reset_board(delay=1.0)
+        bsw.send_command('2', sequence=0)
+        bsw.wait_for_ack(expected_sequence=0)
+        bsw.send_start_upload(len(old_img), sequence=1)
+        bsw.wait_for_ack(expected_sequence=1)
+        bsw.send_data_chunk(old_img[:256], sequence=2)
+        with pytest.raises(serial_comm.NackReceived) as exc_info:
+            bsw.wait_for_ack(expected_sequence=2)
+        assert exc_info.value.error_code == 9

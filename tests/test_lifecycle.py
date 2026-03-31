@@ -15,11 +15,11 @@ Scenarios covered
 2. Upload without swap:   upload v2 but skip swap → BOOT still v1
 3. Consecutive swaps:     v1 → v2 → v3
 4. Interrupted swap → boot attempt:
-     After upload the board resets with COMM=123 + sectors unlocked.
-     BSW enters standby (interrupted state), '6' skips out, status=123
+     After upload the board resets with COMM=0xCC + sectors unlocked.
+     BSW enters standby (interrupted state), '6' skips out, status=0xCC
      triggers auto-swap, leaving the system nominal.
 5. Interrupted swap → update attempt:
-     Same interrupted state; status=123 triggers auto-swap first.
+     Same interrupted state; status=0xCC triggers auto-swap first.
 6. Rollback window:  v1 → v2 (swap), upload v1 (within window=1), swap → v1
 7. Rollback – both images fail: BOOT=v2 fails, UPDATE=v1 also fails
      → BSW ends up in standby.
@@ -67,16 +67,12 @@ def _do_full_upload(bsw, image_data: bytes) -> None:
 
 def _do_swap(bsw) -> None:
     """Reset the board; the BSW auto-swaps when '6' skips the timeout.
-    Caller must ensure COMM=SWAP (123) beforehand."""
+    Caller must ensure COMM=SWAP (0xCC) beforehand."""
     board.reset_board(delay=1.0)
     _skip_timeout(bsw)
     bsw.drain_debug_log(timeout=10.0)
     time.sleep(2.5)  # allow OB_Launch reset from setupSystemForNominal
 
-
-# ---------------------------------------------------------------------------
-# TestFullUpdateCycle
-# ---------------------------------------------------------------------------
 
 class TestFullUpdateCycle:
     """BOOT=v1 → upload v2 → swap → verify all post-cycle state and autonomous boot."""
@@ -101,10 +97,6 @@ class TestFullUpdateCycle:
         assert "CRC validation in RAM successful" in log
 
 
-# ---------------------------------------------------------------------------
-# TestConsecutiveSwaps
-# ---------------------------------------------------------------------------
-
 class TestConsecutiveSwaps:
     """Perform two consecutive upgrades: v1 → v2 → v3."""
 
@@ -122,10 +114,6 @@ class TestConsecutiveSwaps:
         assert _slot_version(board.BOOT_FLASH_ADDRESS) == 3
         assert board.get_rollback_counter() == 3
 
-
-# ---------------------------------------------------------------------------
-# TestRollbackWithWindow
-# ---------------------------------------------------------------------------
 
 class TestRollbackWithWindow:
     """After a v1→v2 swap, upload v1 (within the rollback window=1) and swap again.
@@ -169,17 +157,13 @@ class TestRollbackWithWindow:
         assert exc_info.value.error_code == 9
 
 
-# ---------------------------------------------------------------------------
-# TestAutomaticRollbackBothFail
-# ---------------------------------------------------------------------------
-
 class TestAutomaticRollbackBothFail:
     """BOOT=v2 fails to run (status stays BOOT_ATTEMPTED after app reset).
     The UPDATE slot holds v1 which is within the rollback window, so BSW
     triggers an auto-swap.  After the swap the NEW BOOT is the old v1 image.
     That image also fails (we force it by writing BOOT_ATTEMPTED again before
     the second boot attempt), leaving no valid rollback candidate.
-    The BSW should end up in standby (COMM=111).
+    The BSW should end up in standby (COMM=0xBB).
 
     Flash state built directly without going through the upload flow:
       BOOT=v2, UPDATE=v1, counter=2, COMM=NOMINAL, sectors protected.
@@ -224,10 +208,6 @@ class TestAutomaticRollbackBothFail:
 
         assert board.get_comm_status() == board.COMM_STATUS_STANDBY
 
-
-# ---------------------------------------------------------------------------
-# TestAutomaticRollbackSecondSucceeds
-# ---------------------------------------------------------------------------
 
 class TestAutomaticRollbackSecondSucceeds:
     """BOOT=v2 fails; rollback swap puts v1 in BOOT; v1 runs successfully

@@ -198,12 +198,12 @@ def update_ready_state(nominal_state, image_factory):
 
 @pytest.fixture
 def swap_ready_state(clean_flash, image_factory):
-    """BOOT=v1, UPDATE=v2, COMM=SWAP(123), WRP unlocked for BOOT+COUNTER.
+    """BOOT=v1, UPDATE=v2, COMM=SWAP(0xCC), WRP unlocked for BOOT+COUNTER.
 
     Mirrors the state left by a successful upload + setupSystemForImageSwap():
       - BOOT slot has a valid signed v1 image
       - UPDATE slot has a valid signed v2 image
-      - COMM status word = 123 (SWAP)
+      - COMM status word = 0xCC (SWAP)
       - BOOT (sector 5) and COUNTER (sector 9) write-protection lifted
 
     Yields (boot_image_bytes, update_image_bytes).
@@ -226,7 +226,7 @@ def swap_ready_state(clean_flash, image_factory):
 def interrupted_swap_state(clean_flash, image_factory):
     """Simulate a power cut between a completed upload and the swap command.
 
-    The BSW has already run setupSystemForImageSwap() (COMM=123, sectors
+    The BSW has already run setupSystemForImageSwap() (COMM=0xCC, sectors
     unlocked) but the board was reset before '3' was issued.  The BOOT slot
     still contains v1; UPDATE contains the freshly uploaded v2.
 

@@ -78,10 +78,10 @@ _ADDR_TO_OB_MASK = {
 }
 
 # BSW status words
-COMM_STATUS_NOMINAL        = 321
-COMM_STATUS_SWAP           = 123
-COMM_STATUS_STANDBY        = 111
-COMM_STATUS_BOOT_ATTEMPTED = 456
+COMM_STATUS_NOMINAL        = 0xAA
+COMM_STATUS_STANDBY        = 0xBB
+COMM_STATUS_SWAP           = 0xCC
+COMM_STATUS_BOOT_ATTEMPTED = 0xDD
 
 
 # ---------------------------------------------------------------------------
