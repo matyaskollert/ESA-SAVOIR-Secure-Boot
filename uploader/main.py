@@ -408,6 +408,7 @@ class CommandSenderThread(QThread):
             packet = create_command_packet(0, self.command_text)
             header = packet.pack_header()
             data = packet.data
+            print(f"Sending command - Header: {header.hex()}, Data: {data.hex()}")
 
             ser.write(header)
             ser.flush()

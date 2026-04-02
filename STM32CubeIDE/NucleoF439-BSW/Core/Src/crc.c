@@ -14,7 +14,6 @@ uint32_t crc32_byte(uint32_t r)
 	return r ^ (uint32_t)0xFF000000L;
 }
 
-
 uint32_t crc32(const void *data, uint32_t sizeBytes)
 {
 	uint32_t crc = 0;
