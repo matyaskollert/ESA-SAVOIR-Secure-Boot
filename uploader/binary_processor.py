@@ -18,9 +18,30 @@ Processing order:
 5. Place CRC at the beginning of header
 """
 import struct
-import binascii
+# import binascii
 from pathlib import Path
 from signature_base import SignatureAlgorithm
+
+
+_CRC32_MPEG2_POLY = 0x04C11DB7
+
+
+def _crc32_mpeg2(data: bytes) -> int:
+    """CRC32/MPEG-2 with byte-reversed 32-bit words."""
+    crc = 0xFFFFFFFF
+    for i in range(0, len(data), 4):
+        word_bytes = data[i:i + 4]
+        if len(word_bytes) < 4:
+            word_bytes = word_bytes + b'\x00' * (4 - len(word_bytes))
+        word_bytes = word_bytes[::-1]
+        word = int.from_bytes(word_bytes, 'big')
+        for bit in range(32):
+            if (crc ^ (word << bit)) & 0x80000000:
+                crc = (crc << 1) ^ _CRC32_MPEG2_POLY
+            else:
+                crc <<= 1
+            crc &= 0xFFFFFFFF
+    return crc
 
 
 def process_binary(input_bin_filename, signature_algo: SignatureAlgorithm, output_bin_filename=None, image_version=1) -> str:
@@ -94,7 +115,8 @@ def process_binary(input_bin_filename, signature_algo: SignatureAlgorithm, outpu
     
     # Calculate CRC over the entire header partition (with CRC=0) + image data
     crc_data = temp_header + image_data
-    final_crc = binascii.crc32(crc_data) & 0xffffffff
+    # final_crc = binascii.crc32(crc_data) & 0xFFFFFFFF
+    final_crc = _crc32_mpeg2(crc_data)
     print(f"CRC calculated over header + image: 0x{final_crc:08x}")
     
     # Build final header partition with actual CRC

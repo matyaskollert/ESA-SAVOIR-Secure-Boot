@@ -186,7 +186,7 @@ class TestBootInvalidSignature:
         # and execution reaches the signature verification step.
         bad_sig = ImageFactory.corrupt_signature(good_img)
         crc_input = bad_sig[4:]
-        new_crc   = binascii.crc32(crc_input) & 0xFFFFFFFF
+        new_crc   = ImageFactory._crc32_mpeg2(crc_input)
         bad_img   = struct.pack("<I", new_crc) + bad_sig[4:]
         board.flash_image(board.BOOT_FLASH_ADDRESS, bad_img)
 

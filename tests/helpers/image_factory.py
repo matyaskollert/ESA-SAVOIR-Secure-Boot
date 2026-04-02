@@ -18,11 +18,13 @@ Typical usage in tests::
     bad_crc_img = factory.corrupt_crc(good_img)
 """
 
-import binascii
+# import binascii
 import struct
 import sys
 from pathlib import Path
 from typing import Optional
+
+_CRC32_MPEG2_POLY = 0x04C11DB7
 
 # ---------------------------------------------------------------------------
 # Re-use the signing backend from the uploader package.
@@ -104,6 +106,24 @@ class ImageFactory:
             image_payload = _minimal_arm_payload(self._min_size)
 
         return _build_image(image_payload, version, self._algo)
+    
+    @staticmethod
+    def _crc32_mpeg2(data: bytes) -> int:
+        """CRC32/MPEG-2 with byte-reversed 32-bit words."""
+        crc = 0xFFFFFFFF
+        for i in range(0, len(data), 4):
+            word_bytes = data[i:i + 4]
+            if len(word_bytes) < 4:
+                word_bytes = word_bytes + b'\x00' * (4 - len(word_bytes))
+            word_bytes = word_bytes[::-1]
+            word = int.from_bytes(word_bytes, 'big')
+            for bit in range(32):
+                if (crc ^ (word << bit)) & 0x80000000:
+                    crc = (crc << 1) ^ _CRC32_MPEG2_POLY
+                else:
+                    crc <<= 1
+                crc &= 0xFFFFFFFF
+        return crc
 
     # ------------------------------------------------------------------ corruption helpers
 
@@ -166,7 +186,8 @@ def _build_image(image_data: bytes, version: int, algo) -> bytes:
     temp_hdr += signature
     temp_hdr += b'\x00' * (HEADER_PARTITION_SIZE - HEADER_FIXED_SIZE - SIGNATURE_SIZE)
 
-    crc = binascii.crc32(temp_hdr + image_data) & 0xFFFFFFFF
+    # crc = binascii.crc32(temp_hdr + image_data) & 0xFFFFFFFF
+    crc = ImageFactory._crc32_mpeg2(temp_hdr + image_data)
 
     final_hdr  = struct.pack("<I",  crc)
     final_hdr += struct.pack("<HH", IMAGE_HDR_MAGIC, version)

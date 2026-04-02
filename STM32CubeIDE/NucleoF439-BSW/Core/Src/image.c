@@ -46,16 +46,20 @@ int16_t imageValidate(ImageSlot slot)
 	void* image_address = (void *)(header) + 4;
 	uint32_t dataSize = header->imageSize + IMAGE_OFFSET - 4;
 
-	uint32_t imageCRC = crc32(image_address, dataSize);
+	//uint32_t imageCRC = crc32(image_address, dataSize);
+	uint32_t imageCRC_HW = crc32_hw(image_address, dataSize);
+
+	//printf("CRC calculated in software: 0x%08lx\r\n", imageCRC);
+	printf("CRC calculated in hardware: 0x%08lx\r\n", imageCRC_HW);
 	
-	if (imageCRC == header->crc)
+	if (imageCRC_HW == header->crc)
 	{
 		printf("CRC validation in FLASH successful!\r\n");
 	    return 0;
 	}
 	else
 	{
-	    printf("CRC Mismatch in FLASH: 0x%08lx vs 0x%08lx\r\n", imageCRC, header->crc);
+	    printf("CRC Mismatch in FLASH: 0x%08lx vs 0x%08lx\r\n", imageCRC_HW, header->crc);
 	    return 1;
 	}
 }
@@ -72,16 +76,17 @@ int16_t imageValidateInRAM(ImageSlot slot)
 	// header size + image size - CRC
 	uint32_t dataSize = header->imageSize + IMAGE_OFFSET - 4;
 
-	uint32_t imageCRC = crc32(image_address, dataSize);
-	
-	if (imageCRC == header->crc)
+	//uint32_t imageCRC = crc32(image_address, dataSize);
+	uint32_t imageCRC_HW = crc32_hw(image_address, dataSize);
+
+	if (imageCRC_HW == header->crc)
 	{
 		printf("CRC validation in RAM successful!\r\n");
 	    return 0;
 	}
 	else
 	{
-	    printf("CRC Mismatch in RAM: 0x%08lx vs 0x%08lx\r\n", imageCRC, header->crc);
+	    printf("CRC Mismatch in RAM: 0x%08lx vs 0x%08lx\r\n", imageCRC_HW, header->crc);
 	    return 1;
 	}
 }
