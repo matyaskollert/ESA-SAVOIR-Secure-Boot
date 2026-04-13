@@ -9,7 +9,7 @@
 #include "boot.h"
 
 
-int16_t boot()
+int16_t boot(void)
 {
 	if (imageValidate(BOOT) != 0)
 	{

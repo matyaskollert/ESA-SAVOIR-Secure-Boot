@@ -136,7 +136,7 @@ int main(void)
 
     printf("Performing self-tests\r\n");
 
-    int16_t testResult = performSelfTests(0);
+    int16_t testResult = performSelfTests();
 	if (testResult != 0)
 	{
 		printf("System is in an invalid state\r\n");

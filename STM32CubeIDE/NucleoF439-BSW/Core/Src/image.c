@@ -103,7 +103,7 @@ int16_t imageVerify(ImageSlot slot) {
 	int16_t ret = verifySignature(ramImageAddress, dataSize, header->signature);
 	uint32_t end = HAL_GetTick();
 
-	printf("Took %lu milliseconds\r\n", end - start);
+	printf("Digital Signature: %lu milliseconds\r\n", end - start);
 
 	return ret;
 }

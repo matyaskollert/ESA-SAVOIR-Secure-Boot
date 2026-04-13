@@ -18,6 +18,7 @@ import serial
 import serial.tools.list_ports
 from binary_processor import process_binary
 from signature_ecdsa import ECDSASignature
+from signature_mldsa import MLDSASignature
 from ecss_packet import (ECSSPacket, PacketType, create_start_packet, 
                          create_data_packet, create_end_packet, create_command_packet)
 
@@ -449,7 +450,7 @@ class MainWindow(QMainWindow):
         self.receiver_thread = None
         self.serial_port = None
         self.image_version = 1
-        self.signature_algo = ECDSASignature()
+        self.signature_algo = ECDSASignature()  # updated when process_file() runs
         self.keys_dir = Path(__file__).parent / "keys"
         
         self.setWindowTitle("STM32F4 Binary Uploader")
@@ -547,8 +548,39 @@ class MainWindow(QMainWindow):
         sig_layout = QVBoxLayout()
         sig_layout.setContentsMargins(8, 8, 8, 8)
         sig_layout.setSpacing(4)
-        
-        # Key options container
+
+        # ── Algorithm selector ──────────────────────────────────────────
+        algo_layout = QHBoxLayout()
+        algo_label = QLabel("Algorithm:")
+        algo_label.setMinimumWidth(80)
+        self.algo_button_group = QButtonGroup()
+        self.ecdsa_algo_radio = QRadioButton("ECDSA-P256")
+        self.mldsa_algo_radio = QRadioButton("ML-DSA (post-quantum)")
+        self.ecdsa_algo_radio.setChecked(True)
+        self.algo_button_group.addButton(self.ecdsa_algo_radio)
+        self.algo_button_group.addButton(self.mldsa_algo_radio)
+
+        # ML-DSA parameter-set drop-down (only visible when ML-DSA is selected)
+        self.mldsa_params_combo = QComboBox()
+        self.mldsa_params_combo.addItems(["ML-DSA-44", "ML-DSA-65"])
+        self.mldsa_params_combo.setToolTip(
+            "ML-DSA-44: 2420-byte sig, 1312-byte pk (NIST level 2)\n"
+            "ML-DSA-65: 3309-byte sig, 1952-byte pk (NIST level 3)"
+        )
+        self.mldsa_params_combo.setEnabled(False)
+
+        algo_layout.addWidget(algo_label)
+        algo_layout.addWidget(self.ecdsa_algo_radio)
+        algo_layout.addWidget(self.mldsa_algo_radio)
+        algo_layout.addWidget(self.mldsa_params_combo)
+        algo_layout.addStretch()
+        sig_layout.addLayout(algo_layout)
+
+        self.mldsa_algo_radio.toggled.connect(
+            lambda checked: self.mldsa_params_combo.setEnabled(checked)
+        )
+
+        # ── Key options ─────────────────────────────────────────────────
         self.key_options_widget = QWidget()
         key_options_layout = QVBoxLayout(self.key_options_widget)
         key_options_layout.setContentsMargins(12, 0, 0, 0)
@@ -568,7 +600,9 @@ class MainWindow(QMainWindow):
         existing_keys_layout = QHBoxLayout()
         self.private_key_label = QLabel("Private Key:")
         self.private_key_path = QLineEdit()
-        self.private_key_path.setPlaceholderText("Path to private key (.pem)")
+        self.private_key_path.setPlaceholderText(
+            "Path to private key (.pem for ECDSA, .bin for ML-DSA)"
+        )
         self.private_key_browse = QPushButton("Browse...")
         self.private_key_browse.clicked.connect(self.browse_private_key)
         
@@ -689,11 +723,16 @@ class MainWindow(QMainWindow):
     
     def browse_private_key(self):
         """Browse for private key file."""
+        if self.mldsa_algo_radio.isChecked():
+            key_filter = "ML-DSA Key Files (*.bin);;All Files (*.*)"
+        else:
+            key_filter = "PEM Files (*.pem);;All Files (*.*)"
+
         file_path, _ = QFileDialog.getOpenFileName(
             self,
             "Select Private Key File",
             str(self.keys_dir),
-            "PEM Files (*.pem);;All Files (*.*)"
+            key_filter
         )
         
         if file_path:
@@ -714,18 +753,28 @@ class MainWindow(QMainWindow):
             # Disable buttons during processing
             self.process_button.setEnabled(False)
             self.version_spinbox.setEnabled(False)
-            
-            # Setup signature
-            self.log("Setting up ECDSA signature...")
-            
+
+            # ── Construct the appropriate signature algorithm object ──────
+            if self.mldsa_algo_radio.isChecked():
+                param_set = self.mldsa_params_combo.currentText()
+                self.signature_algo = MLDSASignature(parameter_set=param_set)
+                key_ext = ".bin"
+                algo_label = f"ML-DSA ({param_set})"
+            else:
+                self.signature_algo = ECDSASignature()
+                key_ext = ".pem"
+                algo_label = "ECDSA-P256"
+
+            self.log(f"Setting up {algo_label} signature...")
+
             if self.generate_keys_radio.isChecked():
                 # Generate new keys
                 self.keys_dir.mkdir(exist_ok=True)
                 timestamp = time.strftime("%Y%m%d_%H%M%S")
-                private_key_path = str(self.keys_dir / f"private_key_{timestamp}.pem")
-                public_key_path = str(self.keys_dir / f"public_key_{timestamp}.pem")
-                
-                self.log(f"Generating new ECDSA key pair...")
+                private_key_path = str(self.keys_dir / f"private_key_{timestamp}{key_ext}")
+                public_key_path  = str(self.keys_dir / f"public_key_{timestamp}{key_ext}")
+
+                self.log(f"Generating new {algo_label} key pair...")
                 self.signature_algo.generate_keys(private_key_path, public_key_path)
                 self.log(f"Keys saved to {self.keys_dir}")
             else:
@@ -736,8 +785,8 @@ class MainWindow(QMainWindow):
                     self.process_button.setEnabled(True)
                     self.version_spinbox.setEnabled(True)
                     return
-                
-                self.log(f"Loading private key from {private_key_path}...")
+
+                self.log(f"Loading {algo_label} private key from {private_key_path}...")
                 self.signature_algo.load_keys(private_key_path=private_key_path)
                 self.log("Private key loaded")
             

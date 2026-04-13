@@ -10,7 +10,7 @@
 
 #include "stm32f4xx_hal.h"
 
-void printImageHeaders();
+void printImageHeaders(void);
 
 typedef enum {ERROR_REPORT, INFO_REPORT} ReportLevel;
 

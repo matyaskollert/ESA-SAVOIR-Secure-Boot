@@ -856,6 +856,44 @@
     #define NO_ASN_TIME
 #endif
 
+/* ------------------------------------------------------------------------- */
+/* Post-Quantum Digital Signatures — ML-DSA (Dilithium)                      */
+/* ------------------------------------------------------------------------- */
+/* Enable by adding  -DPOST_QUANTUM  to the project C compiler flags.        */
+/* This activates SHA-3/SHAKE (required internally by ML-DSA) and the        */
+/* wolfSSL WC Dilithium implementation.                                       */
+/*                                                                            */
+/* Only public-key import + verification are compiled in (signing code is     */
+/* excluded to save flash on the embedded target).                            */
+/*                                                                            */
+/* Supported parameter sets (select via ML_DSA_LEVEL in crypto.h):           */
+/*   ML_DSA_LEVEL 2  →  ML-DSA-44  (sig 2420 B, pk 1312 B, NIST cat. 2)     */
+/*   ML_DSA_LEVEL 3  →  ML-DSA-65  (sig 3309 B, pk 1952 B, NIST cat. 3)     */
+/* ------------------------------------------------------------------------- */
+#ifdef POST_QUANTUM
+    /* SHA-3 / SHAKE primitives required by Dilithium */
+    #undef  WOLFSSL_SHA3
+    #define WOLFSSL_SHA3
+
+    #undef  WOLFSSL_NO_SHAKE128
+    #undef  WOLFSSL_SHAKE128
+    #define WOLFSSL_SHAKE128
+
+    #undef  WOLFSSL_NO_SHAKE256
+    #undef  WOLFSSL_SHAKE256
+    #define WOLFSSL_SHAKE256
+
+    /* Enable the wolfCrypt Dilithium / ML-DSA implementation */
+    #define HAVE_DILITHIUM
+    #define WOLFSSL_WC_DILITHIUM
+
+    /* Expose public-key import (wc_dilithium_import_public) and verify */
+    #define WOLFSSL_DILITHIUM_PUBLIC_KEY
+
+    /* Exclude signing code — firmware only needs verification */
+    #define WOLFSSL_DILITHIUM_NO_SIGN
+#endif /* POST_QUANTUM */
+
 #ifdef __cplusplus
 }
 #endif

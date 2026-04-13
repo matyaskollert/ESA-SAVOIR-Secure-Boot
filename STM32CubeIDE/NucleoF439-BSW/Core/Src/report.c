@@ -11,7 +11,7 @@
 #include "flash.h"
 
 
-void printImageHeaders()
+void printImageHeaders(void)
 {
 	const image_header_t* bootImage = (const image_header_t *)(BOOT_FLASH_ADDRESS);
 	printf("BOOT version: %u\r\n", bootImage->imageVersion);

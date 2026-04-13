@@ -27,7 +27,7 @@ int16_t imageValidateInRAM(ImageSlot slot);
 
 int16_t imageLoad(ImageSlot slot);
 
-void imageStart();
+void imageStart(void);
 
 
 #endif /* INC_IMAGE_H_ */
