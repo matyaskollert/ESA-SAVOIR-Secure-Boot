@@ -30,8 +30,6 @@ void uart_rx_init(UART_HandleTypeDef* uuart)
 void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t size)
 {
 	write_indx = size % UART_RX_DMA_BUF_SIZE;
-	// HAL_UARTEx_ReceiveToIdle_DMA(uart, rxBuffer, UART_RX_DMA_BUF_SIZE);
-	// printf("UART RX event: IDLE, size=%u\r\n", size);
 }
 
 static uint32_t bytes_available(void)
@@ -56,78 +54,27 @@ static int16_t rx_read(UART_HandleTypeDef* uuart,
 		return 0;
 	}
 
-	uint32_t start    = HAL_GetTick();
-	uint32_t received = 0;
-
-	// printf("DMA read requested, write_indx=%lu, indx=%lu, len=%u\r\n", write_indx, indx, len);
-	// printf("DMA buffer contents: ");
-	// for (size_t i = 0; i < UART_RX_DMA_BUF_SIZE; i++)
-	// {
-	// 	printf("%02X ", rxBuffer[i]);
-	// 	if (i % 128 == 127)
-	// 	{
-	// 		printf("\r\n");
-	// 	}
-	// }
-	// printf("\r\n");
-
-	// uint32_t old_write_indx = write_indx;
+	uint32_t start = HAL_GetTick();
 
 	while (bytes_available() < len)
 	{
-		// if (write_indx != old_write_indx)
-		// {
-		// 	printf("DMA write index updated: write_indx=%lu, indx=%lu, len=%u\r\n", write_indx, indx, len);
-		// 	old_write_indx = write_indx;
-		// }
 		if ((HAL_GetTick() - start) >= timeout_ms)
 		{
 			return -1;  // Timeout
 		}
 	}
 
-	// printf("DMA event received, write_indx=%lu, indx=%lu, len=%u\r\n", write_indx, indx, len);
 	for (uint16_t i = 0; i < len; i++)
 	{
 		dst[i] = rxBuffer[(indx + i) % UART_RX_DMA_BUF_SIZE];
 	}
 	indx = (indx + len) % UART_RX_DMA_BUF_SIZE;
 
-
-	// printf("DMA buffer state: start=%lu, read_idx=%lu, write_idx=%lu, bytes_available=%lu\r\n",
-	//        start,
-	//        s_rx_read_idx,
-	//        UART_RX_DMA_BUF_SIZE - __HAL_DMA_GET_COUNTER(s_rx_uart->hdmarx),
-	//        rx_bytes_available());
-	// printf("DMA buffer contents: ");
-	// for (size_t i = 0; i < UART_RX_DMA_BUF_SIZE; i++)
-	// {
-	// 	printf("%02X ", rxBuffer[i]);
-	// 	if (i % 128 == 127)
-	// 	{
-	// 		printf("\r\n");
-	// 	}
-	// }
-	// printf("\r\n");
-
-	// while (received < len)
-	// {
-	// 	if (rx_bytes_available() > 0)
-	// 	{
-	// 		dst[received++] = s_rx_dma_buf[s_rx_read_idx];
-	// 		s_rx_read_idx = (s_rx_read_idx + 1U) % UART_RX_DMA_BUF_SIZE;
-	// 	}
-	// 	else if ((HAL_GetTick() - start) >= timeout_ms)
-	// 	{
-	// 		return -1;
-	// 	}
-	// }
 	return 0;
 }
 
 int16_t receiveData(UART_HandleTypeDef* uart, uint8_t* receiveBuffer, uint32_t bufferLength)
 {
-	// printf("Attempting to receive %lu bytes, start=%lu\r\n", bufferLength, HAL_GetTick());
 	if (rx_read(uart, receiveBuffer, (uint16_t)bufferLength, HAL_MAX_DELAY) != 0)
 	{
 		printf("Error getting data from UART\r\n");
@@ -153,20 +100,11 @@ int16_t sendAck(UART_HandleTypeDef* uart)
 int16_t receivePacketHeader(UART_HandleTypeDef* uart, ECSSPacketHeader* header)
 {
 	uint8_t buffer[ECSS_HEADER_SIZE];
-	// printf("Attempting to receive packet header, start=%lu\r\n", HAL_GetTick());
 	if (rx_read(uart, buffer, ECSS_HEADER_SIZE, HAL_MAX_DELAY) != 0)
 	{
 		printf("Error receiving packet header\r\n");
 		return 1;
 	}
-
-	// print the raw header bytes for debugging
-	// printf("Received header bytes: ");
-	// for (size_t i = 0; i < ECSS_HEADER_SIZE; i++)
-	// {
-	// printf("%02X ", buffer[i]);
-	// }
-	// printf("\r\n");
 
 	if (ecss_parse_header(buffer, header) != 0)
 	{
@@ -180,7 +118,6 @@ int16_t receivePacketHeader(UART_HandleTypeDef* uart, ECSSPacketHeader* header)
 int16_t receivePacketHeaderWithTimeout(UART_HandleTypeDef* uart, ECSSPacketHeader* header, uint32_t timeout_ms)
 {
 	uint8_t buffer[ECSS_HEADER_SIZE];
-	// printf("Attempting to receive packet header with timeout %lu ms, start=%lu\r\n", timeout_ms, HAL_GetTick());
 	int16_t ret = rx_read(uart, buffer, ECSS_HEADER_SIZE, timeout_ms);
 	if (ret == -1)
 	{
@@ -191,14 +128,6 @@ int16_t receivePacketHeaderWithTimeout(UART_HandleTypeDef* uart, ECSSPacketHeade
 		printf("Error receiving packet header\r\n");
 		return 1;
 	}
-
-	// print the raw header bytes for debugging
-	// printf("Received header bytes: ");
-	// for (size_t i = 0; i < ECSS_HEADER_SIZE; i++)
-	// {
-	// 	printf("%02X ", buffer[i]);
-	// }
-	// printf("\r\n");
 
 	if (ecss_parse_header(buffer, header) != 0)
 	{
@@ -216,7 +145,6 @@ int16_t receivePacketData(UART_HandleTypeDef* uart, uint8_t* buffer, uint16_t le
 		return 0;
 	}
 
-	// printf("Attempting to receive packet data of length %u, start=%lu\r\n", length, HAL_GetTick());
 	if (rx_read(uart, buffer, length, HAL_MAX_DELAY) != 0)
 	{
 		printf("Error receiving packet data\r\n");

@@ -26,7 +26,7 @@ class TestBootValidImage:
         ack = bsw.wait_for_ack(expected_sequence=0)
         assert ack is not None
         # Collect debug output from the BSW (and early ASW output if any).
-        log = "".join(bsw.drain_debug_log(timeout=3.0))
+        log = "".join(bsw.drain_debug_log(timeout=2.0))
         assert "CRC validation in FLASH successful" in log
         assert "Digital signature valid" in log
         assert "CRC validation in RAM successful" in log
@@ -41,13 +41,13 @@ class TestBootNoImage:
     #     board.reset_board()
     #     bsw.send_command('1', sequence=0)
     #     with pytest.raises(serial_comm.NackReceived):
-    #         bsw.wait_for_ack(expected_sequence=0, timeout=5.0)
+    #         bsw.wait_for_ack(expected_sequence=0, timeout=1.0)
 
     def test_debug_log_reports_missing_header(self, clean_flash, bsw, config):
         board.reset_board()
         bsw.send_command('1', sequence=0)
-        bsw.wait_for_ack(expected_sequence=0, timeout=5.0)
-        log = "".join(bsw.drain_debug_log(timeout=2.0))
+        bsw.wait_for_ack(expected_sequence=0, timeout=1.0)
+        log = "".join(bsw.drain_debug_log(timeout=1.0))
         assert "No valid header found" in log
 
 
@@ -65,16 +65,16 @@ class TestBootCorruptCRC:
     #     board.reset_board()
     #     bsw.send_command('1', sequence=0)
     #     with pytest.raises(serial_comm.NackReceived):
-    #         bsw.wait_for_ack(expected_sequence=0, timeout=5.0)
+    #         bsw.wait_for_ack(expected_sequence=0, timeout=1.0)
 
     def test_debug_log_reports_crc_mismatch(self, bsw, config):
         board.reset_board()
         bsw.send_command('1', sequence=0)
         try:
-            bsw.wait_for_ack(expected_sequence=0, timeout=5.0)
+            bsw.wait_for_ack(expected_sequence=0, timeout=1.0)
         except serial_comm.NackReceived:
             pass
-        log = "".join(bsw.drain_debug_log(timeout=2.0))
+        log = "".join(bsw.drain_debug_log(timeout=1.0))
         assert "CRC Mismatch in FLASH" in log
         assert "0xdeadbeef" in log
 
@@ -98,7 +98,7 @@ class TestBootUnprotectedBootSector:
         board.reset_board()
         bsw.send_command('1', sequence=0)
         with pytest.raises(serial_comm.NackReceived) as exc_info:
-            bsw.wait_for_ack(expected_sequence=0, timeout=5.0)
+            bsw.wait_for_ack(expected_sequence=0, timeout=1.0)
         assert exc_info.value.error_code == 11  # "System not configured for nominal mode"
 
 
@@ -119,7 +119,7 @@ class TestBootUnprotectedCounterSector:
         board.reset_board()
         bsw.send_command('1', sequence=0)
         with pytest.raises(serial_comm.NackReceived) as exc_info:
-            bsw.wait_for_ack(expected_sequence=0, timeout=5.0)
+            bsw.wait_for_ack(expected_sequence=0, timeout=1.0)
         assert exc_info.value.error_code == 11
         time.sleep(1.0)  # let OB_Launch reset complete
         assert board.is_write_protected(board.OB_WRP_COUNTER)
@@ -143,7 +143,7 @@ class TestBootBothSectorsUnprotected:
         board.reset_board()
         bsw.send_command('1', sequence=0)
         with pytest.raises(serial_comm.NackReceived) as exc_info:
-            bsw.wait_for_ack(expected_sequence=0, timeout=5.0)
+            bsw.wait_for_ack(expected_sequence=0, timeout=1.0)
         assert exc_info.value.error_code == 11
         time.sleep(1.0)  # let OB_Launch reset complete
         assert board.is_write_protected(board.OB_WRP_COUNTER)
@@ -163,16 +163,16 @@ class TestBootBadMagic:
     #     board.reset_board()
     #     bsw.send_command('1', sequence=0)
     #     with pytest.raises(serial_comm.NackReceived):
-    #         bsw.wait_for_ack(expected_sequence=0, timeout=5.0)
+    #         bsw.wait_for_ack(expected_sequence=0, timeout=1.0)
 
     def test_debug_log_reports_no_valid_header(self, bsw, config):
         board.reset_board()
         bsw.send_command('1', sequence=0)
         try:
-            bsw.wait_for_ack(expected_sequence=0, timeout=5.0)
+            bsw.wait_for_ack(expected_sequence=0, timeout=1.0)
         except serial_comm.NackReceived:
             pass
-        log = "".join(bsw.drain_debug_log(timeout=2.0))
+        log = "".join(bsw.drain_debug_log(timeout=1.0))
         assert "No valid header found" in log
 
 
@@ -194,17 +194,17 @@ class TestBootInvalidSignature:
     #     board.reset_board()
     #     bsw.send_command('1', sequence=0)
     #     with pytest.raises(serial_comm.NackReceived):
-    #         bsw.wait_for_ack(expected_sequence=0, timeout=10.0)
+    #         bsw.wait_for_ack(expected_sequence=0, timeout=2.0)
 
     def test_debug_log_reports_signature_failure(self, bsw, config):
         board.reset_board()
         bsw.send_command('1', sequence=0)
         try:
-            bsw.wait_for_ack(expected_sequence=0, timeout=10.0)
+            bsw.wait_for_ack(expected_sequence=0, timeout=2.0)
         except serial_comm.NackReceived:
             pass
-        log = "".join(bsw.drain_debug_log(timeout=5.0))
-        assert "Digital signature valid" in log
+        log = "".join(bsw.drain_debug_log(timeout=1.0))
+        assert "Digital signature validation failed" in log
 
 
 class TestBootNominalAutoFix:
@@ -225,7 +225,7 @@ class TestBootNominalAutoFix:
         board.reset_board()
         bsw.send_command('1', sequence=0)
         try:
-            bsw.wait_for_ack(expected_sequence=0, timeout=5.0)
+            bsw.wait_for_ack(expected_sequence=0, timeout=1.0)
         except serial_comm.NackReceived:
             pass
         bsw.close()
@@ -238,5 +238,5 @@ class TestBootNominalAutoFix:
         bsw.open()
         board.reset_board()
         bsw.send_command('1', sequence=0)
-        ack = bsw.wait_for_ack(expected_sequence=0, timeout=10.0)
+        ack = bsw.wait_for_ack(expected_sequence=0, timeout=1.0)
         assert ack is not None

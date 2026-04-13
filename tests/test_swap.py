@@ -52,8 +52,7 @@ class TestSwapHappyPath:
         bsw.send_command('3', sequence=0)
         ack = bsw.wait_for_ack(expected_sequence=0)
         assert ack is not None
-        bsw.drain_debug_log(timeout=10.0)  # let the swap finish
-        time.sleep(1.0)  # allow OB_Launch reset to complete
+        bsw.drain_debug_log(timeout=5.0)  # let the swap finish
 
         assert _slot_version(board.BOOT_FLASH_ADDRESS) == 2,  "BOOT slot must hold UPDATE version after swap"
         assert _slot_version(board.SWAP_FLASH_ADDRESS) == 1,  "SWAP slot must hold old BOOT version after swap"
@@ -89,8 +88,7 @@ class TestSwapBootSectorStillProtected:
         board.reset_board()
         bsw.send_command('3', sequence=0)
         with pytest.raises(serial_comm.NackReceived) as exc_info:
-            bsw.wait_for_ack(expected_sequence=0, timeout=5.0)
-        time.sleep(20)
+            bsw.wait_for_ack(expected_sequence=0, timeout=2.0)
         assert exc_info.value.error_code == 12
 
 
@@ -118,7 +116,7 @@ class TestSwapCounterSectorStillProtected:
         board.reset_board()
         bsw.send_command('3', sequence=0)
         with pytest.raises(serial_comm.NackReceived) as exc_info:
-            bsw.wait_for_ack(expected_sequence=0, timeout=5.0)
+            bsw.wait_for_ack(expected_sequence=0, timeout=2.0)
         assert exc_info.value.error_code == 12
 
 
@@ -137,7 +135,7 @@ class TestSwapBothSectorsStillProtected:
         board.reset_board()
         bsw.send_command('3', sequence=0)
         with pytest.raises(serial_comm.NackReceived) as exc_info:
-            bsw.wait_for_ack(expected_sequence=0, timeout=5.0)
+            bsw.wait_for_ack(expected_sequence=0, timeout=2.0)
         assert exc_info.value.error_code == 12
 
 
@@ -155,7 +153,7 @@ class TestSwapBadUpdateSlot:
         board.reset_board()
         bsw.send_command('3', sequence=0)
         with pytest.raises(serial_comm.NackReceived):
-            bsw.wait_for_ack(expected_sequence=0, timeout=10.0)
+            bsw.wait_for_ack(expected_sequence=0, timeout=2.0)
 
     def test_nack_when_update_has_bad_magic(self, swap_ready_state, bsw, config, image_factory):
         """UPDATE slot has wrong magic → imageGetHeader returns NULL → NACK."""
@@ -166,7 +164,7 @@ class TestSwapBadUpdateSlot:
         board.reset_board()
         bsw.send_command('3', sequence=0)
         with pytest.raises(serial_comm.NackReceived):
-            bsw.wait_for_ack(expected_sequence=0, timeout=10.0)
+            bsw.wait_for_ack(expected_sequence=0, timeout=2.0)
 
     def test_nack_when_update_has_corrupt_crc(self, swap_ready_state, bsw, config, image_factory):
         """UPDATE slot has corrupted CRC → imageValidate fails → NACK."""
@@ -177,7 +175,7 @@ class TestSwapBadUpdateSlot:
         board.reset_board()
         bsw.send_command('3', sequence=0)
         with pytest.raises(serial_comm.NackReceived):
-            bsw.wait_for_ack(expected_sequence=0, timeout=10.0)
+            bsw.wait_for_ack(expected_sequence=0, timeout=2.0)
 
     def test_nack_when_update_has_invalid_signature(self, swap_ready_state, bsw, config, image_factory):
         """UPDATE slot CRC is valid but signature is tampered → imageLoad fails → NACK."""
@@ -190,7 +188,7 @@ class TestSwapBadUpdateSlot:
         board.reset_board()
         bsw.send_command('3', sequence=0)
         with pytest.raises(serial_comm.NackReceived):
-            bsw.wait_for_ack(expected_sequence=0, timeout=15.0)
+            bsw.wait_for_ack(expected_sequence=0, timeout=2.0)
 
     def test_debug_log_when_update_empty(self, swap_ready_state, bsw, config):
         """Debug log must mention a header or image validation failure."""
@@ -199,10 +197,10 @@ class TestSwapBadUpdateSlot:
         board.reset_board()
         bsw.send_command('3', sequence=0)
         try:
-            bsw.wait_for_ack(expected_sequence=0, timeout=10.0)
+            bsw.wait_for_ack(expected_sequence=0, timeout=2.0)
         except serial_comm.NackReceived:
             pass
-        log = "".join(bsw.drain_debug_log(timeout=3.0))
+        log = "".join(bsw.drain_debug_log(timeout=2.0))
         assert "CRC verification failed" in log
 
 
@@ -230,7 +228,7 @@ class TestSwapVersionRejectionRecovery:
         board.reset_board()
         bsw.send_command('3', sequence=0)
         with pytest.raises(serial_comm.NackReceived) as exc_info:
-            bsw.wait_for_ack(expected_sequence=0, timeout=10.0)
+            bsw.wait_for_ack(expected_sequence=0, timeout=2.0)
         assert exc_info.value.error_code == 9
 
     def test_comm_reset_to_nominal_after_rejection(self, bsw, config):
@@ -238,7 +236,7 @@ class TestSwapVersionRejectionRecovery:
         board.reset_board()
         bsw.send_command('3', sequence=0)
         try:
-            bsw.wait_for_ack(expected_sequence=0, timeout=10.0)
+            bsw.wait_for_ack(expected_sequence=0, timeout=2.0)
         except serial_comm.NackReceived:
             pass
         time.sleep(1.0)  # allow OB_Launch reset
@@ -249,7 +247,7 @@ class TestSwapVersionRejectionRecovery:
         board.reset_board()
         bsw.send_command('3', sequence=0)
         try:
-            bsw.wait_for_ack(expected_sequence=0, timeout=10.0)
+            bsw.wait_for_ack(expected_sequence=0, timeout=2.0)
         except serial_comm.NackReceived:
             pass
         time.sleep(1.0)
@@ -270,7 +268,7 @@ class TestSwapRollbackCounterEdges:
         board.reset_board()
         bsw.send_command('3', sequence=0)
         bsw.wait_for_ack(expected_sequence=0)
-        bsw.drain_debug_log(timeout=5.0)
+        bsw.drain_debug_log(timeout=2.0)
         time.sleep(1.0)
 
         # Counter was already 2 (== new BOOT version 2); must stay 2.
@@ -316,7 +314,7 @@ class TestSwapRollbackEnforcement:
         board.reset_board()
         bsw.send_command('3', sequence=0)
         with pytest.raises(serial_comm.NackReceived) as exc_info:
-            bsw.wait_for_ack(expected_sequence=0, timeout=15.0)
+            bsw.wait_for_ack(expected_sequence=0, timeout=2.0)
         assert exc_info.value.error_code == 9
         time.sleep(1.0)
 
@@ -350,7 +348,7 @@ class TestRecoveryAfterSwapRollback:
         board.reset_board()
         bsw.send_command('3', sequence=0)
         try:
-            bsw.wait_for_ack(expected_sequence=0, timeout=15.0)
+            bsw.wait_for_ack(expected_sequence=0, timeout=2.0)
         except serial_comm.NackReceived:
             pass
         bsw.close()
@@ -360,5 +358,5 @@ class TestRecoveryAfterSwapRollback:
         bsw.open()
         board.reset_board()
         bsw.send_command('1', sequence=0)
-        ack = bsw.wait_for_ack(expected_sequence=0, timeout=15.0)
+        ack = bsw.wait_for_ack(expected_sequence=0, timeout=2.0)
         assert ack is not None, "Nominal boot must succeed after swap rollback recovery"

@@ -50,7 +50,7 @@ def _slot_version(address: int) -> int:
 def _skip_timeout(bsw) -> None:
     """Send command '6' so the BSW exits its 15 s input window immediately."""
     bsw.send_command('6', sequence=0)
-    bsw.wait_for_ack(expected_sequence=0, timeout=5.0)
+    bsw.wait_for_ack(expected_sequence=0, timeout=1.0)
 
 
 def _do_full_upload(bsw, image_data: bytes) -> None:
@@ -59,7 +59,7 @@ def _do_full_upload(bsw, image_data: bytes) -> None:
     Caller must ensure COMM=NOMINAL and sectors are protected beforehand."""
     board.reset_board()
     bsw.send_command('2', sequence=0)
-    bsw.wait_for_ack(expected_sequence=0)
+    bsw.wait_for_ack(expected_sequence=0, timeout=1.0)
     bsw.upload_image(image_data, start_sequence=1)
     time.sleep(2.5)  # BSW calls setupSystemForImageSwap() then resets
 
@@ -69,8 +69,7 @@ def _do_swap(bsw) -> None:
     Caller must ensure COMM=SWAP (0xCC) beforehand."""
     board.reset_board()
     _skip_timeout(bsw)
-    bsw.drain_debug_log(timeout=10.0)
-    time.sleep(1.0)  # allow OB_Launch reset from setupSystemForNominal
+    bsw.drain_debug_log(timeout=5.0) # allow OB_Launch reset from setupSystemForNominal
 
 
 class TestFullUpdateCycle:
@@ -92,7 +91,7 @@ class TestFullUpdateCycle:
 
         board.reset_board()
         _skip_timeout(bsw)
-        log = "".join(bsw.drain_debug_log(timeout=10.0))
+        log = "".join(bsw.drain_debug_log(timeout=2.0))
         assert "CRC validation in RAM successful" in log
 
 
@@ -192,9 +191,9 @@ class TestAutomaticRollbackBothFail:
         board.set_comm_status(board.COMM_STATUS_BOOT_ATTEMPTED)
         board.reset_board()
         _skip_timeout(bsw)
-        bsw.drain_debug_log(timeout=5.0)
+        bsw.drain_debug_log(timeout=2.0)
         _skip_timeout(bsw)
-        bsw.drain_debug_log(timeout=10.0)  # rollback swap + OB_Launch reset
+        bsw.drain_debug_log(timeout=5.0)  # rollback swap + OB_Launch reset
         assert _slot_version(board.BOOT_FLASH_ADDRESS) == 1
 
         # Round 2: v1 also fails
@@ -202,7 +201,6 @@ class TestAutomaticRollbackBothFail:
         board.reset_board()
         _skip_timeout(bsw)
         bsw.drain_debug_log(timeout=5.0)
-        time.sleep(0.1)
 
         assert board.get_comm_status() == board.COMM_STATUS_STANDBY
 
@@ -240,13 +238,13 @@ class TestAutomaticRollbackSecondSucceeds:
         board.set_comm_status(board.COMM_STATUS_BOOT_ATTEMPTED)
         board.reset_board()
         _skip_timeout(bsw)
-        bsw.drain_debug_log(timeout=5.0)
+        bsw.drain_debug_log(timeout=2.0)
         _skip_timeout(bsw)
-        bsw.drain_debug_log(timeout=10.0)
+        bsw.drain_debug_log(timeout=5.0)
         assert _slot_version(board.BOOT_FLASH_ADDRESS) == 1
 
         # Step 2: BOOT slot = real ASW v1, COMM = NOMINAL → BSW boots it
         board.reset_board()
         _skip_timeout(bsw)
-        log = "".join(bsw.drain_debug_log(timeout=5.0))
+        log = "".join(bsw.drain_debug_log(timeout=2.0))
         assert "App STARTED" in log

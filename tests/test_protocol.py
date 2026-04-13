@@ -32,11 +32,12 @@ class TestUnknownCommand:
         """Send 'X'; the BSW should reach the else-branch and eventually reset."""
         board.reset_board()
         bsw.send_command('X', sequence=0)
-        # Give the BSW up to 5 s to respond or reset; we only care it doesn't hang.
+        # Give the BSW up to 2 s to respond or reset; we only care it doesn't hang.
         try:
-            bsw.wait_for_ack(expected_sequence=0, timeout=5.0)
+            bsw.wait_for_ack(expected_sequence=0, timeout=2.0)
         except (serial_comm.NackReceived, TimeoutError, AssertionError):
             pass  # any response (or none) is acceptable – we just mustn't block forever
+
 
     def test_unknown_command_does_not_corrupt_boot_slot(self, nominal_state, bsw, config):
         """The BOOT slot must be byte-for-byte intact after an unknown command."""
@@ -45,10 +46,9 @@ class TestUnknownCommand:
         board.reset_board()
         bsw.send_command('X', sequence=0)
         try:
-            bsw.wait_for_ack(expected_sequence=0, timeout=5.0)
+            bsw.wait_for_ack(expected_sequence=0, timeout=2.0)
         except (serial_comm.NackReceived, TimeoutError, AssertionError):
             pass
-        time.sleep(1.0)
 
         after = board.flash_read(board.BOOT_FLASH_ADDRESS, 32)
         assert after == golden, "BOOT slot must not be modified by an unknown command"
@@ -71,7 +71,7 @@ class TestCommandWithEmptyData:
         board.reset_board()
         self._send_zero_length_command(bsw)
         try:
-            bsw.wait_for_ack(expected_sequence=0, timeout=5.0)
+            bsw.wait_for_ack(expected_sequence=0, timeout=2.0)
         except (serial_comm.NackReceived, TimeoutError, AssertionError):
             pass  # any outcome is acceptable; the BSW just must not block
 
@@ -89,7 +89,7 @@ class TestUploadStartErrors:
         bad_hdr = _build_header(PacketType.START_UPLOAD, sequence=1, data_len=8)
         bsw._send(bad_hdr, struct.pack("<II", 256, 0))
         with pytest.raises(serial_comm.NackReceived) as exc_info:
-            bsw.wait_for_ack(expected_sequence=1, timeout=5.0)
+            bsw.wait_for_ack(expected_sequence=1, timeout=2.0)
         assert exc_info.value.error_code == 3
 
     def test_nack_2_when_wrong_service_type_at_start(self, nominal_state, bsw, config):
@@ -102,7 +102,7 @@ class TestUploadStartErrors:
         bad_hdr = _build_header(PacketType.DATA_CHUNK, sequence=1, data_len=4)
         bsw._send(bad_hdr, struct.pack("<I", 256))
         with pytest.raises(serial_comm.NackReceived) as exc_info:
-            bsw.wait_for_ack(expected_sequence=1, timeout=5.0)
+            bsw.wait_for_ack(expected_sequence=1, timeout=2.0)
         assert exc_info.value.error_code == 2
 
 
@@ -124,7 +124,7 @@ class TestUploadChunkErrors:
         bad_hdr = _build_header(PacketType.START_UPLOAD, sequence=2, data_len=4)
         bsw._send(bad_hdr, struct.pack("<I", len(update_img)))
         with pytest.raises(serial_comm.NackReceived) as exc_info:
-            bsw.wait_for_ack(expected_sequence=2, timeout=5.0)
+            bsw.wait_for_ack(expected_sequence=2, timeout=2.0)
         assert exc_info.value.error_code == 7
 
     # def test_sequence_gap_does_not_abort_upload(self, nominal_state, bsw, config, image_factory):
@@ -181,7 +181,7 @@ class TestUploadEndBeforeAllData:
         bsw.send_data_chunk(update_img[:256], sequence=2)
         bsw.wait_for_ack(expected_sequence=2)
         bsw.send_end_upload(sequence=3)
-        ack = bsw.wait_for_ack(expected_sequence=3, timeout=5.0)
+        ack = bsw.wait_for_ack(expected_sequence=3, timeout=2.0)
         assert ack is not None
         time.sleep(1.0)
 

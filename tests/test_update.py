@@ -38,7 +38,7 @@ class TestUpdateHappyPath:
         bsw.wait_for_ack(expected_sequence=0)
         bsw.upload_image(update_img, start_sequence=1, verbose=True)
 
-        log = "".join(bsw.drain_debug_log(timeout=3.0))
+        log = "".join(bsw.drain_debug_log(timeout=2.0))
 
         assert "Writing to flash" in log
         assert "Flash write complete" in log
@@ -108,7 +108,7 @@ class TestUpdateUnprotectedBootSector:
         board.reset_board()
         bsw.send_command('2', sequence=0)
         with pytest.raises(serial_comm.NackReceived) as exc_info:
-            bsw.wait_for_ack(expected_sequence=0, timeout=5.0)
+            bsw.wait_for_ack(expected_sequence=0, timeout=2.0)
         assert exc_info.value.error_code == 10
 
 
@@ -130,7 +130,7 @@ class TestUpdateUnprotectedCounterSector:
         board.reset_board()
         bsw.send_command('2', sequence=0)
         with pytest.raises(serial_comm.NackReceived) as exc_info:
-            bsw.wait_for_ack(expected_sequence=0, timeout=5.0)
+            bsw.wait_for_ack(expected_sequence=0, timeout=2.0)
         assert exc_info.value.error_code == 10
         time.sleep(1.0)
         assert board.is_write_protected(board.OB_WRP_BOOT)
@@ -161,7 +161,7 @@ class TestUpdateSectorProtectedDuringUpdate:
         board.reset_board()
         bsw.send_command('2', sequence=0)
         with pytest.raises(serial_comm.NackReceived) as exc_info:
-            bsw.wait_for_ack(expected_sequence=0, timeout=5.0)
+            bsw.wait_for_ack(expected_sequence=0, timeout=2.0)
         assert exc_info.value.error_code == 10
 
 

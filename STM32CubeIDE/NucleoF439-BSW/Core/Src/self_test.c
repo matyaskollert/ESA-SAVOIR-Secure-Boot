@@ -10,5 +10,7 @@
 
 int16_t performSelfTests(void)
 {
+	// TODO: Add BSW CRC Check - where should the CRC be stored?
+	// TODO: Check that BSW sections are locked
 	return 0;
 }
