@@ -143,6 +143,10 @@ static int ecdsa_load_keys(sig_ctx_t* ctx,
             fprintf(stderr, "wc_EccPrivateKeyDecode: %d\n", result_code);
             return result_code;
         }
+        // The SEC1 DER produced by wc_EccKeyToDer embeds the public key, so
+        // it is already imported above. Loading the SPKI pub file on top would
+        // overwrite the key type to ECC_PUBLICKEY and lose the private scalar.
+        return 0;
     }
 
     if (pub_path)
@@ -182,6 +186,10 @@ static int ecdsa_sign(sig_ctx_t* ctx,
         }
         context->rng_inited = 1;
     }
+
+    // Associate the RNG with the key. Required when the key was loaded from
+    // DER rather than freshly generated (wc_ecc_make_key does this implicitly).
+    wc_ecc_set_rng(&context->key, &context->rng);
 
     // SHA-256 digest
     uint8_t digest[WC_SHA256_DIGEST_SIZE];

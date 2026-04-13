@@ -8,11 +8,11 @@
  *   ./benchmark_tool [options]
  *
  * Options:
- *   --image <path>      Path to the raw application binary (default: image.bin)
+ *   --image <path>      Path to the raw application binary (default: images/image.bin)
  *   --version <n>       imageVersion field in the header (default: 1)
  *   --force-keygen      Regenerate all key pairs even if keys/ exists
  *   --algo <name>       Run only the named algorithm (may be repeated)
- *                       Names: ECDSA-P256, RSA-2048-PSS,
+ *                       Names: ECDSA-P256, RSA-2048-PSS, RSA-3072-PSS,
  *                              ML-DSA-44, ML-DSA-65,
  *                              LMS-SHA256-H5-W8
  *
@@ -301,14 +301,15 @@ typedef struct {
     int enabled;
 } algo_entry_t;
 
-// Build the registry at startup — ML-DSA variants obtained via sig_mldsa_get().
-static algo_entry_t s_registry[8];
+// Build the registry at startup — RSA and ML-DSA variants obtained via sig_*_get().
+static algo_entry_t s_registry[9];
 static int s_registry_n = 0;
 
 static void registry_init()
 {
     s_registry[s_registry_n++] = (algo_entry_t){ &sig_ecdsa, 1 };
-    s_registry[s_registry_n++] = (algo_entry_t){ &sig_rsa, 1 };
+    s_registry[s_registry_n++] = (algo_entry_t){ sig_rsa_get(RSA_2048), 1 };
+    s_registry[s_registry_n++] = (algo_entry_t){ sig_rsa_get(RSA_3072), 1 };
     s_registry[s_registry_n++] = (algo_entry_t){ sig_mldsa_get(ML_DSA_44), 1 };
     s_registry[s_registry_n++] = (algo_entry_t){ sig_mldsa_get(ML_DSA_65), 1 };
     s_registry[s_registry_n++] = (algo_entry_t){ &sig_lms, 1 };
@@ -333,7 +334,7 @@ static void registry_filter(const char** names, int count)
 
 int main(int argc, char **argv)
 {
-    const char* image_path = "image.bin";
+    const char* image_path = "images/image.bin";
     int image_version = 1;
     int force_keygen = 0;
     const char* filter[8];
@@ -363,12 +364,12 @@ int main(int argc, char **argv)
             puts("Usage: benchmark_tool [--image <path>] [--version <n>]");
             puts("                      [--force-keygen] [--algo <name>]...");
             puts("");
-            puts("  --image <path>      Raw application binary (default: image.bin)");
+            puts("  --image <path>      Raw application binary (default: images/image.bin)");
             puts("  --version <n>       imageVersion field (default: 1)");
             puts("  --force-keygen      Regenerate all key pairs");
             puts("  --algo <name>       Run only this algorithm (repeatable)");
             puts("");
-            puts("  Algorithms: ECDSA-P256  RSA-2048-PSS");
+            puts("  Algorithms: ECDSA-P256  RSA-2048-PSS  RSA-3072-PSS");
             puts("              ML-DSA-44  ML-DSA-65");
             puts("              LMS-SHA256-H5-W8");
             return 0;
@@ -387,7 +388,7 @@ int main(int argc, char **argv)
         fprintf(stderr,
             "Error: image file not found: %s\n"
             "Place your raw application binary named 'image.bin' in the\n"
-            "current directory, or pass --image <path>.\n", image_path);
+            "images/ directory, or pass --image <path>.\n", image_path);
         return 1;
     }
 
@@ -405,8 +406,7 @@ int main(int argc, char **argv)
         }
     }
 
-    char keys_dir[512];
-    snprintf(keys_dir, sizeof(keys_dir), "%s%ckeys", image_dir, PATH_SEP);
+    char keys_dir[512] = "keys";
     mkdir(keys_dir, 0755);
 
     printf("\n");
