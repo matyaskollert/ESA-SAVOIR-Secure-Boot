@@ -305,6 +305,174 @@ typedef struct {
 static algo_entry_t s_registry[9];
 static int s_registry_n = 0;
 
+/* -------------------------------------------------------------------------
+ * Random-payload benchmark
+ * ------------------------------------------------------------------------- */
+
+#define N_RAND_SIZES 2
+static const size_t    RAND_SIZES[N_RAND_SIZES]  = { 1UL*1024, 128UL*1024 };
+static const char*     RAND_LABELS[N_RAND_SIZES] = { "1kB", "128kB" };
+
+typedef struct {
+    char   algo_name[MAX_NAME];
+    char   size_label[8];
+    double sign_s;
+    double verify_s;
+    int    status;   // 0=OK, 2=error
+} rand_result_t;
+
+static void print_random_summary(const rand_result_t* rr, int n)
+{
+#define RW_ALGO   22
+#define RW_SIZE    8
+#define RW_SIGN   12
+#define RW_VFY    12
+    int total_w = RW_ALGO + RW_SIZE + RW_SIGN + RW_VFY + 2 + 10;
+
+    printf("\n");
+    for (int i = 0; i < total_w; ++i) putchar('=');
+    printf("\n  RANDOM PAYLOAD BENCHMARK SUMMARY\n");
+    for (int i = 0; i < total_w; ++i) putchar('=');
+    printf("\n");
+    printf("%-*s%-*s%*s%*s  %s\n",
+           RW_ALGO, "Algorithm", RW_SIZE, "Size",
+           RW_SIGN, "Sign(ms)", RW_VFY, "Verify(ms)", "Status");
+    for (int i = 0; i < total_w; ++i) putchar('-');
+    printf("\n");
+
+    for (int i = 0; i < n; ++i) {
+        char sign_buf[16], vfy_buf[16];
+        if (rr[i].sign_s < 0)
+            snprintf(sign_buf, sizeof(sign_buf), "%*s", RW_SIGN, "n/a");
+        else
+            snprintf(sign_buf, sizeof(sign_buf), "%*.1f", RW_SIGN, rr[i].sign_s * 1000.0);
+        if (rr[i].verify_s < 0)
+            snprintf(vfy_buf, sizeof(vfy_buf), "%*s", RW_VFY, "n/a");
+        else
+            snprintf(vfy_buf, sizeof(vfy_buf), "%*.1f", RW_VFY, rr[i].verify_s * 1000.0);
+
+        printf("%-*s%-*s%s%s  %s\n",
+               RW_ALGO, rr[i].algo_name,
+               RW_SIZE, rr[i].size_label,
+               sign_buf, vfy_buf,
+               (rr[i].status == 0) ? "OK" : "ERROR");
+    }
+    for (int i = 0; i < total_w; ++i) putchar('=');
+    printf("\n");
+}
+
+static int run_random_benchmarks(int image_version,
+                                 const char* keys_dir,
+                                 const char* out_dir,
+                                 rand_result_t* rr_out, int* n_out)
+{
+    *n_out = 0;
+
+    /* seed stdlib RNG — used only for innocuous payload data, not key material */
+    srand((unsigned)time(NULL));
+
+    printf("\n");
+    for (int i = 0; i < 67; ++i) putchar('=');
+    printf("\n  Random Payload Signing Benchmark\n");
+    for (int i = 0; i < 67; ++i) putchar('-');
+    printf("\n  Sizes: 1 kB, 128 kB\n");
+    for (int i = 0; i < 67; ++i) putchar('=');
+    printf("\n");
+
+    for (int entry_index = 0; entry_index < s_registry_n; ++entry_index) {
+        if (!s_registry[entry_index].enabled) continue;
+        if (!s_registry[entry_index].algo)    continue;
+
+        const sig_algo_t* algo = s_registry[entry_index].algo;
+
+        char safe[MAX_NAME];
+        strncpy(safe, algo->name, MAX_NAME - 1);
+        safe[MAX_NAME - 1] = '\0';
+        safe_name(safe);
+
+        char priv_path[640], pub_path[640];
+        snprintf(priv_path, sizeof(priv_path), "%s%c%s_private%s",
+                 keys_dir, PATH_SEP, safe, algo->key_extension);
+        snprintf(pub_path, sizeof(pub_path), "%s%c%s_public%s",
+                 keys_dir, PATH_SEP, safe, algo->key_extension);
+
+        printf("\n--- %s ", algo->name);
+        for (int d = (int)strlen(algo->name); d < 52; ++d) putchar('-');
+        printf("\n");
+
+        sig_ctx_t* ctx = algo->alloc();
+        if (!ctx) {
+            fprintf(stderr, "  [ERROR] alloc() failed\n");
+            continue;
+        }
+        if (algo->load_keys(ctx, priv_path, pub_path) != 0) {
+            fprintf(stderr, "  [ERROR] Key load failed\n");
+            algo->free_ctx(ctx);
+            continue;
+        }
+
+        for (int s = 0; s < N_RAND_SIZES; ++s) {
+            size_t      sz    = RAND_SIZES[s];
+            const char* label = RAND_LABELS[s];
+
+            rand_result_t* rr = &rr_out[(*n_out)++];
+            memset(rr, 0, sizeof(*rr));
+            strncpy(rr->algo_name,  algo->name, MAX_NAME - 1);
+            strncpy(rr->size_label, label,      sizeof(rr->size_label) - 1);
+            rr->sign_s = rr->verify_s = -1.0;
+            rr->status = 2;
+
+            uint8_t* rdata = (uint8_t*)malloc(sz);
+            if (!rdata) {
+                fprintf(stderr, "  [%s] malloc(%zu) failed\n", label, sz);
+                continue;
+            }
+            for (size_t b = 0; b < sz; ++b)
+                rdata[b] = (uint8_t)(rand() & 0xFF);
+
+            char out_name[MAX_NAME + 32];
+            snprintf(out_name, sizeof(out_name), "random_%s_%s.bin", label, safe);
+            char out_path[640];
+            snprintf(out_path, sizeof(out_path), "%s%c%s", out_dir, PATH_SEP, out_name);
+
+            printf("  [%s] Signing -> %s ...\n", label, out_name);
+
+            uint8_t* raw_sig    = NULL;
+            uint8_t* sign_region = NULL;
+            size_t   raw_sig_len = 0, sign_reg_len = 0;
+
+            double t0 = now_sec();
+            int ret = build_signed_image(rdata, sz, algo, ctx,
+                                         out_path, (uint16_t)image_version,
+                                         &raw_sig, &raw_sig_len,
+                                         &sign_region, &sign_reg_len);
+            rr->sign_s = now_sec() - t0;
+
+            if (ret != 0) {
+                fprintf(stderr, "  [%s] Sign error: %d\n", label, ret);
+                free(rdata);
+                continue;
+            }
+
+            t0 = now_sec();
+            int ok = algo->verify(ctx, sign_region, sign_reg_len, raw_sig, raw_sig_len);
+            rr->verify_s = now_sec() - t0;
+
+            printf("  [%s] Sign: %.1f ms  |  Verify: %.1f ms  |  %s\n",
+                   label, rr->sign_s * 1000.0, rr->verify_s * 1000.0,
+                   (ok == 1) ? "PASS" : "FAIL");
+            rr->status = (ok == 1) ? 0 : 2;
+
+            free(raw_sig);
+            free(sign_region);
+            free(rdata);
+        }
+
+        algo->free_ctx(ctx);
+    }
+    return 0;
+}
+
 static void registry_init()
 {
     s_registry[s_registry_n++] = (algo_entry_t){ &sig_ecdsa, 1 };
@@ -372,6 +540,11 @@ int main(int argc, char **argv)
             puts("  Algorithms: ECDSA-P256  RSA-2048-PSS  RSA-3072-PSS");
             puts("              ML-DSA-44  ML-DSA-65");
             puts("              LMS-SHA256-H5-W8");
+            puts("");
+            puts("  Output files per algorithm:");
+            puts("    image_<ALGO>.bin              — signed real image");
+            puts("    random_1kB_<ALGO>.bin         — signed 1 kB random payload");
+            puts("    random_128kB_<ALGO>.bin       — signed 128 kB random payload");
             return 0;
         }
         else
@@ -443,7 +616,14 @@ int main(int argc, char **argv)
     }
 
     print_summary(results, n_results);
-
     free(image_data);
+
+    /* --- random-payload benchmark ---------------------------------------- */
+    rand_result_t rand_results[9 * N_RAND_SIZES];
+    int n_rand = 0;
+    run_random_benchmarks(image_version, keys_dir, image_dir,
+                          rand_results, &n_rand);
+    print_random_summary(rand_results, n_rand);
+
     return 0;
 }

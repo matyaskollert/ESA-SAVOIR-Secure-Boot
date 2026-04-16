@@ -843,6 +843,21 @@
 #define WOLFSSL_NO_SHAKE256
 #endif
 
+#undef  WOLFSSL_SHA3
+#define WOLFSSL_SHA3
+
+#undef  WOLFSSL_NO_SHAKE128
+#undef  WOLFSSL_SHAKE128
+#define WOLFSSL_SHAKE128
+
+#undef  WOLFSSL_NO_SHAKE256
+#undef  WOLFSSL_SHAKE256
+#define WOLFSSL_SHAKE256
+
+/* wolfCrypt Dilithium / ML-DSA implementation */
+#define HAVE_DILITHIUM
+#define WOLFSSL_WC_DILITHIUM
+
 /* In-lining of misc.c functions */
 /* If defined, must include wolfcrypt/src/misc.c in build */
 /* Slower, but about 1k smaller */

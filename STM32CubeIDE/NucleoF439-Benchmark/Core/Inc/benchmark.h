@@ -42,9 +42,9 @@
 #define ALGO_ML_DSA_65  5
 #define ALGO_LMS        6
 
-// Can also be overridden via a -D compiler flag without editing this file.
+// SHOULD be overridden via a -D compiler flag without editing this file.
 #ifndef BENCHMARK_ALGO
-#define BENCHMARK_ALGO  ALGO_RSA_3072
+#define BENCHMARK_ALGO  ALGO_ECDSA
 #endif
 
 // Compile-time guard against invalid values.
