@@ -2,6 +2,7 @@
 STM32F4 Binary Uploader Application
 A simple GUI application for uploading binary files to STM32F4 boards via UART.
 """
+import re
 import sys
 import time
 import queue
@@ -582,31 +583,24 @@ class MainWindow(QMainWindow):
         algo_label = QLabel("Algorithm:")
         algo_label.setMinimumWidth(80)
         self.algo_button_group = QButtonGroup()
-        self.ecdsa_algo_radio = QRadioButton("ECDSA-P256")
-        self.mldsa_algo_radio = QRadioButton("ML-DSA (post-quantum)")
+        self.ecdsa_algo_radio  = QRadioButton("ECDSA-P256")
+        self.mldsa_algo_radio  = QRadioButton("ML-DSA (post-quantum)")
+        self.hybrid_algo_radio = QRadioButton("Hybrid (ECDSA-P256 + ML-DSA-65)")
         self.ecdsa_algo_radio.setChecked(True)
         self.algo_button_group.addButton(self.ecdsa_algo_radio)
         self.algo_button_group.addButton(self.mldsa_algo_radio)
-
-        # ML-DSA parameter-set drop-down (only visible when ML-DSA is selected)
-        self.mldsa_params_combo = QComboBox()
-        self.mldsa_params_combo.addItems(["ML-DSA-44", "ML-DSA-65"])
-        self.mldsa_params_combo.setToolTip(
-            "ML-DSA-44: 2420-byte sig, 1312-byte pk (NIST level 2)\n"
-            "ML-DSA-65: 3309-byte sig, 1952-byte pk (NIST level 3)"
-        )
-        self.mldsa_params_combo.setEnabled(False)
+        self.algo_button_group.addButton(self.hybrid_algo_radio)
 
         algo_layout.addWidget(algo_label)
         algo_layout.addWidget(self.ecdsa_algo_radio)
         algo_layout.addWidget(self.mldsa_algo_radio)
-        algo_layout.addWidget(self.mldsa_params_combo)
+        algo_layout.addWidget(self.hybrid_algo_radio)
         algo_layout.addStretch()
         sig_layout.addLayout(algo_layout)
 
-        self.mldsa_algo_radio.toggled.connect(
-            lambda checked: self.mldsa_params_combo.setEnabled(checked)
-        )
+        # Update key-section visibility whenever the algorithm selection changes
+        for radio in (self.ecdsa_algo_radio, self.mldsa_algo_radio, self.hybrid_algo_radio):
+            radio.toggled.connect(lambda _: self._update_key_section_visibility())
 
         # ── Key options ─────────────────────────────────────────────────
         self.key_options_widget = QWidget()
@@ -616,7 +610,7 @@ class MainWindow(QMainWindow):
         
         # Radio buttons for key generation/use
         self.key_button_group = QButtonGroup()
-        self.generate_keys_radio = QRadioButton("Generate new keys")
+        self.generate_keys_radio    = QRadioButton("Generate new keys")
         self.use_existing_keys_radio = QRadioButton("Use existing keys")
         self.generate_keys_radio.setChecked(True)
         self.key_button_group.addButton(self.generate_keys_radio)
@@ -624,23 +618,34 @@ class MainWindow(QMainWindow):
         key_options_layout.addWidget(self.generate_keys_radio)
         key_options_layout.addWidget(self.use_existing_keys_radio)
         
-        # Existing keys path selection
-        existing_keys_layout = QHBoxLayout()
+        # ECDSA / primary key row
+        primary_key_layout = QHBoxLayout()
         self.private_key_label = QLabel("Private Key:")
-        self.private_key_path = QLineEdit()
+        self.private_key_path  = QLineEdit()
         self.private_key_path.setPlaceholderText(
             "Path to private key (.pem for ECDSA, .bin for ML-DSA)"
         )
         self.private_key_browse = QPushButton("Browse...")
         self.private_key_browse.clicked.connect(self.browse_private_key)
-        
-        existing_keys_layout.addWidget(self.private_key_label)
-        existing_keys_layout.addWidget(self.private_key_path, 1)
-        existing_keys_layout.addWidget(self.private_key_browse)
-        key_options_layout.addLayout(existing_keys_layout)
-        
-        # Connect radio button to enable/disable key path selection
-        self.use_existing_keys_radio.toggled.connect(self.toggle_key_path_selection)
+        primary_key_layout.addWidget(self.private_key_label)
+        primary_key_layout.addWidget(self.private_key_path, 1)
+        primary_key_layout.addWidget(self.private_key_browse)
+        key_options_layout.addLayout(primary_key_layout)
+
+        # ML-DSA key row — only visible in hybrid mode
+        mldsa_key_layout = QHBoxLayout()
+        self.mldsa_key_label  = QLabel("ML-DSA Key:")
+        self.mldsa_key_path   = QLineEdit()
+        self.mldsa_key_path.setPlaceholderText("Path to ML-DSA-65 private key (.bin)")
+        self.mldsa_key_browse = QPushButton("Browse...")
+        self.mldsa_key_browse.clicked.connect(self.browse_mldsa_private_key)
+        mldsa_key_layout.addWidget(self.mldsa_key_label)
+        mldsa_key_layout.addWidget(self.mldsa_key_path, 1)
+        mldsa_key_layout.addWidget(self.mldsa_key_browse)
+        key_options_layout.addLayout(mldsa_key_layout)
+
+        # Connect radio button to enable/disable key path inputs
+        self.use_existing_keys_radio.toggled.connect(self._update_key_section_visibility)
         
         sig_layout.addWidget(self.key_options_widget)
         
@@ -770,98 +775,155 @@ class MainWindow(QMainWindow):
         self._cmd_buttons.append(self.asw_send_btn)
         
         # Initialize key path selection state
-        self.toggle_key_path_selection()
+        self._update_key_section_visibility()
         
         self.log("Application started. Select a .bin file to begin.")
     
-    def toggle_key_path_selection(self):
-        """Enable/disable key path selection based on radio button."""
+    def _update_key_section_visibility(self):
+        """Show/hide and enable/disable key path widgets depending on mode."""
         use_existing = self.use_existing_keys_radio.isChecked()
-        self.private_key_label.setEnabled(use_existing)
-        self.private_key_path.setEnabled(use_existing)
-        self.private_key_browse.setEnabled(use_existing)
-    
+        is_hybrid    = self.hybrid_algo_radio.isChecked()
+
+        # Primary key row label adapts to the selected algorithm
+        if is_hybrid:
+            self.private_key_label.setText("ECDSA Key:")
+        elif self.mldsa_algo_radio.isChecked():
+            self.private_key_label.setText("ML-DSA Key:")
+        else:
+            self.private_key_label.setText("Private Key:")
+
+        # Primary key row
+        for w in (self.private_key_label, self.private_key_path, self.private_key_browse):
+            w.setEnabled(use_existing)
+
+        # ML-DSA key row — only present in hybrid mode
+        ml_row_active = use_existing and is_hybrid
+        for w in (self.mldsa_key_label, self.mldsa_key_path, self.mldsa_key_browse):
+            w.setEnabled(ml_row_active)
+            w.setVisible(is_hybrid)
+
     def browse_private_key(self):
-        """Browse for private key file."""
+        """Browse for the primary private key file (ECDSA .pem or ML-DSA .bin)."""
         if self.mldsa_algo_radio.isChecked():
             key_filter = "ML-DSA Key Files (*.bin);;All Files (*.*)"
         else:
             key_filter = "PEM Files (*.pem);;All Files (*.*)"
 
         file_path, _ = QFileDialog.getOpenFileName(
-            self,
-            "Select Private Key File",
-            str(self.keys_dir),
-            key_filter
+            self, "Select Private Key File", str(self.keys_dir), key_filter
         )
-        
         if file_path:
             self.private_key_path.setText(file_path)
-            self.log(f"Selected private key: {file_path}")
+            self.log(f"Selected primary private key: {file_path}")
+
+    def browse_mldsa_private_key(self):
+        """Browse for the ML-DSA private key file (hybrid mode)."""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "Select ML-DSA-65 Private Key", str(self.keys_dir),
+            "ML-DSA Key Files (*.bin);;All Files (*.*)"
+        )
+        if file_path:
+            self.mldsa_key_path.setText(file_path)
+            self.log(f"Selected ML-DSA private key: {file_path}")
     
     def process_file(self):
-        """Process the binary file and add header with CRC and signature."""
+        """Process the binary file and add header with CRC and signature(s)."""
         if not self.selected_file:
             self.log("ERROR: No file selected!")
             return
         
         try:
-            # Get version from spinbox (applied each time Process is clicked)
             self.image_version = self.version_spinbox.value()
             self.log(f"Processing with image version: {self.image_version}")
             
-            # Disable buttons during processing
             self.process_button.setEnabled(False)
             self.version_spinbox.setEnabled(False)
 
-            # ── Construct the appropriate signature algorithm object ──────
-            if self.mldsa_algo_radio.isChecked():
-                param_set = self.mldsa_params_combo.currentText()
+            is_hybrid = self.hybrid_algo_radio.isChecked()
+            is_mldsa  = self.mldsa_algo_radio.isChecked()
+            timestamp = lambda: time.strftime("%Y%m%d_%H%M%S")  # noqa: E731
+            param_set = "ML-DSA-65"  # the only supported ML-DSA parameter set
+
+            # ── Build primary (ECDSA / ML-DSA) algorithm object ──────────
+            if is_hybrid:
+                self.signature_algo = ECDSASignature()
+                algo_label = f"Hybrid (ECDSA-P256 + {param_set})"
+            elif is_mldsa:
                 self.signature_algo = MLDSASignature(parameter_set=param_set)
-                key_ext = ".bin"
                 algo_label = f"ML-DSA ({param_set})"
             else:
                 self.signature_algo = ECDSASignature()
-                key_ext = ".pem"
                 algo_label = "ECDSA-P256"
 
-            self.log(f"Setting up {algo_label} signature...")
+            self.log(f"Signing mode: {algo_label}")
 
+            # ── Load / generate primary key ───────────────────────────────
             if self.generate_keys_radio.isChecked():
-                # Generate new keys
                 self.keys_dir.mkdir(exist_ok=True)
-                timestamp = time.strftime("%Y%m%d_%H%M%S")
-                private_key_path = str(self.keys_dir / f"private_key_{timestamp}{key_ext}")
-                public_key_path  = str(self.keys_dir / f"public_key_{timestamp}{key_ext}")
+                ts = timestamp()
 
-                self.log(f"Generating new {algo_label} key pair...")
-                self.signature_algo.generate_keys(private_key_path, public_key_path)
-                self.log(f"Keys saved to {self.keys_dir}")
+                if is_hybrid:
+                    # Generate ECDSA key pair
+                    ecdsa_priv = str(self.keys_dir / f"ecdsa_private_{ts}.pem")
+                    ecdsa_pub  = str(self.keys_dir / f"ecdsa_public_{ts}.pem")
+                    self.log("Generating ECDSA-P256 key pair ...")
+                    self.signature_algo.generate_keys(ecdsa_priv, ecdsa_pub)
+                elif is_mldsa:
+                    mldsa_priv = str(self.keys_dir / f"mldsa_private_{ts}.bin")
+                    mldsa_pub  = str(self.keys_dir / f"mldsa_public_{ts}.bin")
+                    self.log(f"Generating {param_set} key pair ...")
+                    self.signature_algo.generate_keys(mldsa_priv, mldsa_pub)
+                else:
+                    ecdsa_priv = str(self.keys_dir / f"ecdsa_private_{ts}.pem")
+                    ecdsa_pub  = str(self.keys_dir / f"ecdsa_public_{ts}.pem")
+                    self.log("Generating ECDSA-P256 key pair ...")
+                    self.signature_algo.generate_keys(ecdsa_priv, ecdsa_pub)
+
+                self.log(f"Keys saved to: {self.keys_dir}")
             else:
-                # Use existing keys
-                private_key_path = self.private_key_path.text()
-                if not private_key_path or not Path(private_key_path).exists():
-                    self.log("ERROR: Private key file not found!")
+                # Use existing primary key
+                primary_path = self.private_key_path.text().strip()
+                if not primary_path or not Path(primary_path).exists():
+                    self.log("ERROR: Primary private key file not found!")
                     self.process_button.setEnabled(True)
                     self.version_spinbox.setEnabled(True)
                     return
+                self.log(f"Loading primary private key from {primary_path} ...")
+                self.signature_algo.load_keys(private_key_path=primary_path)
 
-                self.log(f"Loading {algo_label} private key from {private_key_path}...")
-                self.signature_algo.load_keys(private_key_path=private_key_path)
-                self.log("Private key loaded")
-            
-            # Process the file with CRC and signature
-            self.log(f"Processing binary file (version {self.image_version})...")
+            # ── Load / generate ML-DSA key (hybrid only) ─────────────────
+            hybrid_mldsa_algo = None
+            if is_hybrid:
+                hybrid_mldsa_algo = MLDSASignature(parameter_set=param_set)
+
+                if self.generate_keys_radio.isChecked():
+                    ts = timestamp()
+                    mldsa_priv = str(self.keys_dir / f"mldsa_private_{ts}.bin")
+                    mldsa_pub  = str(self.keys_dir / f"mldsa_public_{ts}.bin")
+                    self.log(f"Generating {param_set} key pair ...")
+                    hybrid_mldsa_algo.generate_keys(mldsa_priv, mldsa_pub)
+                else:
+                    mldsa_path = self.mldsa_key_path.text().strip()
+                    if not mldsa_path or not Path(mldsa_path).exists():
+                        self.log("ERROR: ML-DSA private key file not found!")
+                        self.process_button.setEnabled(True)
+                        self.version_spinbox.setEnabled(True)
+                        return
+                    self.log(f"Loading ML-DSA private key from {mldsa_path} ...")
+                    hybrid_mldsa_algo.load_keys(private_key_path=mldsa_path)
+
+            # ── Sign and write the image ──────────────────────────────────
+            self.log(f"Processing binary file (version {self.image_version}) ...")
             self.patched_file = process_binary(
-                self.selected_file, 
+                self.selected_file,
                 signature_algo=self.signature_algo,
+                hybrid_mldsa_algo=hybrid_mldsa_algo,
                 image_version=self.image_version,
             )
-            self.log(f"Created patched file: {self.patched_file}")
+            self.log(f"Output file: {self.patched_file}")
             self.log("Ready to upload. Click '2 - Update' to start the upload.")
-            self.log("You can change the version and click Process again to create a new patched file.")
+            self.log("You can change the version and click Process again to re-sign.")
             
-            # Enable buttons (allow re-processing with different version)
             self.process_button.setEnabled(True)
             self.version_spinbox.setEnabled(True)
             
@@ -1156,10 +1218,39 @@ class MainWindow(QMainWindow):
         scrollbar = self.log_text.verticalScrollBar()
         scrollbar.setValue(scrollbar.maximum())
     
+    # BSW BootloaderStatus enum — mirrors NucleoF439-BSP/Inc/flash.h
+    _BSW_STATUS_DESCRIPTIONS = {
+        0xAA: "NOMINAL        - boot the application image",
+        0xBB: "STANDBY        - stay in standby, await commands",
+        0xCC: "SWAP           - automatic image swap required",
+        0xDD: "BOOT_ATTEMPTED - boot was attempted; app must clear this on successful start",
+        0x00: "UNKNOWN        - unrecognised command",
+        0x11: "UPDATE         - receive and store a new image",
+        0x22: "ROLLBACK       - evaluate and perform rollback",
+        0x33: "RESET          - system reset",
+        0x44: "CHECK_VERSIONS - print image headers",
+    }
+
+    @staticmethod
+    def _annotate_status_codes(text: str) -> str:
+        """Replace every '(current status: 0xXX)' with an annotated version."""
+        def _replace(match):
+            code = int(match.group(1), 16)
+            desc = MainWindow._BSW_STATUS_DESCRIPTIONS.get(
+                code, f"unknown status 0x{code:02X}"
+            )
+            return f"(current status: 0x{code:02X} - {desc})"
+
+        return re.sub(
+            r'\(current status: 0x([0-9A-Fa-f]{2})\)',
+            _replace,
+            text,
+        )
+
     def log_uart_data(self, data):
         """Add UART data from board to the log with special formatting."""
-        # Format UART data with a prefix to distinguish it
-        self.log_text.append(f"<span style='color: #0066cc;'><b>[BOARD]</b> {data}</span>")
+        annotated = self._annotate_status_codes(data)
+        self.log_text.append(f"<span style='color: #0066cc;'><b>[BOARD]</b> {annotated}</span>")
         # Auto-scroll to bottom
         scrollbar = self.log_text.verticalScrollBar()
         scrollbar.setValue(scrollbar.maximum())

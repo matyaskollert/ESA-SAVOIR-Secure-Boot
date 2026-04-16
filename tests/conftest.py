@@ -15,7 +15,7 @@ Optional environment variables:
     ACK_TIMEOUT        - default 5.0  (seconds per packet exchange)
     STM32CUBEPROG_BIN  - full path to STM32_Programmer_CLI.exe
     KEY_TYPE           - "ecdsa" (default) or "mldsa"
-    MLDSA_PARAM_SET    - "ML-DSA-44" (default) or "ML-DSA-65"
+    MLDSA_PARAM_SET    - ML-DSA parameter set, must be "ML-DSA-65" (the only supported set)
     IMAGE_PAYLOAD_SIZE - size of the synthetic raw image, default 256 bytes
     REAL_ASW_BIN       - path to the raw (no-header) ASW binary, e.g.
                          example-asw/NucleoF439-ASW.bin.  When set, the
@@ -74,7 +74,7 @@ def config():
         "ack_timeout":    float(_env("ACK_TIMEOUT", "5.0")),
         "private_key":    _require_env("PRIVATE_KEY"),
         "key_type":       _env("KEY_TYPE", "ecdsa"),
-        "mldsa_param":    _env("MLDSA_PARAM_SET", "ML-DSA-44"),
+        "mldsa_param":    _env("MLDSA_PARAM_SET", "ML-DSA-65"),
         "image_size":     int(_env("IMAGE_PAYLOAD_SIZE", "256")),
         "real_asw_bin":   _env("REAL_ASW_BIN"),       # optional – may be ""
         "real_asw_version": int(_env("REAL_ASW_VERSION", "1")),

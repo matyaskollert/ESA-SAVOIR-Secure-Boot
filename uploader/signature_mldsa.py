@@ -4,9 +4,7 @@ Based on NIST FIPS 204 using the wolfcrypt-py library.
 
 Install the dependency with:  pip install wolfcrypt
 
-Parameter sets (wolfSSL level numbers map directly to firmware ML_DSA_LEVEL):
-  ML-DSA-44  — NIST security category 2 (≈128-bit quantum)  wolfSSL level 2
-               sig: 2420 B  |  pk: 1312 B  |  sk: 2560 B
+# Parameter set supported (wolfSSL level number maps directly to firmware ML_DSA_LEVEL):
   ML-DSA-65  — NIST security category 3 (≈192-bit quantum)  wolfSSL level 3
                sig: 3309 B  |  pk: 1952 B  |  sk: 4032 B
 
@@ -22,9 +20,8 @@ from pathlib import Path
 from typing import Tuple, Optional
 from signature_base import SignatureAlgorithm
 
-# Parameter set → (wolfSSL level, sig size, pub key size, priv key size, MlDsaType attr name)
+# Supported parameter set (ML-DSA-44 is not supported by the BSW firmware)
 _PARAM_SETS = {
-    "ML-DSA-44": {"level": 2, "sig_size": 2420, "pk_size": 1312, "sk_size": 2560, "wc_type": "ML_DSA_44"},
     "ML-DSA-65": {"level": 3, "sig_size": 3309, "pk_size": 1952, "sk_size": 4032, "wc_type": "ML_DSA_65"},
 }
 
@@ -38,12 +35,12 @@ class MLDSASignature(SignatureAlgorithm):
 
     SIGNATURE_SIZE = 4096  # bytes reserved in the image header for a signature
 
-    def __init__(self, parameter_set: str = "ML-DSA-44"):
+    def __init__(self, parameter_set: str = "ML-DSA-65"):
         """
         Initialise an ML-DSA signature handler.
 
         Args:
-            parameter_set: One of "ML-DSA-44" (default) or "ML-DSA-65".
+            parameter_set: Must be "ML-DSA-65" (the only supported set).
         """
         if parameter_set not in _PARAM_SETS:
             raise ValueError(

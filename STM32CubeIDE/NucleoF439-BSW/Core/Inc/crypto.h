@@ -10,7 +10,7 @@
  * Supported configurations
  * ──────────────────────────────────────────────────────────────────────
  *  POST_QUANTUM undefined  → ECDSA-P256 + SHA-256  (wolfSSL ECC)
- *  POST_QUANTUM defined    → ML-DSA-44  (wolfSSL WC Dilithium, level 2)
+ *  POST_QUANTUM defined    → ML-DSA-65  (wolfSSL WC Dilithium, level 3)
  *
  * When switching algorithms you must also:
  *  1. Replace pubKey[] in crypto.c with the key matching your algorithm.
@@ -21,17 +21,13 @@
 #ifndef INC_CRYPTO_H_
 #define INC_CRYPTO_H_
 
-#include <wolfssl/wolfcrypt/sha256.h>
+#if defined(HYBRID) || !defined(POST_QUANTUM)
+    #include <wolfssl/wolfcrypt/sha256.h>
+#endif /* HYBRID || !POST_QUANTUM */
 
-#ifdef POST_QUANTUM
-#include <wolfssl/wolfcrypt/dilithium.h>
-/* Raw public-key sizes for each ML-DSA parameter set. */
-#define ML_DSA_44_PUB_KEY_SIZE   DILITHIUM_LEVEL2_PUB_KEY_SIZE   /* 1312 bytes */
-#define ML_DSA_65_PUB_KEY_SIZE   DILITHIUM_LEVEL3_PUB_KEY_SIZE   /* 1952 bytes */
-/* Active parameter set — change to 3 for ML-DSA-65 (and update pubKey[]). */
-#ifndef ML_DSA_LEVEL
-#define ML_DSA_LEVEL  2
-#endif
+#if defined(POST_QUANTUM) || defined(HYBRID) 
+    #include <wolfssl/wolfcrypt/dilithium.h>
+    #define ML_DSA_65_PUB_KEY_SIZE   DILITHIUM_LEVEL3_PUB_KEY_SIZE   /* 1952 bytes */
 #endif /* POST_QUANTUM */
 
 /**

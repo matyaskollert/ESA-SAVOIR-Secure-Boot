@@ -57,8 +57,8 @@ class ImageFactory:
     Args:
         private_key_path: Path to the private key file.
             - PEM file → ECDSA-P256
-            - .bin file → ML-DSA-44 (default) – set mldsa_param_set for -65
-        mldsa_param_set: "ML-DSA-44" or "ML-DSA-65" (only used for .bin keys)
+            - .bin file → ML-DSA-65
+        mldsa_param_set: Must be "ML-DSA-65" (the only supported set; only used for .bin keys)
         minimal_image_size: Size of the synthetic raw image payload in bytes.
             The payload is filled with 0x5A bytes so the BSW can read it as a
             valid ARM vector table if needed.
@@ -67,7 +67,7 @@ class ImageFactory:
     def __init__(
         self,
         private_key_path: str,
-        mldsa_param_set: str = "ML-DSA-44",
+        mldsa_param_set: str = "ML-DSA-65",
         minimal_image_size: int = 256,
     ):
         self._key_path = Path(private_key_path)

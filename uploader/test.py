@@ -4,7 +4,7 @@ import oqs
 secret_key = Path("keys/wolfcryps-ml-dsa-private.bin").read_bytes()
 public_key = Path("keys/wolfcryps-ml-dsa-public.bin").read_bytes()
 
-parameter_set = "ML-DSA-44"
+parameter_set = "ML-DSA-65"
 
 with oqs.Signature(parameter_set, secret_key=secret_key) as algo:
     data = b"Hello, world!"
