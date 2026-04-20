@@ -231,9 +231,27 @@ void printSha256(const uint8_t *digest)
 
 byte* hash(const byte* buffer, uint32_t bufferSize)
 {
-	wc_InitSha256(&sha);
-	wc_Sha256Update(&sha, buffer, bufferSize);
-	wc_Sha256Final(&sha, hashDigest);
+	int ret = wc_InitSha256(&sha);
+	if (ret != 0)
+	{
+		printf("wc_InitSha256 failed: %d\r\n", ret);
+		return NULL;
+	}
+
+	ret = wc_Sha256Update(&sha, buffer, bufferSize);
+	if (ret != 0)
+	{
+		printf("wc_Sha256Update failed: %d\r\n", ret);
+		return NULL;
+	}
+
+	ret = wc_Sha256Final(&sha, hashDigest);
+	if (ret != 0)
+	{
+		printf("wc_Sha256Final failed: %d\r\n", ret);
+		return NULL;
+	}
+
 	printSha256(hashDigest);
 	return hashDigest;
 }
@@ -380,7 +398,7 @@ int16_t verifySignature(const byte *buffer, uint32_t bufferSize,
     /* ── Hybrid: ECDSA-P256 + ML-DSA-65 ─────────────────────────────────── */
     printf("Using hybrid signature scheme (ECDSA-P256 + ML-DSA-65)\r\n");
 
-    /* Step 1 — ECDSA-P256 ------------------------------------------------- */
+    /* Step 1 - ECDSA-P256 ------------------------------------------------- */
     if (signature[0] != 0x30)
     {
         printf("ECDSA: invalid DER tag 0x%02x (expected 0x30)\r\n", signature[0]);
@@ -388,30 +406,30 @@ int16_t verifySignature(const byte *buffer, uint32_t bufferSize,
     }
     uint32_t ecdsaSigLen = (uint32_t)signature[1] + 2u; /* tag + len byte + payload */
 
-    printf("Step 1 — ECDSA-P256: buf=%lu bytes, sig=%lu bytes\r\n",
+    printf("Step 1 - ECDSA-P256: buf=%lu bytes, sig=%lu bytes\r\n",
            bufferSize, ecdsaSigLen);
 
     hash(buffer, bufferSize); /* fills hashDigest[] */
 
     if (verifyEcdsa(hashDigest, signature, ecdsaSigLen) != 1)
     {
-        printf("HYBRID: ECDSA-P256 failed — image rejected\r\n");
+        printf("HYBRID: ECDSA-P256 failed - image rejected\r\n");
         return 0;
     }
 
-    /* Step 2 — ML-DSA-65 -------------------------------------------------- */
+    /* Step 2 - ML-DSA-65 -------------------------------------------------- */
     const byte *mldsaSig = signature + HYBRID_MLDSA_OFFSET;
 
-    printf("Step 2 — ML-DSA-65:  buf=%lu bytes, sig=%d bytes\r\n",
+    printf("Step 2 - ML-DSA-65:  buf=%lu bytes, sig=%d bytes\r\n",
            bufferSize, DILITHIUM_LEVEL3_SIG_SIZE);
 
     if (verifyMldsa(buffer, bufferSize, mldsaSig) != 1)
     {
-        printf("HYBRID: ML-DSA-65 failed — image rejected\r\n");
+        printf("HYBRID: ML-DSA-65 failed - image rejected\r\n");
         return 0;
     }
 
-    printf("HYBRID: both signatures valid — image accepted\r\n");
+    printf("HYBRID: both signatures valid - image accepted\r\n");
     return 1;
 
 #elif !defined(POST_QUANTUM)
@@ -426,15 +444,15 @@ int16_t verifySignature(const byte *buffer, uint32_t bufferSize,
     uint32_t signatureLen = (uint32_t)signature[1] + 2u;
 
     /* Debug: print the raw signature bytes */
-    printf("Signature (%lu bytes): ", signatureLen);
-    for (uint32_t i = 0; i < signatureLen; i++)
-        printf("%02x", signature[i]);
-    printf("\r\n");
+    // printf("Signature (%lu bytes): ", signatureLen);
+    // for (uint32_t i = 0; i < signatureLen; i++)
+    //     printf("%02x", signature[i]);
+    // printf("\r\n");
 
-    uint32_t start = HAL_GetTick();
+    // uint32_t start = HAL_GetTick();
     hash(buffer, bufferSize); /* fills hashDigest[] */
-    uint32_t end   = HAL_GetTick();
-    printf("SHA-256: %lu ms\r\n", end - start);
+    // uint32_t end   = HAL_GetTick();
+    // printf("SHA-256: %lu ms\r\n", end - start);
 
     return verifyEcdsa(hashDigest, signature, signatureLen);
 

@@ -1148,7 +1148,8 @@ class MainWindow(QMainWindow):
     def on_command_finished(self, success, message):
         """Handle command send completion."""
         if success:
-            self.log(f"\u2713 Command acknowledged: {message}")
+            # self.log(f"\u2713 Command acknowledged: {message}")
+            pass
         else:
             self.log(f"\u2717 Command failed: {message}")
         for btn in self._cmd_buttons:

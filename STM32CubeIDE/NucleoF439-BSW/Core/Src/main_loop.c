@@ -40,37 +40,37 @@ static void handleSwap(UART_HandleTypeDef* uart, uint16_t sequence_count)
 	{
 		printf("Setting up system for image swap\r\n");
 		sendNackPacket(uart, sequence_count, 12);
-		setupSystemForImageSwap();
+		setupSystemForImageSwap();;
 		NVIC_SystemReset();
 	}
 	if (checkUpdateVersion() != 0)
 	{
 		sendNackPacket(uart, sequence_count, 9);
-		setupSystemForNominal();
-		NVIC_SystemReset();
+		return;
 	}
 	if (checkUpdateValidity() != 0)
 	{
 		sendNackPacket(uart, sequence_count, 9);
-		setupSystemForNominal();
-		NVIC_SystemReset();
+		return;
 	}
-	if (sendAckPacket(uart, sequence_count) != 0)
-	{
-		printf("Error sending ACK for swap command\r\n");
-	}
+
+	sendAckPacket(uart, sequence_count);
+
 	if (swapBootWithUpdate() != 0)
 	{
 		printf("Swapping images failed\r\n");
-		NVIC_SystemReset();
+		return;
 	}
 	if (updateRollbackCounter() != 0)
 	{
 		printf("Updating rollback counter failed\r\n");
-		// TODO: Swap back?
-		NVIC_SystemReset();
+		return;
 	}
-	setupSystemForNominal();
+	if (setupSystemForNominal() != 0)
+	{
+		printf("Setting up system for nominal mode failed\r\n");
+		return;
+	}
 	NVIC_SystemReset();
 }
 
@@ -116,37 +116,45 @@ static void standbyLoop(UART_HandleTypeDef* uart, BootloaderStatus initial_statu
 				/* Boot */
 				if (checkSystemForNominal() != 0)
 				{
-					printf("ERROR: System not configured for nominal mode\r\n");
+					printf("System not configured for nominal mode\r\n");
 					sendNackPacket(uart, seq, 11);
 					setupSystemForNominal();
 					NVIC_SystemReset();
 				}
-				if (sendAckPacket(uart, seq) != 0)
-					printf("Error sending ACK\r\n");
-				if (boot() != 0)
-					printf("Booting image failed\r\n");
+				sendAckPacket(uart, seq);
+
+				int16_t ret = boot();
+				if (ret != 0)
+					printf("Booting image failed: %d\r\n", ret);
 				break;
 
 			case BOOTLOADER_STATUS_UPDATE:
 				/* Update */
 				if (checkSystemForUpdate() != 0)
 				{
-					printf("ERROR: System not configured for update\r\n");
+					printf("System not configured for update\r\n");
 					sendNackPacket(uart, seq, 10);
 					setupSystemForUpdate();
 					NVIC_SystemReset();
 				}
-				printf("System ready for update\r\n");
 				if (sendAckPacket(uart, seq) != 0)
+				{
 					printf("Error sending ACK for command\r\n");
+					break;
+				}
+
 				if (receiveUpdateData(uart) != 0)
 				{
 					printf("Receiving image failed\r\n");
 					break;
 				}
-				setupSystemForImageSwap();
+
+				if (setupSystemForImageSwap() != 0)
+				{
+					printf("Setting up system for image swap failed\r\n");
+					break;
+				}
 				NVIC_SystemReset();
-				break;
 
 			case BOOTLOADER_STATUS_SWAP:
 				/* Swap */
@@ -165,7 +173,6 @@ static void standbyLoop(UART_HandleTypeDef* uart, BootloaderStatus initial_statu
 				if (sendAckPacket(uart, seq) != 0)
 					printf("Error sending ACK\r\n");
 				NVIC_SystemReset();
-				break;
 
 			case BOOTLOADER_STATUS_ROLLBACK:
 				/* Rollback */
@@ -200,8 +207,7 @@ static void handleRollback(UART_HandleTypeDef* uart)
 		printf("Initiating rollback swap\r\n");
 		if (setupSystemForImageSwap() != 0)
 		{
-			printf("ERROR: Could not configure system for rollback, entering standby\r\n");
-			setBootloaderStatus(BOOTLOADER_STATUS_STANDBY);
+			printf("Could not configure system for rollback\r\n");
 			standbyLoop(uart, BOOTLOADER_STATUS_STANDBY, 0);
 			return;
 		}
@@ -211,8 +217,8 @@ static void handleRollback(UART_HandleTypeDef* uart)
 	else
 	{
 		printf("Rollback not applicable - entering standby\r\n");
-		setBootloaderStatus(BOOTLOADER_STATUS_STANDBY);
 		standbyLoop(uart, BOOTLOADER_STATUS_STANDBY, 0);
+		return;
 	}
 }
 
@@ -242,12 +248,19 @@ void run_main_loop(UART_HandleTypeDef* uart)
 		/* Fully receive the packet and map the command byte to a BootloaderStatus */
 		uint8_t data = 0;
 		if (cmd_header.data_length == 1)
-			receivePacketData(uart, &data, 1);
+		{
+			if (receivePacketData(uart, &data, 1) != 0)
+			{
+				printf("Error receiving command data\r\n");
+				NVIC_SystemReset();
+			}
+		}
 
 		if (data == '6')
 		{
 			/* Skip: ACK and defer to stored status */
-			sendAckPacket(uart, cmd_header.sequence_count);
+			if (sendAckPacket(uart, cmd_header.sequence_count) != 0)
+				printf("Error sending ACK\r\n");
 			printf("Skipping timeout, continuing with status: 0x%02X\r\n", (unsigned int)status);
 			inputReceived = 1;
 		}
@@ -274,7 +287,7 @@ void run_main_loop(UART_HandleTypeDef* uart)
 		printf("Nominal mode - booting application\r\n");
 		if (checkSystemForNominal() != 0)
 		{
-			printf("ERROR: System not configured for nominal mode\r\n");
+			printf("System not configured for nominal mode\r\n");
 			if (inputReceived == 0)
 				sendNackPacket(uart, effective_seq, 11);
 			setupSystemForNominal();
@@ -282,9 +295,10 @@ void run_main_loop(UART_HandleTypeDef* uart)
 		}
 		if (sendAckPacket(uart, effective_seq) != 0)
 			printf("Error sending ACK\r\n");
-		if (boot() != 0)
+		int16_t ret = boot();
+		if (ret != 0)
 		{
-			printf("Booting image failed\r\n");
+			printf("Booting image failed: %d\r\n", ret);
 			handleRollback(uart);
 		}
 	}

@@ -43,7 +43,7 @@ int16_t receiveUpdateData(UART_HandleTypeDef* uart)
 	
 	if (header.service_type != PKT_START_UPLOAD)
 	{
-		printf("Error: Expected START_UPLOAD, got 0x%02X\r\n", header.service_type);
+		printf("Expected START_UPLOAD, got 0x%02X\r\n", header.service_type);
 		sendNackPacket(uart, header.sequence_count, 2);
 		return 2;
 	}
@@ -51,7 +51,7 @@ int16_t receiveUpdateData(UART_HandleTypeDef* uart)
 	// Receive data length (4 bytes in payload)
 	if (header.data_length != 4)
 	{
-		printf("Error: START packet should contain 4 bytes\r\n");
+		printf("START packet should contain 4 bytes\r\n");
 		sendNackPacket(uart, header.sequence_count, 3);
 		return 3;
 	}
@@ -97,7 +97,7 @@ int16_t receiveUpdateData(UART_HandleTypeDef* uart)
 		
 		if (header.service_type != PKT_DATA_CHUNK)
 		{
-			printf("Error: Expected DATA_CHUNK, got 0x%02X\r\n", header.service_type);
+			printf("Expected DATA_CHUNK, got 0x%02X\r\n", header.service_type);
 			sendNackPacket(uart, header.sequence_count, 7);
 			return 7;
 		}
@@ -105,7 +105,7 @@ int16_t receiveUpdateData(UART_HandleTypeDef* uart)
 		// Verify sequence
 		if (header.sequence_count != expectedSequence)
 		{
-			printf("Warning: Sequence mismatch. Expected %u, got %u\r\n",
+			printf("Sequence mismatch: expected %u, got %u\r\n",
 			       expectedSequence, header.sequence_count);
 		}
 		
@@ -173,12 +173,15 @@ int16_t receiveUpdateData(UART_HandleTypeDef* uart)
 	else
 	{
 		// Send ACK for END packet
-		sendAckPacket(uart, header.sequence_count);
+		if (sendAckPacket(uart, header.sequence_count) != 0)
+		{
+			printf("Error sending ACK for END\r\n");
+		}
 	}
 	
 	// Check CRC in RAM
 	if (imageValidateInRAM(RAM) != 0) {
-		printf("CRC verification failed %d \r\n", xxx);
+		printf("CRC verification failed\r\n");
 		return 11;
 	}
 
@@ -204,8 +207,13 @@ int16_t receiveUpdateData(UART_HandleTypeDef* uart)
 	{
 		return 13;
 	}
-	writeFlashSector(UPDATE_FLASH_SECTOR, UPDATE_FLASH_ADDRESS, 
-	                 (uint32_t *)ramDestination, dataLength/4U);
+	if (writeFlashSector(UPDATE_FLASH_SECTOR, UPDATE_FLASH_ADDRESS,
+	                     (uint32_t *)ramDestination, dataLength/4U) != 0)
+	{
+		printf("Flash write failed\r\n");
+		HAL_FLASH_Lock();
+		return 14;
+	}
 	if (HAL_FLASH_Lock() != HAL_OK)
 	{
 		return 13;
@@ -238,9 +246,24 @@ int16_t swapBootWithUpdate(void)
 	{
 		return 2;
 	}
-	writeFlashSector(SWAP_FLASH_SECTOR, SWAP_FLASH_ADDRESS, (uint32_t *)BOOT_FLASH_ADDRESS, bootImageSizeWords);
-	writeFlashSector(BOOT_FLASH_SECTOR, BOOT_FLASH_ADDRESS, (uint32_t *)UPDATE_FLASH_ADDRESS, updateImageSizeWords);
-	writeFlashSector(UPDATE_FLASH_SECTOR, UPDATE_FLASH_ADDRESS, (uint32_t *)SWAP_FLASH_ADDRESS, bootImageSizeWords);
+	if (writeFlashSector(SWAP_FLASH_SECTOR, SWAP_FLASH_ADDRESS, (uint32_t *)BOOT_FLASH_ADDRESS, bootImageSizeWords) != 0)
+	{
+		printf("Flash write to SWAP sector failed\r\n");
+		HAL_FLASH_Lock();
+		return 3;
+	}
+	if (writeFlashSector(BOOT_FLASH_SECTOR, BOOT_FLASH_ADDRESS, (uint32_t *)UPDATE_FLASH_ADDRESS, updateImageSizeWords) != 0)
+	{
+		printf("Flash write to BOOT sector failed\r\n");
+		HAL_FLASH_Lock();
+		return 3;
+	}
+	if (writeFlashSector(UPDATE_FLASH_SECTOR, UPDATE_FLASH_ADDRESS, (uint32_t *)SWAP_FLASH_ADDRESS, bootImageSizeWords) != 0)
+	{
+		printf("Flash write to UPDATE sector failed\r\n");
+		HAL_FLASH_Lock();
+		return 3;
+	}
 	if (HAL_FLASH_Lock() != HAL_OK)
 	{
 		return 2;
@@ -285,7 +308,6 @@ int16_t setupSystemForNominal(void)
 		printf("Setting bootloader status failed\r\n");
 		return 1;
 	}
-
 
 	uint32_t sectorMask = COUNTER_FLASH_OB_SECTOR | BOOT_FLASH_OB_SECTOR;
 	if (enableSectorWriteProtection(sectorMask) != 0)
@@ -336,7 +358,7 @@ int16_t checkSystemForUpdate(void)
 int16_t checkUpdateValidity(void)
 {
 	if (imageValidate(UPDATE) != 0) {
-		printf("Update image CRC verification failed");
+		printf("Update image CRC verification failed\r\n");
 		return 1;
 	}
 	if (imageLoad(UPDATE) != 0)
@@ -351,8 +373,10 @@ int16_t checkUpdateValidity(void)
 int16_t checkUpdateVersion(void)
 {
 	uint32_t lowestAllowedVersion = getLowestAllowedVersion();
-	const image_header_t* updateImage = (const image_header_t *)(UPDATE_FLASH_ADDRESS);
-	uint32_t updateImageVersion = (uint32_t)updateImage->imageVersion;
+	const image_header_t* updateImageHeader = imageGetHeader(UPDATE);
+	if (updateImageHeader == NULL)
+		return 1;
+	uint32_t updateImageVersion = (uint32_t)updateImageHeader->imageVersion;
 	if (lowestAllowedVersion > updateImageVersion)
 	{
 		printf("UPDATE version: %lu is lower than allowed: %lu\r\n", updateImageVersion, lowestAllowedVersion);

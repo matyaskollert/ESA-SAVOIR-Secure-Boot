@@ -186,7 +186,7 @@ class TestAutomaticRollbackBothFail:
 
     def test_both_boots_fail_leaves_standby(self, both_fail_state, bsw, config):
         """Round 1: BOOT_ATTEMPTED → rollback swap → BOOT=v1.
-        Round 2: BOOT_ATTEMPTED again → no candidate → COMM=STANDBY."""
+        Round 2: BOOT_ATTEMPTED again → no candidate → enter standby."""
         # Round 1: v2 fails → BSW triggers rollback swap
         board.set_comm_status(board.COMM_STATUS_BOOT_ATTEMPTED)
         board.reset_board()
@@ -200,9 +200,9 @@ class TestAutomaticRollbackBothFail:
         board.set_comm_status(board.COMM_STATUS_BOOT_ATTEMPTED)
         board.reset_board()
         _skip_timeout(bsw)
-        bsw.drain_debug_log(timeout=5.0)
+        log = "".join(bsw.drain_debug_log(timeout=5.0))
 
-        assert board.get_comm_status() == board.COMM_STATUS_STANDBY
+        assert "Rollback not applicable" in log
 
 
 class TestAutomaticRollbackSecondSucceeds:

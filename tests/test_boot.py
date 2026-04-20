@@ -75,7 +75,7 @@ class TestBootCorruptCRC:
         except serial_comm.NackReceived:
             pass
         log = "".join(bsw.drain_debug_log(timeout=1.0))
-        assert "CRC Mismatch in FLASH" in log
+        assert "CRC mismatch in FLASH" in log
         assert "0xdeadbeef" in log
 
 

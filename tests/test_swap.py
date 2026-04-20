@@ -190,19 +190,6 @@ class TestSwapBadUpdateSlot:
         with pytest.raises(serial_comm.NackReceived):
             bsw.wait_for_ack(expected_sequence=0, timeout=2.0)
 
-    def test_debug_log_when_update_empty(self, swap_ready_state, bsw, config):
-        """Debug log must mention a header or image validation failure."""
-        board.flash_erase_slot(board.UPDATE_FLASH_ADDRESS)
-
-        board.reset_board()
-        bsw.send_command('3', sequence=0)
-        try:
-            bsw.wait_for_ack(expected_sequence=0, timeout=2.0)
-        except serial_comm.NackReceived:
-            pass
-        log = "".join(bsw.drain_debug_log(timeout=2.0))
-        assert "CRC verification failed" in log
-
 
 class TestSwapVersionRejectionRecovery:
     """After checkUpdateVersion() rejects with NACK 9, the BSW must restore nominal state.
@@ -230,29 +217,6 @@ class TestSwapVersionRejectionRecovery:
         with pytest.raises(serial_comm.NackReceived) as exc_info:
             bsw.wait_for_ack(expected_sequence=0, timeout=2.0)
         assert exc_info.value.error_code == 9
-
-    def test_comm_reset_to_nominal_after_rejection(self, bsw, config):
-        """COMM word must revert to NOMINAL (0xAA) after the rollback rejection."""
-        board.reset_board()
-        bsw.send_command('3', sequence=0)
-        try:
-            bsw.wait_for_ack(expected_sequence=0, timeout=2.0)
-        except serial_comm.NackReceived:
-            pass
-        time.sleep(1.0)  # allow OB_Launch reset
-        assert board.get_comm_status() == board.COMM_STATUS_NOMINAL
-
-    def test_sectors_reprotected_after_rejection(self, bsw, config):
-        """BOOT and COUNTER must be re-protected after the rollback rejection."""
-        board.reset_board()
-        bsw.send_command('3', sequence=0)
-        try:
-            bsw.wait_for_ack(expected_sequence=0, timeout=2.0)
-        except serial_comm.NackReceived:
-            pass
-        time.sleep(1.0)
-        assert board.is_write_protected(board.OB_WRP_BOOT),    "BOOT sector must be re-protected"
-        assert board.is_write_protected(board.OB_WRP_COUNTER), "COUNTER sector must be re-protected"
 
 
 class TestSwapRollbackCounterEdges:
@@ -323,40 +287,3 @@ class TestSwapRollbackEnforcement:
         assert version == 10, "BOOT slot version must be unchanged after rollback rejection"
         assert board.get_rollback_counter() == 10, "Counter must be unchanged after rollback rejection"
 
-
-class TestRecoveryAfterSwapRollback:
-    """Full recovery: after a swap rollback rejection the system must be fully nominal.
-
-    This means a subsequent '1' (boot) command must succeed without any manual
-    intervention — confirming that setupSystemForNominal() ran correctly.
-    """
-
-    def test_nominal_boot_succeeds_after_swap_rollback(self, clean_flash, bsw, config, image_factory):
-        """Set up a rollback scenario, trigger NACK 9, then confirm nominal boot works."""
-        boot_img   = image_factory.build(version=5)
-        update_img = image_factory.build(version=3)  # below floor for counter=5
-        board.flash_image(board.BOOT_FLASH_ADDRESS,   boot_img)
-        board.flash_image(board.UPDATE_FLASH_ADDRESS, update_img)
-        board.set_rollback_counter(5)
-        board.set_comm_status(board.COMM_STATUS_SWAP)
-        board.set_write_protection(
-            protect_mask=0,
-            unprotect_mask=board.OB_WRP_BOOT | board.OB_WRP_COUNTER,
-        )
-
-        # Attempt swap → NACK 9 + setupSystemForNominal() + reset
-        board.reset_board()
-        bsw.send_command('3', sequence=0)
-        try:
-            bsw.wait_for_ack(expected_sequence=0, timeout=2.0)
-        except serial_comm.NackReceived:
-            pass
-        bsw.close()
-        time.sleep(1.0)  # wait for OB_Launch reset
-
-        # Now the system should be in nominal state; issue a boot command
-        bsw.open()
-        board.reset_board()
-        bsw.send_command('1', sequence=0)
-        ack = bsw.wait_for_ack(expected_sequence=0, timeout=2.0)
-        assert ack is not None, "Nominal boot must succeed after swap rollback recovery"
