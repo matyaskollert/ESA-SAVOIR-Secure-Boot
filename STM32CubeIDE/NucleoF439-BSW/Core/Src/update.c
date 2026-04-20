@@ -12,6 +12,7 @@
 #include "flash.h"
 #include "option_bytes.h"
 #include "image.h"
+#include "crypto.h"
 
 #define RX_BUFFER_SIZE 256U
 uint8_t myRXBuffer[RX_BUFFER_SIZE];
@@ -175,19 +176,39 @@ int16_t receiveUpdateData(UART_HandleTypeDef* uart)
 		sendAckPacket(uart, header.sequence_count);
 	}
 	
-	// TODO: Check CRC and Digital Signature before storing in flash
+	// Check CRC in RAM
+	if (imageValidateInRAM(RAM) != 0) {
+		printf("CRC verification failed %d \r\n", xxx);
+		return 11;
+	}
+
+	// Check Digital Signature in RAM
+	const image_header_t* imageHeader = imageGetHeader(RAM);
+	uint8_t signature[4096];
+	memcpy(signature, imageHeader->signature, 4096);
+	byte* ramImageAddress = (byte *)(BOOT_RAM_ADDRESS + 4);
+	// set digital signature to 0 to verify
+	uint32_t dsHeaderOffset = 12U; // 4b CRC, 2b MAGIC, 2b VERSION, 4b SIZE
+	memset(ramDestination + dsHeaderOffset, 0, 4096);
+	if (verifySignature(ramImageAddress, dataLength - 4, signature) != 1)
+	{
+		printf("Digital signature validation failed\r\n");
+	    return 12;
+	}
+	// set digital signature to the correct value for saving
+	memcpy(ramDestination + dsHeaderOffset, signature, 4096);
 
 	// Write to flash
 	printf("Writing to flash...\r\n");
 	if (HAL_FLASH_Unlock() != HAL_OK)
 	{
-		return 11;
+		return 13;
 	}
 	writeFlashSector(UPDATE_FLASH_SECTOR, UPDATE_FLASH_ADDRESS, 
 	                 (uint32_t *)ramDestination, dataLength/4U);
 	if (HAL_FLASH_Lock() != HAL_OK)
 	{
-		return 11;
+		return 13;
 	}
 	printf("Flash write complete!\r\n");
 	

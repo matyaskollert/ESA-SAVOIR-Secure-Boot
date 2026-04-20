@@ -20,6 +20,9 @@ const image_header_t* imageGetHeader(ImageSlot slot)
 	case SWAP:
 		header = (const image_header_t *)SWAP_FLASH_ADDRESS;
 		break;
+	case RAM:
+		header = (const image_header_t *)BOOT_RAM_ADDRESS;
+		break;
 	default:
 		return NULL;
 	}
