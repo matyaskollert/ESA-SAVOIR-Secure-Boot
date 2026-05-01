@@ -2,13 +2,11 @@
 #define INC_IMAGE_H_
 
 #include <stdint.h>
-
-typedef enum {BOOT, UPDATE, SWAP, RAM} ImageSlot;
+#include "flash.h"
 
 #define IMAGE_OFFSET 		0x1400
 #define IMAGE_MAGIC 		0xABCD
 #define BOOT_RAM_ADDRESS 	0x20008000
-
 
 typedef struct __attribute__((packed)){
     uint32_t crc;

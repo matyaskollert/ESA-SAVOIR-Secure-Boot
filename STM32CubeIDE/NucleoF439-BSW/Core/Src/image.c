@@ -4,21 +4,17 @@
 #include "image.h"
 #include "crc.h"
 #include "crypto.h"
-#include "flash.h"
 
 const image_header_t* imageGetHeader(ImageSlot slot)
 {
 	const image_header_t *header;
 	switch (slot)
 	{
-	case BOOT:
-		header = (const image_header_t *)BOOT_FLASH_ADDRESS;
+	case SLOT_A:
+		header = (const image_header_t *)SLOT_A_FLASH_ADDRESS;
 		break;
-	case UPDATE:
-		header = (const image_header_t *)UPDATE_FLASH_ADDRESS;
-		break;
-	case SWAP:
-		header = (const image_header_t *)SWAP_FLASH_ADDRESS;
+	case SLOT_B:
+		header = (const image_header_t *)SLOT_B_FLASH_ADDRESS;
 		break;
 	case RAM:
 		header = (const image_header_t *)BOOT_RAM_ADDRESS;

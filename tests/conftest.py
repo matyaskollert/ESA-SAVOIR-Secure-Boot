@@ -127,96 +127,106 @@ def bsw(config):
 
 @pytest.fixture
 def clean_flash(config):
-    """Erase BOOT, UPDATE, and SWAP slots and reset the COMM/COUNTER words.
+    """Erase SLOT_A and SLOT_B image slots, reset COMM/BSW-state words, and
+    configure nominal write-protection (SLOT_A + PROTECTED_BSW_STATE protected).
 
-    Also ensures both BOOT and COUNTER sectors are write-protected (nominal
-    state) before yielding – mirrors what setupSystemForNominal() does.
+    SLOT_A is set as the primary slot so every test starts from a well-known
+    boot target.  Mirrors what setupSystemForNominal() does on real hardware.
 
     Yields nothing; intended to be used as a bare fixture.
     """
     # 1. Erase image slots
-    board.flash_erase_slot(board.BOOT_FLASH_ADDRESS)
-    board.flash_erase_slot(board.UPDATE_FLASH_ADDRESS)
-    board.flash_erase_slot(board.SWAP_FLASH_ADDRESS)
+    board.flash_erase_slot(board.SLOT_A_FLASH_ADDRESS)
+    board.flash_erase_slot(board.SLOT_B_FLASH_ADDRESS)
 
     # 2. Write nominal COMM status
     board.set_comm_status(board.COMM_STATUS_NOMINAL)
 
-    # 3. Reset rollback counter to 0
+    # 3. Reset protected BSW state: counter=0, primary=SLOT_A
     board.set_rollback_counter(0)
+    board.set_primary_flag(board.PROTECTED_BSW_STATE_PRIMARY_SLOT_A)
 
-    # 4. Protect sectors (BOOT sector 5 + COUNTER sector 9)
+    # 4. Protect SLOT_A + PROTECTED_BSW_STATE; unprotect SLOT_B.
     #    Only change option bytes if they are already wrong to avoid
     #    unnecessary resets (each OB_Launch triggers a system reset).
-    boot_protected    = board.is_write_protected(board.OB_WRP_BOOT)
-    counter_protected = board.is_write_protected(board.OB_WRP_COUNTER)
-    if not boot_protected or not counter_protected:
+    slot_a_protected = board.is_write_protected(board.OB_WRP_SLOT_A)
+    state_protected  = board.is_write_protected(board.OB_WRP_PROTECTED_BSW_STATE)
+    slot_b_unprotected = not board.is_write_protected(board.OB_WRP_SLOT_B)
+    if not slot_a_protected or not state_protected or not slot_b_unprotected:
         board.set_write_protection(
-            protect_mask=board.OB_WRP_BOOT | board.OB_WRP_COUNTER
+            protect_mask=board.OB_WRP_SLOT_A | board.OB_WRP_PROTECTED_BSW_STATE,
+            unprotect_mask=board.OB_WRP_SLOT_B,
         )
     yield
 
 
 @pytest.fixture
 def nominal_state(clean_flash, image_factory):
-    """Provide a BOOT slot with a valid version-1 image and nominal WRP.
+    """Provide SLOT_A with a valid version-1 image, SLOT_A set as primary, and nominal WRP.
 
     Layers on top of clean_flash so the sector is already erased and WRP set.
     Yields the image bytes for further inspection in tests.
     """
     img = image_factory.build(version=1)
-    board.flash_image(board.BOOT_FLASH_ADDRESS, img)
+    board.flash_image(board.SLOT_A_FLASH_ADDRESS, img)
+    board.set_primary_flag(board.PROTECTED_BSW_STATE_PRIMARY_SLOT_A)
     yield img
 
 
 @pytest.fixture
 def real_asw_state(clean_flash, real_asw_image):
-    """Flash the real signed ASW image to the BOOT slot with nominal WRP.
+    """Flash the real signed ASW image to SLOT_A (primary) with nominal WRP.
 
     Depends on real_asw_image (session-scoped); the whole test is skipped
     automatically when REAL_ASW_BIN is not configured.
     Yields the signed image bytes.
     """
-    board.flash_image(board.BOOT_FLASH_ADDRESS, real_asw_image)
+    board.flash_image(board.SLOT_A_FLASH_ADDRESS, real_asw_image)
+    board.set_primary_flag(board.PROTECTED_BSW_STATE_PRIMARY_SLOT_A)
     yield real_asw_image
 
 
 @pytest.fixture
 def update_ready_state(nominal_state, image_factory):
-    """Extend nominal_state by placing a version-2 image in the UPDATE slot.
+    """Extend nominal_state by placing a version-2 image in SLOT_B (secondary).
 
+    SLOT_A is primary (set by nominal_state). SLOT_B holds the candidate image
+    to be promoted via a swap command.
     The caller still needs to send a '2' command to trigger the actual update
     flow; this fixture only sets up the flash content.
     Yields (boot_image, update_image).
     """
     update_img = image_factory.build(version=2)
-    board.flash_image(board.UPDATE_FLASH_ADDRESS, update_img)
+    board.flash_image(board.SLOT_B_FLASH_ADDRESS, update_img)
     yield nominal_state, update_img
 
 
 @pytest.fixture
 def swap_ready_state(clean_flash, image_factory):
-    """BOOT=v1, UPDATE=v2, COMM=SWAP(0xCC), WRP unlocked for BOOT+COUNTER.
+    """SLOT_A=v1 (primary), SLOT_B=v2 (secondary), COMM=SWAP(0xCC),
+    WRP unlocked for primary slot (SLOT_A) and PROTECTED_BSW_STATE.
 
     Mirrors the state left by a successful upload + setupSystemForImageSwap():
-      - BOOT slot has a valid signed v1 image
-      - UPDATE slot has a valid signed v2 image
+      - SLOT_A has a valid signed v1 image (current primary)
+      - SLOT_B has a valid signed v2 image (upload target, future primary)
+      - primary_slot flag set to SLOT_A
       - COMM status word = 0xCC (SWAP)
-      - BOOT (sector 5) and COUNTER (sector 9) write-protection lifted
+      - SLOT_A (sector 5) and PROTECTED_BSW_STATE (sector 9) write-protection lifted
 
-    Yields (boot_image_bytes, update_image_bytes).
+    Yields (slot_a_image_bytes, slot_b_image_bytes).
     """
-    boot_img   = image_factory.build(version=1)
-    update_img = image_factory.build(version=2)
-    board.flash_image(board.BOOT_FLASH_ADDRESS,   boot_img)
-    board.flash_image(board.UPDATE_FLASH_ADDRESS, update_img)
+    slot_a_img = image_factory.build(version=1)
+    slot_b_img = image_factory.build(version=2)
+    board.flash_image(board.SLOT_A_FLASH_ADDRESS, slot_a_img)
+    board.flash_image(board.SLOT_B_FLASH_ADDRESS, slot_b_img)
     board.set_rollback_counter(1)
+    board.set_primary_flag(board.PROTECTED_BSW_STATE_PRIMARY_SLOT_A)
     board.set_comm_status(board.COMM_STATUS_SWAP)
     board.set_write_protection(
         protect_mask=0,
-        unprotect_mask=board.OB_WRP_BOOT | board.OB_WRP_COUNTER,
+        unprotect_mask=board.OB_WRP_SLOT_A | board.OB_WRP_PROTECTED_BSW_STATE,
     )
-    yield boot_img, update_img
+    yield slot_a_img, slot_b_img
 
 
 @pytest.fixture
@@ -224,24 +234,25 @@ def interrupted_swap_state(clean_flash, image_factory):
     """Simulate a power cut between a completed upload and the swap command.
 
     The BSW has already run setupSystemForImageSwap() (COMM=0xCC, sectors
-    unlocked) but the board was reset before '3' was issued.  The BOOT slot
-    still contains v1; UPDATE contains the freshly uploaded v2.
+    unlocked) but the board was reset before '3' was issued.  SLOT_A still
+    contains v1 (primary); SLOT_B contains the freshly uploaded v2.
 
     Identical to swap_ready_state; named separately to make intent explicit
     in lifecycle tests.
-    Yields (boot_image_bytes, update_image_bytes).
+    Yields (slot_a_image_bytes, slot_b_image_bytes).
     """
-    boot_img   = image_factory.build(version=1)
-    update_img = image_factory.build(version=2)
-    board.flash_image(board.BOOT_FLASH_ADDRESS,   boot_img)
-    board.flash_image(board.UPDATE_FLASH_ADDRESS, update_img)
+    slot_a_img = image_factory.build(version=1)
+    slot_b_img = image_factory.build(version=2)
+    board.flash_image(board.SLOT_A_FLASH_ADDRESS, slot_a_img)
+    board.flash_image(board.SLOT_B_FLASH_ADDRESS, slot_b_img)
     board.set_rollback_counter(1)
+    board.set_primary_flag(board.PROTECTED_BSW_STATE_PRIMARY_SLOT_A)
     board.set_comm_status(board.COMM_STATUS_SWAP)
     board.set_write_protection(
         protect_mask=0,
-        unprotect_mask=board.OB_WRP_BOOT | board.OB_WRP_COUNTER,
+        unprotect_mask=board.OB_WRP_SLOT_A | board.OB_WRP_PROTECTED_BSW_STATE,
     )
-    yield boot_img, update_img
+    yield slot_a_img, slot_b_img
 
 
 # ---------------------------------------------------------------------------

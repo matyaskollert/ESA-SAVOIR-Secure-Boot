@@ -13,12 +13,17 @@
 
 void printImageHeaders(void)
 {
-	const image_header_t* bootImage = (const image_header_t *)(BOOT_FLASH_ADDRESS);
-	printf("BOOT version: %u\r\n", bootImage->imageVersion);
-	const image_header_t* updateImage = (const image_header_t *)(UPDATE_FLASH_ADDRESS);
-	printf("UPDATE version: %u\r\n", updateImage->imageVersion);
-	const image_header_t* swapImage = (const image_header_t *)(SWAP_FLASH_ADDRESS);
-	printf("SWAP version: %u\r\n", swapImage->imageVersion);
+	ImageSlot primary   = getPrimarySlot();
+	ImageSlot secondary = getSecondarySlot();
+
+	const image_header_t* slotAImage = (const image_header_t *)(SLOT_A_FLASH_ADDRESS);
+	const image_header_t* slotBImage = (const image_header_t *)(SLOT_B_FLASH_ADDRESS);
+
+	printf("SLOT_A version: %u [%s]\r\n", slotAImage->imageVersion,
+	       (primary == SLOT_A) ? "PRIMARY" : "SECONDARY");
+	printf("SLOT_B version: %u [%s]\r\n", slotBImage->imageVersion,
+	       (primary == SLOT_B) ? "PRIMARY" : "SECONDARY");
+	(void)secondary;
 }
 
 int16_t createErrorReport(ReportLevel level)

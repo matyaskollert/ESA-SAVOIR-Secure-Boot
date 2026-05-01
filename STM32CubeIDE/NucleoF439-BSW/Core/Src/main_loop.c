@@ -61,11 +61,6 @@ static void handleSwap(UART_HandleTypeDef* uart, uint16_t sequence_count)
 		printf("Swapping images failed\r\n");
 		return;
 	}
-	if (updateRollbackCounter() != 0)
-	{
-		printf("Updating rollback counter failed\r\n");
-		return;
-	}
 	if (setupSystemForNominal() != 0)
 	{
 		printf("Setting up system for nominal mode failed\r\n");
@@ -237,6 +232,7 @@ void run_main_loop(UART_HandleTypeDef* uart)
 
 	BootloaderStatus status = getBootloaderStatus();
 	printf("Waiting %d ms for manual input... (current status: 0x%02X)\r\n", STANDBY_TIMEOUT_MS, (unsigned int)status);
+	printImageHeaders();
 
 	ECSSPacketHeader cmd_header;
 	int8_t inputReceived = receivePacketHeaderWithTimeout(uart, &cmd_header, STANDBY_TIMEOUT_MS);

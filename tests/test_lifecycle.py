@@ -35,10 +35,10 @@ from conftest import reset_and_connect
 from helpers import board, serial_comm
 from helpers.image_factory import ImageFactory
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _slot_version(address: int) -> int:
     """Read the 2-byte version field from a flash slot header."""
@@ -49,7 +49,7 @@ def _slot_version(address: int) -> int:
 
 def _skip_timeout(bsw) -> None:
     """Send command '6' so the BSW exits its 15 s input window immediately."""
-    bsw.send_command('6', sequence=0)
+    bsw.send_command("6", sequence=0)
     bsw.wait_for_ack(expected_sequence=0, timeout=1.0)
 
 
@@ -58,7 +58,7 @@ def _do_full_upload(bsw, image_data: bytes) -> None:
     mode, upload the image, then wait for the BSW to reset into SWAP state.
     Caller must ensure COMM=NOMINAL and sectors are protected beforehand."""
     board.reset_board()
-    bsw.send_command('2', sequence=0)
+    bsw.send_command("2", sequence=0)
     bsw.wait_for_ack(expected_sequence=0, timeout=1.0)
     bsw.upload_image(image_data, start_sequence=1)
     time.sleep(2.5)  # BSW calls setupSystemForImageSwap() then resets
@@ -69,24 +69,36 @@ def _do_swap(bsw) -> None:
     Caller must ensure COMM=SWAP (0xCC) beforehand."""
     board.reset_board()
     _skip_timeout(bsw)
-    bsw.drain_debug_log(timeout=5.0) # allow OB_Launch reset from setupSystemForNominal
+    bsw.drain_debug_log(timeout=5.0)  # allow OB_Launch reset from setupSystemForNominal
 
 
 class TestFullUpdateCycle:
-    """BOOT=v1 → upload v2 → swap → verify all post-cycle state and autonomous boot."""
+    """SLOT_A=v1 (primary) → upload v2 to SLOT_B → swap → verify all post-cycle state."""
 
     def test_full_cycle(self, nominal_state, bsw, config, image_factory):
-        """Upload v2, swap, then verify BOOT=v2, SWAP=v1, counter=2, WRP protected,
-        COMM=NOMINAL, and that the BSW autonomously boots v2."""
+        """Upload v2, swap, then verify SLOT_B is now primary (v2), counter=2,
+        WRP re-protected, COMM=NOMINAL, and that the BSW autonomously boots v2."""
         update_img = image_factory.build(version=2)
         _do_full_upload(bsw, update_img)
         _do_swap(bsw)
 
-        assert _slot_version(board.BOOT_FLASH_ADDRESS) == 2,  "BOOT must hold v2 after swap"
-        assert _slot_version(board.SWAP_FLASH_ADDRESS) == 1,  "SWAP must hold old v1 after swap"
-        assert board.get_rollback_counter() == 2,             "Counter must advance to 2"
-        assert board.is_write_protected(board.OB_WRP_BOOT),   "BOOT must be protected after cycle"
-        assert board.is_write_protected(board.OB_WRP_COUNTER), "COUNTER must be protected after cycle"
+        # Flag-based swap: SLOT_B (v2) is now primary, SLOT_A (v1) is secondary.
+        assert (
+            board.get_primary_flag() == board.PROTECTED_BSW_STATE_PRIMARY_SLOT_B
+        ), "Primary flag must point to SLOT_B after first swap"
+        assert (
+            _slot_version(board.get_primary_slot()) == 2
+        ), "New primary must hold v2 after swap"
+        assert (
+            _slot_version(board.get_secondary_slot()) == 1
+        ), "Old primary (SLOT_A) still holds v1"
+        assert board.get_rollback_counter() == 2, "Counter must advance to 2"
+        assert board.is_write_protected(
+            board.OB_WRP_SLOT_B
+        ), "New primary (SLOT_B) must be protected after cycle"
+        assert board.is_write_protected(
+            board.OB_WRP_PROTECTED_BSW_STATE
+        ), "PROTECTED_BSW_STATE must be protected after cycle"
         assert board.get_comm_status() == board.COMM_STATUS_NOMINAL
 
         board.reset_board()
@@ -99,17 +111,17 @@ class TestConsecutiveSwaps:
     """Perform two consecutive upgrades: v1 → v2 → v3."""
 
     def test_two_consecutive_upgrades(self, nominal_state, bsw, config, image_factory):
-        """v1→v2 swap then v2→v3 swap; BOOT=v3 and counter=3."""
+        """v1→v2 swap then v2→v3 swap; primary slot holds v3 and counter=3."""
         v2_img = image_factory.build(version=2)
         v3_img = image_factory.build(version=3)
 
         _do_full_upload(bsw, v2_img)
         _do_swap(bsw)
-        assert _slot_version(board.BOOT_FLASH_ADDRESS) == 2
+        assert _slot_version(board.get_primary_slot()) == 2
 
         _do_full_upload(bsw, v3_img)
         _do_swap(bsw)
-        assert _slot_version(board.BOOT_FLASH_ADDRESS) == 3
+        assert _slot_version(board.get_primary_slot()) == 3
         assert board.get_rollback_counter() == 3
 
 
@@ -120,24 +132,28 @@ class TestRollbackWithWindow:
     be accepted for both upload and swap.
     """
 
-    def test_v1_rollback_accepted_and_boot_reverts(self, nominal_state, bsw, config, image_factory):
+    def test_v1_rollback_accepted_and_boot_reverts(
+        self, nominal_state, bsw, config, image_factory
+    ):
         """v1→v2 swap (counter=2, floor=1); upload v1 (at floor, must be accepted);
-        swap again → BOOT=v1."""
+        swap again → primary slot holds v1."""
         v2_img = image_factory.build(version=2)
         v1_img = image_factory.build(version=1)
 
         _do_full_upload(bsw, v2_img)
         _do_swap(bsw)
-        assert _slot_version(board.BOOT_FLASH_ADDRESS) == 2
+        assert _slot_version(board.get_primary_slot()) == 2
         assert board.get_rollback_counter() == 2
 
         _do_full_upload(bsw, v1_img)  # floor=1, must not raise
-        assert _slot_version(board.UPDATE_FLASH_ADDRESS) == 1
+        assert _slot_version(board.get_secondary_slot()) == 1
 
         _do_swap(bsw)
-        assert _slot_version(board.BOOT_FLASH_ADDRESS) == 1
+        assert _slot_version(board.get_primary_slot()) == 1
 
-    def test_version_below_floor_rejected_after_upgrade(self, nominal_state, bsw, config, image_factory):
+    def test_version_below_floor_rejected_after_upgrade(
+        self, nominal_state, bsw, config, image_factory
+    ):
         """After a v1→v2→v3 two-step upgrade, uploading v1 (floor=2) must be rejected."""
         v2_img = image_factory.build(version=2)
         v3_img = image_factory.build(version=3)
@@ -169,20 +185,25 @@ class TestAutomaticRollbackBothFail:
 
     @pytest.fixture
     def both_fail_state(self, clean_flash, image_factory):
-        """BOOT=v2, UPDATE=v1, counter=2, COMM=NOMINAL, nominal WRP."""
-        boot_img   = image_factory.build(version=2)
-        update_img = image_factory.build(version=1)
-        board.flash_image(board.BOOT_FLASH_ADDRESS,   boot_img)
-        board.flash_image(board.UPDATE_FLASH_ADDRESS, update_img)
+        """SLOT_A=v2 (primary), SLOT_B=v1 (secondary), counter=2, COMM=NOMINAL, nominal WRP."""
+        slot_a_img = image_factory.build(version=2)
+        slot_b_img = image_factory.build(version=1)
+        board.flash_image(board.SLOT_A_FLASH_ADDRESS, slot_a_img)
+        board.flash_image(board.SLOT_B_FLASH_ADDRESS, slot_b_img)
         board.set_rollback_counter(2)
+        board.set_primary_flag(board.PROTECTED_BSW_STATE_PRIMARY_SLOT_A)
         board.set_comm_status(board.COMM_STATUS_NOMINAL)
-        # Ensure protected
-        if not board.is_write_protected(board.OB_WRP_BOOT) or \
-           not board.is_write_protected(board.OB_WRP_COUNTER):
+        # Ensure SLOT_A + PROTECTED_BSW_STATE are protected and SLOT_B is unprotected
+        if (
+            not board.is_write_protected(board.OB_WRP_SLOT_A)
+            or not board.is_write_protected(board.OB_WRP_PROTECTED_BSW_STATE)
+            or board.is_write_protected(board.OB_WRP_SLOT_B)
+        ):
             board.set_write_protection(
-                protect_mask=board.OB_WRP_BOOT | board.OB_WRP_COUNTER
+                protect_mask=board.OB_WRP_SLOT_A | board.OB_WRP_PROTECTED_BSW_STATE,
+                unprotect_mask=board.OB_WRP_SLOT_B,
             )
-        yield boot_img, update_img
+        yield slot_a_img, slot_b_img
 
     def test_both_boots_fail_leaves_standby(self, both_fail_state, bsw, config):
         """Round 1: BOOT_ATTEMPTED → rollback swap → BOOT=v1.
@@ -194,7 +215,7 @@ class TestAutomaticRollbackBothFail:
         bsw.drain_debug_log(timeout=2.0)
         _skip_timeout(bsw)
         bsw.drain_debug_log(timeout=5.0)  # rollback swap + OB_Launch reset
-        assert _slot_version(board.BOOT_FLASH_ADDRESS) == 1
+        assert _slot_version(board.get_primary_slot()) == 1
 
         # Round 2: v1 also fails
         board.set_comm_status(board.COMM_STATUS_BOOT_ATTEMPTED)
@@ -215,22 +236,28 @@ class TestAutomaticRollbackSecondSucceeds:
 
     @pytest.fixture
     def rollback_succeeds_state(self, clean_flash, image_factory, real_asw_image):
-        """BOOT=v2 (synthetic, version tag only), UPDATE=real-ASW-v1,
+        """SLOT_A=v2 (primary, synthetic), SLOT_B=real-ASW-v1 (secondary),
         counter=2, COMM=NOMINAL, nominal WRP."""
-        boot_img = image_factory.build(version=2)
-        board.flash_image(board.BOOT_FLASH_ADDRESS,   boot_img)
-        board.flash_image(board.UPDATE_FLASH_ADDRESS, real_asw_image)
+        slot_a_img = image_factory.build(version=2)
+        board.flash_image(board.SLOT_A_FLASH_ADDRESS, slot_a_img)
+        board.flash_image(board.SLOT_B_FLASH_ADDRESS, real_asw_image)
         board.set_rollback_counter(2)
+        board.set_primary_flag(board.PROTECTED_BSW_STATE_PRIMARY_SLOT_A)
         board.set_comm_status(board.COMM_STATUS_NOMINAL)
-        if not board.is_write_protected(board.OB_WRP_BOOT) or \
-           not board.is_write_protected(board.OB_WRP_COUNTER):
+        if (
+            not board.is_write_protected(board.OB_WRP_SLOT_A)
+            or not board.is_write_protected(board.OB_WRP_PROTECTED_BSW_STATE)
+            or board.is_write_protected(board.OB_WRP_SLOT_B)
+        ):
             board.set_write_protection(
-                protect_mask=board.OB_WRP_BOOT | board.OB_WRP_COUNTER
+                protect_mask=board.OB_WRP_SLOT_A | board.OB_WRP_PROTECTED_BSW_STATE,
+                unprotect_mask=board.OB_WRP_SLOT_B,
             )
-        yield boot_img, real_asw_image
+        yield slot_a_img, real_asw_image
 
     def test_rollback_swap_then_second_boot_succeeds_and_confirms_nominal(
-            self, rollback_succeeds_state, bsw, config):
+        self, rollback_succeeds_state, bsw, config
+    ):
         """Step 1: BOOT_ATTEMPTED → rollback swap → BOOT=real-ASW-v1.
         Step 2: BSW boots v1 → 'App STARTED' appears.
         Step 3: test sends '1' to ASW → ASW sets NOMINAL + resets → COMM=NOMINAL."""
@@ -241,9 +268,7 @@ class TestAutomaticRollbackSecondSucceeds:
         bsw.drain_debug_log(timeout=2.0)
         _skip_timeout(bsw)
         bsw.drain_debug_log(timeout=5.0)
-        assert _slot_version(board.BOOT_FLASH_ADDRESS) == 1
-
-        # Step 2: BOOT slot = real ASW v1, COMM = NOMINAL → BSW boots it
+        assert _slot_version(board.get_primary_slot()) == 1
         board.reset_board()
         _skip_timeout(bsw)
         log = "".join(bsw.drain_debug_log(timeout=2.0))

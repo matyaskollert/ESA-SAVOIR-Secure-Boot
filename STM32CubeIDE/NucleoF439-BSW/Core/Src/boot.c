@@ -8,6 +8,7 @@
 #include "image.h"
 #include "boot.h"
 #include "flash.h"
+#include "update.h"
 
 
 int16_t boot(void)
@@ -17,11 +18,12 @@ int16_t boot(void)
 	* the failure and trigger rollback evaluation. */
 	if (setBootloaderStatus(BOOTLOADER_STATUS_BOOT_ATTEMPTED) != 0)
 		return 1;
-	if (imageValidate(BOOT) != 0)
+	ImageSlot primary = getPrimarySlot();
+	if (imageValidate(primary) != 0)
 		return 2;
-	if (imageLoad(BOOT) != 0)
+	if (imageLoad(primary) != 0)
 		return 3;
-	if (imageValidateInRAM(BOOT) != 0)
+	if (imageValidateInRAM(primary) != 0)
 		return 4;
 	imageStart();
 	return 0;

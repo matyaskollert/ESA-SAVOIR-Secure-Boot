@@ -14,7 +14,7 @@ int16_t receiveUpdateData(UART_HandleTypeDef* uart);
 
 int16_t swapBootWithUpdate(void);
 
-
+int16_t setProtectedBswState(uint32_t rollback_counter, uint32_t primary_slot);
 
 int16_t setupSystemForImageSwap(void);
 
@@ -37,8 +37,6 @@ uint32_t getLowestAllowedVersion(void);
 uint32_t getCounterValue(void);
 
 int16_t setCounterValue(uint32_t newValue);
-
-int32_t updateRollbackCounter(void);
 
 int16_t checkRollbackCondition(void);
 

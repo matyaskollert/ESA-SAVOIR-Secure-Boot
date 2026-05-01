@@ -41,7 +41,7 @@ class TestUnknownCommand:
 
     def test_unknown_command_does_not_corrupt_boot_slot(self, nominal_state, bsw, config):
         """The BOOT slot must be byte-for-byte intact after an unknown command."""
-        golden = board.flash_read(board.BOOT_FLASH_ADDRESS, 32)
+        golden = board.flash_read(board.SLOT_A_FLASH_ADDRESS, 32)
 
         board.reset_board()
         bsw.send_command('X', sequence=0)
@@ -50,7 +50,7 @@ class TestUnknownCommand:
         except (serial_comm.NackReceived, TimeoutError, AssertionError):
             pass
 
-        after = board.flash_read(board.BOOT_FLASH_ADDRESS, 32)
+        after = board.flash_read(board.SLOT_A_FLASH_ADDRESS, 32)
         assert after == golden, "BOOT slot must not be modified by an unknown command"
 
 
@@ -170,7 +170,7 @@ class TestUploadEndBeforeAllData:
 
     def test_end_before_all_data_acks_and_does_not_corrupt_boot(self, nominal_state, bsw, config, image_factory):
         """Early END must be ACKed and must not touch the BOOT slot."""
-        golden = board.flash_read(board.BOOT_FLASH_ADDRESS, 32)
+        golden = board.flash_read(board.SLOT_A_FLASH_ADDRESS, 32)
         update_img = image_factory.build(version=2)
 
         board.reset_board()
@@ -185,5 +185,5 @@ class TestUploadEndBeforeAllData:
         assert ack is not None
         time.sleep(1.0)
 
-        after = board.flash_read(board.BOOT_FLASH_ADDRESS, 32)
+        after = board.flash_read(board.SLOT_A_FLASH_ADDRESS, 32)
         assert after == golden

@@ -99,3 +99,35 @@ int16_t setBootloaderStatus(BootloaderStatus newStatus)
 	}
 	return 0;
 }
+
+uint32_t getSlotFlashSector(ImageSlot slot)
+{
+	return (slot == SLOT_A) ? SLOT_A_FLASH_SECTOR : SLOT_B_FLASH_SECTOR;
+}
+
+uint32_t getSlotFlashAddress(ImageSlot slot)
+{
+	return (slot == SLOT_A) ? SLOT_A_FLASH_ADDRESS : SLOT_B_FLASH_ADDRESS;
+}
+
+uint32_t getSlotFlashOBSector(ImageSlot slot)
+{
+	return (slot == SLOT_A) ? SLOT_A_FLASH_OB_SECTOR : SLOT_B_FLASH_OB_SECTOR;
+}
+
+uint32_t getPrimaryFlag(void)
+{
+	return PROTECTED_BSW_STATE->primary_slot;
+}
+
+ImageSlot getPrimarySlot(void)
+{
+	return (getPrimaryFlag() == PROTECTED_BSW_STATE_PRIMARY_SLOT_B) ? SLOT_B : SLOT_A;
+}
+
+ImageSlot getSecondarySlot(void)
+{
+	return (getPrimaryFlag() == PROTECTED_BSW_STATE_PRIMARY_SLOT_B) ? SLOT_A : SLOT_B;
+}
+
+

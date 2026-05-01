@@ -7,6 +7,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <stddef.h>
 #include "update.h"
 #include "input.h"
 #include "flash.h"
@@ -207,7 +208,8 @@ int16_t receiveUpdateData(UART_HandleTypeDef* uart)
 	{
 		return 13;
 	}
-	if (writeFlashSector(UPDATE_FLASH_SECTOR, UPDATE_FLASH_ADDRESS,
+	ImageSlot secondary = getSecondarySlot();
+	if (writeFlashSector(getSlotFlashSector(secondary), getSlotFlashAddress(secondary),
 	                     (uint32_t *)ramDestination, dataLength/4U) != 0)
 	{
 		printf("Flash write failed\r\n");
@@ -225,50 +227,50 @@ int16_t receiveUpdateData(UART_HandleTypeDef* uart)
 
 int16_t swapBootWithUpdate(void)
 {
-	// TODO: Error handling?
-	printf("Swapping BOOT and UPDATE images...\r\n");
+	printf("Swapping primary partition (flag change only)...\r\n");
 
-	const image_header_t* bootHeader = imageGetHeader(BOOT);
-	if (bootHeader == NULL)
+	/* Flip the primary-partition flag: the slot that was secondary becomes
+	 * primary and vice versa.  No data is physically moved. */
+	uint32_t currentFlag = getPrimaryFlag();
+	uint32_t newFlag = (currentFlag == PROTECTED_BSW_STATE_PRIMARY_SLOT_B)
+	                   ? PROTECTED_BSW_STATE_PRIMARY_SLOT_A
+	                   : PROTECTED_BSW_STATE_PRIMARY_SLOT_B;
+
+	/* After the flag flip, the current secondary becomes the new primary.
+	 * Compute the updated rollback counter now so the flag flip and counter
+	 * update are written in a single setProtectedBswState call (one erase). */
+	ImageSlot newPrimary   = getSecondarySlot();
+	ImageSlot newSecondary = getPrimarySlot();
+	const image_header_t* newPrimaryImage   = (const image_header_t *)(getSlotFlashAddress(newPrimary));
+	const image_header_t* newSecondaryImage = (const image_header_t *)(getSlotFlashAddress(newSecondary));
+	uint32_t newPrimaryVersion   = (uint32_t)newPrimaryImage->imageVersion;
+	uint32_t newSecondaryVersion = (uint32_t)newSecondaryImage->imageVersion;
+	uint32_t counter = getCounterValue();
+
+	uint32_t newCounter;
+	if (counter >= newPrimaryVersion && counter >= newSecondaryVersion)
 	{
+		newCounter = counter;
+	}
+	else if (newPrimaryVersion > counter && newPrimaryVersion > newSecondaryVersion)
+	{
+		printf("Updating rollback counter from %lu to %lu\r\n", counter, newPrimaryVersion);
+		newCounter = newPrimaryVersion;
+	}
+	else
+	{
+		printf("Cannot determine new rollback counter value\r\n");
 		return 1;
 	}
-	const uint32_t bootImageSizeWords = bootHeader->imageSize/4U + IMAGE_OFFSET/4U;
 
-	const image_header_t* updateHeader = imageGetHeader(UPDATE);
-	if (updateHeader == NULL)
+	if (setProtectedBswState(newCounter, newFlag) != 0)
 	{
+		printf("Failed to write BSW state\r\n");
 		return 1;
 	}
-	const uint32_t updateImageSizeWords = updateHeader->imageSize/4U + IMAGE_OFFSET/4U;
 
-	if (HAL_FLASH_Unlock() != HAL_OK)
-	{
-		return 2;
-	}
-	if (writeFlashSector(SWAP_FLASH_SECTOR, SWAP_FLASH_ADDRESS, (uint32_t *)BOOT_FLASH_ADDRESS, bootImageSizeWords) != 0)
-	{
-		printf("Flash write to SWAP sector failed\r\n");
-		HAL_FLASH_Lock();
-		return 3;
-	}
-	if (writeFlashSector(BOOT_FLASH_SECTOR, BOOT_FLASH_ADDRESS, (uint32_t *)UPDATE_FLASH_ADDRESS, updateImageSizeWords) != 0)
-	{
-		printf("Flash write to BOOT sector failed\r\n");
-		HAL_FLASH_Lock();
-		return 3;
-	}
-	if (writeFlashSector(UPDATE_FLASH_SECTOR, UPDATE_FLASH_ADDRESS, (uint32_t *)SWAP_FLASH_ADDRESS, bootImageSizeWords) != 0)
-	{
-		printf("Flash write to UPDATE sector failed\r\n");
-		HAL_FLASH_Lock();
-		return 3;
-	}
-	if (HAL_FLASH_Lock() != HAL_OK)
-	{
-		return 2;
-	}
-	printf("Swap complete!\r\n");
+	printf("Primary slot updated: primary is now %s\r\n",
+	       (newFlag == PROTECTED_BSW_STATE_PRIMARY_SLOT_B) ? "SLOT_B" : "SLOT_A");
 	return 0;
 }
 
@@ -280,7 +282,9 @@ int16_t setupSystemForImageSwap(void)
 		return 1;
 	}
 
-	uint32_t sectorMask = COUNTER_FLASH_OB_SECTOR | BOOT_FLASH_OB_SECTOR;
+	/* Unlock BSW state sector (to write new state) and the current
+	 * primary slot (it becomes secondary after the flag flip). */
+	uint32_t sectorMask = PROTECTED_BSW_STATE_FLASH_OB_SECTOR | getSlotFlashOBSector(getPrimarySlot());
 	if (disableSectorWriteProtection(sectorMask) != 0)
 	{
 		printf("Unlocking necessary FLASH sectors failed\r\n");
@@ -292,10 +296,12 @@ int16_t setupSystemForImageSwap(void)
 
 int16_t checkSystemForImageSwap(void)
 {
-	uint32_t sectorMask = BOOT_FLASH_OB_SECTOR | COUNTER_FLASH_OB_SECTOR;
+	/* BSW state sector and the current primary slot must both be unlocked
+	 * before the flag flip and counter update can be performed. */
+	uint32_t sectorMask = PROTECTED_BSW_STATE_FLASH_OB_SECTOR | getSlotFlashOBSector(getPrimarySlot());
 	if (checkAllSectorsUnprotected(sectorMask) != 1)
 	{
-		printf("Cannot swap with BOOT or COUNTER protected\r\n");
+		printf("Cannot swap with BSW state sector or primary slot protected\r\n");
 		return 1;
 	}
 	return 0;
@@ -309,7 +315,8 @@ int16_t setupSystemForNominal(void)
 		return 1;
 	}
 
-	uint32_t sectorMask = COUNTER_FLASH_OB_SECTOR | BOOT_FLASH_OB_SECTOR;
+	/* Protect the BSW state sector and the (new) primary slot. */
+	uint32_t sectorMask = PROTECTED_BSW_STATE_FLASH_OB_SECTOR | getSlotFlashOBSector(getPrimarySlot());
 	if (enableSectorWriteProtection(sectorMask) != 0)
 	{
 		printf("Locking necessary FLASH sectors failed\r\n");
@@ -321,10 +328,11 @@ int16_t setupSystemForNominal(void)
 
 int16_t checkSystemForNominal(void)
 {
-	uint32_t sectorMask = COUNTER_FLASH_OB_SECTOR | BOOT_FLASH_OB_SECTOR;
+	/* Protected BSW state sector and primary slot must be write-protected. */
+	uint32_t sectorMask = PROTECTED_BSW_STATE_FLASH_OB_SECTOR | getSlotFlashOBSector(getPrimarySlot());
 	if (checkSectorWriteProtection(sectorMask) != 0)
 	{
-		printf("Cannot boot with BOOT and COUNTER unprotected\r\n");
+		printf("Cannot boot with primary slot or protected BSW state sector unprotected\r\n");
 		return 1;
 	}
 	return 0;
@@ -332,24 +340,23 @@ int16_t checkSystemForNominal(void)
 
 int16_t setupSystemForUpdate(void)
 {
-	// TODO: Do we need to UNLOCK update and swap since they should never be locked??
 	return setupSystemForNominal();
 }
 
 int16_t checkSystemForUpdate(void)
 {
-	// TODO: This could be done in one step?
-	uint32_t sectorMask = COUNTER_FLASH_OB_SECTOR | BOOT_FLASH_OB_SECTOR;
+	/* Protected BSW state sector and primary slot must be protected. */
+	uint32_t sectorMask = PROTECTED_BSW_STATE_FLASH_OB_SECTOR | getSlotFlashOBSector(getPrimarySlot());
 	if (checkSectorWriteProtection(sectorMask) != 0)
 	{
-		printf("Cannot update with BOOT and COUNTER unprotected\r\n");
+		printf("Cannot update with primary slot or protected BSW state sector unprotected\r\n");
 		return 1;
 	}
 
-	sectorMask = UPDATE_FLASH_OB_SECTOR;
-	if (checkSectorWriteProtection(sectorMask) != 1)
+	/* Secondary slot must be unprotected (upload target). */
+	if (checkSectorWriteProtection(getSlotFlashOBSector(getSecondarySlot())) != 1)
 	{
-		printf("Cannot update with UPDATE protected. This should never happen\r\n");
+		printf("Cannot update with secondary slot protected\r\n");
 		return 1;
 	}
 	return 0;
@@ -357,11 +364,12 @@ int16_t checkSystemForUpdate(void)
 
 int16_t checkUpdateValidity(void)
 {
-	if (imageValidate(UPDATE) != 0) {
+	ImageSlot secondary = getSecondarySlot();
+	if (imageValidate(secondary) != 0) {
 		printf("Update image CRC verification failed\r\n");
 		return 1;
 	}
-	if (imageLoad(UPDATE) != 0)
+	if (imageLoad(secondary) != 0)
 	{
 		printf("Update image digital signature verification failed\r\n");
 		return 2;
@@ -373,16 +381,17 @@ int16_t checkUpdateValidity(void)
 int16_t checkUpdateVersion(void)
 {
 	uint32_t lowestAllowedVersion = getLowestAllowedVersion();
-	const image_header_t* updateImageHeader = imageGetHeader(UPDATE);
-	if (updateImageHeader == NULL)
+	ImageSlot secondary = getSecondarySlot();
+	const image_header_t* secondaryHeader = imageGetHeader(secondary);
+	if (secondaryHeader == NULL)
 		return 1;
-	uint32_t updateImageVersion = (uint32_t)updateImageHeader->imageVersion;
-	if (lowestAllowedVersion > updateImageVersion)
+	uint32_t secondaryVersion = (uint32_t)secondaryHeader->imageVersion;
+	if (lowestAllowedVersion > secondaryVersion)
 	{
-		printf("UPDATE version: %lu is lower than allowed: %lu\r\n", updateImageVersion, lowestAllowedVersion);
+		printf("Secondary image version %lu is below floor %lu\r\n", secondaryVersion, lowestAllowedVersion);
 		return 1;
 	}
-	printf("UPDATE version: %lu is valid (lowest allowed: %lu)\r\n", updateImageVersion, lowestAllowedVersion);
+	printf("Secondary image version %lu is valid (floor: %lu)\r\n", secondaryVersion, lowestAllowedVersion);
 	return 0;
 }
 
@@ -397,69 +406,50 @@ uint32_t getLowestAllowedVersion(void)
 }
 
 uint32_t getCounterValue(void) {
-	uint32_t counterValue = *((uint32_t*)COUNTER_FLASH_ADDRESS);
-	return counterValue;
-}
-
-int16_t setCounterValue(uint32_t newValue)
-{
-	if (HAL_FLASH_Unlock() != HAL_OK)
-	{
-		return 1;
-	}
-	if (eraseFlashSector(COUNTER_FLASH_SECTOR) != 0)
-	{
-		return 1;
-	}
-	if (writeFlashWord(COUNTER_FLASH_ADDRESS, newValue) != 0)
-	{
-		return 1;
-	}
-	if (HAL_FLASH_Lock() != HAL_OK)
-	{
-		return 1;
-	}
-	return 0;
-}
-
-int32_t updateRollbackCounter(void)
-{
-	uint32_t counterValue = getCounterValue();
-	const image_header_t* bootImage = (const image_header_t *)(BOOT_FLASH_ADDRESS);
-	const image_header_t* updateImage = (const image_header_t *)(UPDATE_FLASH_ADDRESS);
-	uint32_t bootImageVersion = (uint32_t)bootImage->imageVersion;
-	uint32_t updateImageVersion = (uint32_t)updateImage->imageVersion;
-	if (counterValue >= bootImageVersion && counterValue >= updateImageVersion)
-	{
-		// do nothing
-		return 0;
-	}
-	else if (bootImageVersion > counterValue && bootImageVersion > updateImageVersion)
-	{
-		printf("Updating rollback counter from %lu to %lu\r\n", counterValue, bootImageVersion);
-		return setCounterValue(bootImageVersion);
-	} else
-	{
-		// TODO: can this happen?
-		return -1;
-	}
+	return PROTECTED_BSW_STATE->rollback_counter;
 }
 
 int16_t checkRollbackCondition(void)
 {
-    const image_header_t* bootImage   = (const image_header_t *)(BOOT_FLASH_ADDRESS);
-    const image_header_t* updateImage = (const image_header_t *)(UPDATE_FLASH_ADDRESS);
-    uint32_t bootVersion   = (uint32_t)bootImage->imageVersion;
-    uint32_t updateVersion = (uint32_t)updateImage->imageVersion;
-    uint32_t lowestAllowed = getLowestAllowedVersion();
+    ImageSlot primary   = getPrimarySlot();
+    ImageSlot secondary = getSecondarySlot();
+    const image_header_t* primaryImage   = (const image_header_t *)(getSlotFlashAddress(primary));
+    const image_header_t* secondaryImage = (const image_header_t *)(getSlotFlashAddress(secondary));
+    uint32_t primaryVersion   = (uint32_t)primaryImage->imageVersion;
+    uint32_t secondaryVersion = (uint32_t)secondaryImage->imageVersion;
+    uint32_t lowestAllowed    = getLowestAllowedVersion();
 
-    if (bootVersion > updateVersion && updateVersion >= lowestAllowed)
+    if (primaryVersion > secondaryVersion && secondaryVersion >= lowestAllowed)
     {
-        printf("Rollback condition met: BOOT v%lu > UPDATE v%lu, UPDATE v%lu >= floor v%lu\r\n",
-               bootVersion, updateVersion, updateVersion, lowestAllowed);
+        printf("Rollback condition met: primary v%lu > secondary v%lu, secondary v%lu >= floor v%lu\r\n",
+               primaryVersion, secondaryVersion, secondaryVersion, lowestAllowed);
         return 0;
     }
-    printf("Rollback not possible: BOOT v%lu, UPDATE v%lu, floor v%lu\r\n",
-           bootVersion, updateVersion, lowestAllowed);
+    printf("Rollback not possible: primary v%lu, secondary v%lu, floor v%lu\r\n",
+           primaryVersion, secondaryVersion, lowestAllowed);
     return 1;
+}
+
+int16_t setProtectedBswState(uint32_t rollback_counter, uint32_t primary_slot)
+{
+	if (HAL_FLASH_Unlock() != HAL_OK)
+		return 1;
+	if (eraseFlashSector(PROTECTED_BSW_STATE_FLASH_SECTOR) != 0)
+	{
+		HAL_FLASH_Lock();
+		return 1;
+	}
+	if (writeFlashWord(PROTECTED_BSW_STATE_FLASH_ADDRESS + offsetof(protected_bsw_state_t, rollback_counter), rollback_counter) != 0)
+	{
+		HAL_FLASH_Lock();
+		return 1;
+	}
+	if (writeFlashWord(PROTECTED_BSW_STATE_FLASH_ADDRESS + offsetof(protected_bsw_state_t, primary_slot), primary_slot) != 0)
+	{
+		HAL_FLASH_Lock();
+		return 1;
+	}
+	if (HAL_FLASH_Lock() != HAL_OK)
+		return 1;
+	return 0;
 }

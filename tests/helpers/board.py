@@ -6,17 +6,16 @@ interactions. Runs natively on Windows.
 
 Flash memory map (STM32F439ZI):
     0x08000000  Sectors 0-4  BSW (bootloader) - never overwritten by tests
-    0x08020000  Sector 5     BOOT   image slot  (128 KB)
-    0x08040000  Sector 6     UPDATE image slot  (128 KB)
-    0x08060000  Sector 7     SWAP   image slot  (128 KB)
+    0x08020000  Sector 5     SLOT_A image slot  (128 KB)
+    0x08040000  Sector 6     SLOT_B image slot  (128 KB)
     0x08080000  Sector 8     COMM   (bootloader status word, 4 B)
-    0x080A0000  Sector 9     COUNTER (rollback counter, 4 B)
+    0x080A0000  Sector 9     PROTECTED_BSW_STATE (rollback_counter + primary_slot)
     0x080C0000  Sector 10    REPORT
 
 Option-byte notes (STM32F4 nWRP field, 12 bits):
     Bit N of nWRP corresponds to sector N.
     0 = sector write-protected,  1 = sector write-unprotected.
-    Nominal state: OB_WRP_BOOT and OB_WRP_COUNTER bits are both 0 (protected).
+    Nominal state: OB_WRP_SLOT_A and OB_WRP_PROTECTED_BSW_STATE bits are both 0 (protected).
 
     If STM32CubeProgrammer shows a different OB field name for your device
     revision, update the _NWRP_OB_NAME constant below.
@@ -43,12 +42,19 @@ STM32CUBEPROG = os.environ.get(
 _CONNECT = ["-c", "port=SWD", "mode=NORMAL"]
 
 # Flash addresses
-BOOT_FLASH_ADDRESS    = 0x08020000
-UPDATE_FLASH_ADDRESS  = 0x08040000
-SWAP_FLASH_ADDRESS    = 0x08060000
-COMM_FLASH_ADDRESS    = 0x08080000
-COUNTER_FLASH_ADDRESS = 0x080A0000
-FLASH_SECTOR_SIZE     = 128 * 1024  # 128 KB (sectors 5-11)
+SLOT_A_FLASH_ADDRESS = 0x08020000  # first image partition (sector 5)
+SLOT_B_FLASH_ADDRESS = 0x08040000  # second image partition (sector 6)
+COMM_FLASH_ADDRESS = 0x08080000
+PROTECTED_BSW_STATE_FLASH_ADDRESS = (
+    0x080A0000  # holds protected_bsw_state_t (rollback_counter + primary_slot)
+)
+FLASH_SECTOR_SIZE = 128 * 1024  # 128 KB (sectors 5-11)
+
+# protected_bsw_state_t field offsets (matching the C struct layout)
+PROTECTED_BSW_STATE_COUNTER_OFFSET = 0  # uint32_t rollback_counter
+PROTECTED_BSW_STATE_PRIMARY_SLOT_OFFSET = 4  # uint32_t primary_slot
+PROTECTED_BSW_STATE_PRIMARY_SLOT_A = 0xAAAAAAAA
+PROTECTED_BSW_STATE_PRIMARY_SLOT_B = 0xBBBBBBBB
 
 # Address to sector number used by the -e (erase) command.
 _ADDR_TO_SECTOR = {
@@ -62,31 +68,36 @@ _ADDR_TO_SECTOR = {
 }
 
 # nWRP bitmask constants (bit N = sector N; 0 = protected, 1 = unprotected)
-OB_WRP_BOOT    = 1 << 5   # BOOT sector 5
-OB_WRP_COUNTER = 1 << 9   # COUNTER sector 9
+OB_WRP_SLOT_A = 1 << 5  # SLOT_A sector 5
+OB_WRP_SLOT_B = 1 << 6  # SLOT_B sector 6
+OB_WRP_PROTECTED_BSW_STATE = 1 << 9  # protected BSW state sector 9
 
 # Full nWRP bitmask for every sector managed by the tests.
 # Used by _temporarily_unprotected() to detect and lift WRP before writes.
 _ADDR_TO_OB_MASK = {
-    0x08020000: 1 << 5,   # BOOT
-    0x08040000: 1 << 6,   # UPDATE
-    0x08060000: 1 << 7,   # SWAP
-    0x08080000: 1 << 8,   # COMM
-    0x080A0000: 1 << 9,   # COUNTER
+    0x08020000: 1 << 5,  # SLOT_A
+    0x08040000: 1 << 6,  # SLOT_B
+    0x08060000: 1 << 7,  # reserved
+    0x08080000: 1 << 8,  # COMM
+    0x080A0000: 1 << 9,  # protected BSW state
+    0x08060000: 1 << 7,  # SWAP
+    0x08080000: 1 << 8,  # COMM
+    0x080A0000: 1 << 9,  # COUNTER
     0x080C0000: 1 << 10,  # REPORT
     0x080E0000: 1 << 11,
 }
 
 # BSW status words
-COMM_STATUS_NOMINAL        = 0xAA
-COMM_STATUS_STANDBY        = 0xBB
-COMM_STATUS_SWAP           = 0xCC
+COMM_STATUS_NOMINAL = 0xAA
+COMM_STATUS_STANDBY = 0xBB
+COMM_STATUS_SWAP = 0xCC
 COMM_STATUS_BOOT_ATTEMPTED = 0xDD
 
 
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
 
 def _run(extra_args, check=True):
     """Run STM32_Programmer_CLI with extra_args and return the result."""
@@ -95,8 +106,12 @@ def _run(extra_args, check=True):
     # STM32CubeProgrammer outputs non-UTF-8 bytes on Windows (e.g. Windows-1252
     # symbols in its banner).  Decode as cp1252 with a fallback replacement so
     # we never get a UnicodeDecodeError, and the output is always a str.
-    result.stdout = result.stdout.decode("cp1252", errors="replace") if result.stdout else ""
-    result.stderr = result.stderr.decode("cp1252", errors="replace") if result.stderr else ""
+    result.stdout = (
+        result.stdout.decode("cp1252", errors="replace") if result.stdout else ""
+    )
+    result.stderr = (
+        result.stderr.decode("cp1252", errors="replace") if result.stderr else ""
+    )
     if check and result.returncode != 0:
         raise RuntimeError(
             f"STM32CubeProgrammer failed (exit {result.returncode}):\n"
@@ -123,6 +138,7 @@ def _tmp_path(suffix=".bin"):
 
 import contextlib
 
+
 @contextlib.contextmanager
 def _temporarily_unprotected(address):
     """Context manager: if the sector at address is write-protected, lift the
@@ -144,6 +160,7 @@ def _temporarily_unprotected(address):
 # Board reset
 # ---------------------------------------------------------------------------
 
+
 def reset_board(delay=0.5):
     """Reset the MCU via SWD."""
     _run(["-rst"])
@@ -153,6 +170,7 @@ def reset_board(delay=0.5):
 # ---------------------------------------------------------------------------
 # Flash read / write / erase
 # ---------------------------------------------------------------------------
+
 
 def flash_read(address, size):
     """Read size bytes from device memory starting at address.
@@ -210,6 +228,7 @@ def flash_erase_sector(address):
 # Higher-level image-slot helpers
 # ---------------------------------------------------------------------------
 
+
 def flash_image(slot_address, image_data):
     """Write a complete signed+headered firmware image to slot_address."""
     flash_write(slot_address, image_data)
@@ -231,8 +250,9 @@ def flash_corrupt_crc(slot_address):
 
 
 # ---------------------------------------------------------------------------
-# COMM / COUNTER words
+# COMM / BSW state
 # ---------------------------------------------------------------------------
+
 
 def set_comm_status(status):
     """Write the BSW status word to the COMM flash sector."""
@@ -246,19 +266,66 @@ def get_comm_status():
 
 
 def set_rollback_counter(value):
-    """Write the rollback counter to the COUNTER flash sector."""
-    flash_write_word(COUNTER_FLASH_ADDRESS, value)
+    """Write the rollback counter field of protected_bsw_state_t.
+    The primary_slot field is read back first and preserved.
+    """
+    primary_slot = get_primary_flag()
+    import struct as _struct
+
+    data = _struct.pack("<II", value, primary_slot)
+    flash_write(PROTECTED_BSW_STATE_FLASH_ADDRESS, data)
 
 
 def get_rollback_counter():
-    """Read the rollback counter from the COUNTER flash sector."""
-    raw = flash_read(COUNTER_FLASH_ADDRESS, 4)
+    """Read the rollback_counter field from the protected BSW state sector."""
+    raw = flash_read(
+        PROTECTED_BSW_STATE_FLASH_ADDRESS + PROTECTED_BSW_STATE_COUNTER_OFFSET, 4
+    )
     return struct.unpack("<I", raw)[0]
+
+
+def get_primary_flag():
+    """Read the primary_slot field from the protected BSW state sector.
+    Returns PROTECTED_BSW_STATE_PRIMARY_SLOT_B when SLOT_B is primary,
+    or 0xFFFFFFFF (erased default) / PROTECTED_BSW_STATE_PRIMARY_SLOT_A otherwise.
+    """
+    raw = flash_read(
+        PROTECTED_BSW_STATE_FLASH_ADDRESS + PROTECTED_BSW_STATE_PRIMARY_SLOT_OFFSET, 4
+    )
+    return struct.unpack("<I", raw)[0]
+
+
+def set_primary_flag(flag):
+    """Write the primary_slot field of protected_bsw_state_t while preserving the rollback counter."""
+    counter = get_rollback_counter()
+    import struct as _struct
+
+    data = _struct.pack("<II", counter, flag)
+    flash_write(PROTECTED_BSW_STATE_FLASH_ADDRESS, data)
+
+
+def get_primary_slot():
+    """Return the address of the currently-primary (active) image slot."""
+    return (
+        SLOT_B_FLASH_ADDRESS
+        if get_primary_flag() == PROTECTED_BSW_STATE_PRIMARY_SLOT_B
+        else SLOT_A_FLASH_ADDRESS
+    )
+
+
+def get_secondary_slot():
+    """Return the address of the currently-secondary (inactive) image slot."""
+    return (
+        SLOT_A_FLASH_ADDRESS
+        if get_primary_flag() == PROTECTED_BSW_STATE_PRIMARY_SLOT_B
+        else SLOT_B_FLASH_ADDRESS
+    )
 
 
 # ---------------------------------------------------------------------------
 # Option bytes (nWRP write-protection) via STM32CubeProgrammer -ob
 # ---------------------------------------------------------------------------
+
 
 def _read_nwrp():
     """Read the current nWRP option-byte values via -ob displ.
@@ -280,7 +347,7 @@ def _read_nwrp():
         sector = int(sector_str)
         val = int(val_str, 16)
         if val != 0:  # 0x1 = unprotected
-            nwrp |= (1 << sector)
+            nwrp |= 1 << sector
     return nwrp
 
 
