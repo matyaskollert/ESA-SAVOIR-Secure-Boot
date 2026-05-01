@@ -2,6 +2,7 @@
 STM32F4 Binary Uploader Application
 A simple GUI application for uploading binary files to STM32F4 boards via UART.
 """
+import re
 import sys
 import time
 import queue
@@ -408,6 +409,7 @@ class CommandSenderThread(QThread):
             packet = create_command_packet(0, self.command_text)
             header = packet.pack_header()
             data = packet.data
+            print(f"Sending command - Header: {header.hex()}, Data: {data.hex()}")
 
             ser.write(header)
             ser.flush()
@@ -438,6 +440,32 @@ class CommandSenderThread(QThread):
             self.finished.emit(False, f"Error: {str(e)}")
 
 
+class ReconnectThread(QThread):
+    """Periodically tries to re-open a serial port after connection loss."""
+    reconnected = Signal(object)  # passes the new serial.Serial instance
+
+    def __init__(self, port, baudrate=115200, interval_ms=1000):
+        super().__init__()
+        self.port = port
+        self.baudrate = baudrate
+        self.interval_ms = interval_ms
+        self._is_running = True
+
+    def run(self):
+        while self._is_running:
+            try:
+                ser = serial.Serial(self.port, self.baudrate, timeout=1)
+                time.sleep(0.3)  # let the port settle
+                self.reconnected.emit(ser)
+                return
+            except serial.SerialException:
+                pass
+            self.msleep(self.interval_ms)
+
+    def stop(self):
+        self._is_running = False
+
+
 class MainWindow(QMainWindow):
     """Main application window."""
     
@@ -448,6 +476,7 @@ class MainWindow(QMainWindow):
         self.uploader_thread = None
         self.command_thread = None
         self.receiver_thread = None
+        self.reconnect_thread = None
         self.serial_port = None
         self.image_version = 1
         self.signature_algo = ECDSASignature()  # updated when process_file() runs
@@ -554,31 +583,24 @@ class MainWindow(QMainWindow):
         algo_label = QLabel("Algorithm:")
         algo_label.setMinimumWidth(80)
         self.algo_button_group = QButtonGroup()
-        self.ecdsa_algo_radio = QRadioButton("ECDSA-P256")
-        self.mldsa_algo_radio = QRadioButton("ML-DSA (post-quantum)")
+        self.ecdsa_algo_radio  = QRadioButton("ECDSA-P256")
+        self.mldsa_algo_radio  = QRadioButton("ML-DSA (post-quantum)")
+        self.hybrid_algo_radio = QRadioButton("Hybrid (ECDSA-P256 + ML-DSA-65)")
         self.ecdsa_algo_radio.setChecked(True)
         self.algo_button_group.addButton(self.ecdsa_algo_radio)
         self.algo_button_group.addButton(self.mldsa_algo_radio)
-
-        # ML-DSA parameter-set drop-down (only visible when ML-DSA is selected)
-        self.mldsa_params_combo = QComboBox()
-        self.mldsa_params_combo.addItems(["ML-DSA-44", "ML-DSA-65"])
-        self.mldsa_params_combo.setToolTip(
-            "ML-DSA-44: 2420-byte sig, 1312-byte pk (NIST level 2)\n"
-            "ML-DSA-65: 3309-byte sig, 1952-byte pk (NIST level 3)"
-        )
-        self.mldsa_params_combo.setEnabled(False)
+        self.algo_button_group.addButton(self.hybrid_algo_radio)
 
         algo_layout.addWidget(algo_label)
         algo_layout.addWidget(self.ecdsa_algo_radio)
         algo_layout.addWidget(self.mldsa_algo_radio)
-        algo_layout.addWidget(self.mldsa_params_combo)
+        algo_layout.addWidget(self.hybrid_algo_radio)
         algo_layout.addStretch()
         sig_layout.addLayout(algo_layout)
 
-        self.mldsa_algo_radio.toggled.connect(
-            lambda checked: self.mldsa_params_combo.setEnabled(checked)
-        )
+        # Update key-section visibility whenever the algorithm selection changes
+        for radio in (self.ecdsa_algo_radio, self.mldsa_algo_radio, self.hybrid_algo_radio):
+            radio.toggled.connect(lambda _: self._update_key_section_visibility())
 
         # ── Key options ─────────────────────────────────────────────────
         self.key_options_widget = QWidget()
@@ -588,7 +610,7 @@ class MainWindow(QMainWindow):
         
         # Radio buttons for key generation/use
         self.key_button_group = QButtonGroup()
-        self.generate_keys_radio = QRadioButton("Generate new keys")
+        self.generate_keys_radio    = QRadioButton("Generate new keys")
         self.use_existing_keys_radio = QRadioButton("Use existing keys")
         self.generate_keys_radio.setChecked(True)
         self.key_button_group.addButton(self.generate_keys_radio)
@@ -596,23 +618,34 @@ class MainWindow(QMainWindow):
         key_options_layout.addWidget(self.generate_keys_radio)
         key_options_layout.addWidget(self.use_existing_keys_radio)
         
-        # Existing keys path selection
-        existing_keys_layout = QHBoxLayout()
+        # ECDSA / primary key row
+        primary_key_layout = QHBoxLayout()
         self.private_key_label = QLabel("Private Key:")
-        self.private_key_path = QLineEdit()
+        self.private_key_path  = QLineEdit()
         self.private_key_path.setPlaceholderText(
             "Path to private key (.pem for ECDSA, .bin for ML-DSA)"
         )
         self.private_key_browse = QPushButton("Browse...")
         self.private_key_browse.clicked.connect(self.browse_private_key)
-        
-        existing_keys_layout.addWidget(self.private_key_label)
-        existing_keys_layout.addWidget(self.private_key_path, 1)
-        existing_keys_layout.addWidget(self.private_key_browse)
-        key_options_layout.addLayout(existing_keys_layout)
-        
-        # Connect radio button to enable/disable key path selection
-        self.use_existing_keys_radio.toggled.connect(self.toggle_key_path_selection)
+        primary_key_layout.addWidget(self.private_key_label)
+        primary_key_layout.addWidget(self.private_key_path, 1)
+        primary_key_layout.addWidget(self.private_key_browse)
+        key_options_layout.addLayout(primary_key_layout)
+
+        # ML-DSA key row — only visible in hybrid mode
+        mldsa_key_layout = QHBoxLayout()
+        self.mldsa_key_label  = QLabel("ML-DSA Key:")
+        self.mldsa_key_path   = QLineEdit()
+        self.mldsa_key_path.setPlaceholderText("Path to ML-DSA-65 private key (.bin)")
+        self.mldsa_key_browse = QPushButton("Browse...")
+        self.mldsa_key_browse.clicked.connect(self.browse_mldsa_private_key)
+        mldsa_key_layout.addWidget(self.mldsa_key_label)
+        mldsa_key_layout.addWidget(self.mldsa_key_path, 1)
+        mldsa_key_layout.addWidget(self.mldsa_key_browse)
+        key_options_layout.addLayout(mldsa_key_layout)
+
+        # Connect radio button to enable/disable key path inputs
+        self.use_existing_keys_radio.toggled.connect(self._update_key_section_visibility)
         
         sig_layout.addWidget(self.key_options_widget)
         
@@ -647,37 +680,6 @@ class MainWindow(QMainWindow):
         process_group.setLayout(process_layout)
         main_layout.addWidget(process_group)
         
-        # Upload group
-        upload_group = QGroupBox("4. Upload to Device")
-        upload_layout = QVBoxLayout()
-        upload_layout.setContentsMargins(8, 8, 8, 8)
-        upload_layout.setSpacing(6)
-        
-        # Upload and cancel buttons
-        self.upload_button = QPushButton("UPLOAD to COM6")
-        self.upload_button.setMinimumHeight(32)
-        self.upload_button.setEnabled(False)
-        self.upload_button.clicked.connect(self.upload_to_device)
-        
-        self.cancel_button = QPushButton("Cancel Upload")
-        self.cancel_button.setMinimumHeight(28)
-        self.cancel_button.setEnabled(False)
-        self.cancel_button.clicked.connect(self.cancel_upload)
-        
-        button_layout = QHBoxLayout()
-        button_layout.addWidget(self.upload_button, 2)
-        button_layout.addWidget(self.cancel_button, 1)
-        upload_layout.addLayout(button_layout)
-        
-        # Progress bar
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setMinimumHeight(20)
-        self.progress_bar.setValue(0)
-        upload_layout.addWidget(self.progress_bar)
-        
-        upload_group.setLayout(upload_layout)
-        main_layout.addWidget(upload_group)
-        
         # Status/Log group
         log_group = QGroupBox("Status Log")
         log_layout = QVBoxLayout()
@@ -691,118 +693,237 @@ class MainWindow(QMainWindow):
         log_group.setLayout(log_layout)
         main_layout.addWidget(log_group, 1)
         
-        # Text input group for sending commands
-        input_group = QGroupBox("Send Command to Board")
-        input_layout = QHBoxLayout()
-        input_layout.setContentsMargins(8, 8, 8, 8)
-        
-        self.text_input = QLineEdit()
-        self.text_input.setPlaceholderText("Type command and press Enter...")
-        self.text_input.returnPressed.connect(self.send_text_command)
-        
-        self.send_button = QPushButton("Send")
-        self.send_button.setMinimumHeight(26)
-        self.send_button.clicked.connect(self.send_text_command)
-        
-        input_layout.addWidget(self.text_input, 1)
-        input_layout.addWidget(self.send_button)
-        input_group.setLayout(input_layout)
-        main_layout.addWidget(input_group)
+        # Command buttons group
+        cmd_group = QGroupBox("Send Command to Board")
+        cmd_layout = QVBoxLayout()
+        cmd_layout.setContentsMargins(8, 8, 8, 8)
+        cmd_layout.setSpacing(6)
+
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(6)
+
+        self.cmd_boot_btn      = QPushButton("1 - Boot")
+        self.cmd_update_btn    = QPushButton("2 - Update")
+        self.cmd_swap_btn      = QPushButton("3 - Swap")
+        self.cmd_versions_btn  = QPushButton("4 - Check Versions")
+        self.cmd_reset_btn     = QPushButton("5 - Reset")
+        self.cmd_skip_btn      = QPushButton("6 - Skip Timeout")
+
+        for btn, char in [
+            (self.cmd_boot_btn,     '1'),
+            (self.cmd_swap_btn,     '3'),
+            (self.cmd_versions_btn, '4'),
+            (self.cmd_reset_btn,    '5'),
+            (self.cmd_skip_btn,     '6'),
+        ]:
+            btn.setMinimumHeight(32)
+            btn.clicked.connect(lambda checked=False, c=char: self._send_command(c))
+
+        self.cmd_update_btn.setMinimumHeight(32)
+        self.cmd_update_btn.clicked.connect(self.upload_to_device)
+
+        for btn in [self.cmd_boot_btn, self.cmd_update_btn, self.cmd_swap_btn,
+                    self.cmd_versions_btn, self.cmd_reset_btn, self.cmd_skip_btn]:
+            btn_row.addWidget(btn)
+
+        cmd_layout.addLayout(btn_row)
+
+        # Progress bar and cancel button (shown during upload)
+        progress_row = QHBoxLayout()
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setMinimumHeight(20)
+        self.progress_bar.setValue(0)
+        self.cancel_button = QPushButton("Cancel Upload")
+        self.cancel_button.setMinimumHeight(26)
+        self.cancel_button.setEnabled(False)
+        self.cancel_button.clicked.connect(self.cancel_upload)
+        progress_row.addWidget(self.progress_bar, 1)
+        progress_row.addWidget(self.cancel_button)
+        cmd_layout.addLayout(progress_row)
+
+        self._cmd_buttons = [
+            self.cmd_boot_btn,  self.cmd_update_btn,
+            self.cmd_swap_btn,  self.cmd_versions_btn,
+            self.cmd_reset_btn, self.cmd_skip_btn,
+        ]
+
+        cmd_group.setLayout(cmd_layout)
+        main_layout.addWidget(cmd_group)
+
+        # ASW command group
+        asw_group = QGroupBox("Send Command to ASW")
+        asw_layout = QHBoxLayout()
+        asw_layout.setContentsMargins(8, 8, 8, 8)
+        asw_layout.setSpacing(6)
+
+        asw_label = QLabel("Command:")
+        self.asw_cmd_input = QLineEdit()
+        self.asw_cmd_input.setPlaceholderText("1 = OK (set NOMINAL)   2 = FAULT (reset only)")
+        self.asw_cmd_input.setMaxLength(1)
+        self.asw_cmd_input.setFixedWidth(36)
+        self.asw_send_btn = QPushButton("Send")
+        self.asw_send_btn.setMinimumHeight(30)
+        self.asw_send_btn.clicked.connect(self._send_asw_command)
+
+        asw_layout.addWidget(asw_label)
+        asw_layout.addWidget(self.asw_cmd_input)
+        asw_layout.addWidget(self.asw_send_btn)
+        asw_layout.addStretch()
+        asw_group.setLayout(asw_layout)
+        main_layout.addWidget(asw_group)
+
+        self._cmd_buttons.append(self.asw_send_btn)
         
         # Initialize key path selection state
-        self.toggle_key_path_selection()
+        self._update_key_section_visibility()
         
         self.log("Application started. Select a .bin file to begin.")
     
-    def toggle_key_path_selection(self):
-        """Enable/disable key path selection based on radio button."""
+    def _update_key_section_visibility(self):
+        """Show/hide and enable/disable key path widgets depending on mode."""
         use_existing = self.use_existing_keys_radio.isChecked()
-        self.private_key_label.setEnabled(use_existing)
-        self.private_key_path.setEnabled(use_existing)
-        self.private_key_browse.setEnabled(use_existing)
-    
+        is_hybrid    = self.hybrid_algo_radio.isChecked()
+
+        # Primary key row label adapts to the selected algorithm
+        if is_hybrid:
+            self.private_key_label.setText("ECDSA Key:")
+        elif self.mldsa_algo_radio.isChecked():
+            self.private_key_label.setText("ML-DSA Key:")
+        else:
+            self.private_key_label.setText("Private Key:")
+
+        # Primary key row
+        for w in (self.private_key_label, self.private_key_path, self.private_key_browse):
+            w.setEnabled(use_existing)
+
+        # ML-DSA key row — only present in hybrid mode
+        ml_row_active = use_existing and is_hybrid
+        for w in (self.mldsa_key_label, self.mldsa_key_path, self.mldsa_key_browse):
+            w.setEnabled(ml_row_active)
+            w.setVisible(is_hybrid)
+
     def browse_private_key(self):
-        """Browse for private key file."""
+        """Browse for the primary private key file (ECDSA .pem or ML-DSA .bin)."""
         if self.mldsa_algo_radio.isChecked():
             key_filter = "ML-DSA Key Files (*.bin);;All Files (*.*)"
         else:
             key_filter = "PEM Files (*.pem);;All Files (*.*)"
 
         file_path, _ = QFileDialog.getOpenFileName(
-            self,
-            "Select Private Key File",
-            str(self.keys_dir),
-            key_filter
+            self, "Select Private Key File", str(self.keys_dir), key_filter
         )
-        
         if file_path:
             self.private_key_path.setText(file_path)
-            self.log(f"Selected private key: {file_path}")
+            self.log(f"Selected primary private key: {file_path}")
+
+    def browse_mldsa_private_key(self):
+        """Browse for the ML-DSA private key file (hybrid mode)."""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "Select ML-DSA-65 Private Key", str(self.keys_dir),
+            "ML-DSA Key Files (*.bin);;All Files (*.*)"
+        )
+        if file_path:
+            self.mldsa_key_path.setText(file_path)
+            self.log(f"Selected ML-DSA private key: {file_path}")
     
     def process_file(self):
-        """Process the binary file and add header with CRC and signature."""
+        """Process the binary file and add header with CRC and signature(s)."""
         if not self.selected_file:
             self.log("ERROR: No file selected!")
             return
         
         try:
-            # Get version from spinbox (applied each time Process is clicked)
             self.image_version = self.version_spinbox.value()
             self.log(f"Processing with image version: {self.image_version}")
             
-            # Disable buttons during processing
             self.process_button.setEnabled(False)
             self.version_spinbox.setEnabled(False)
 
-            # ── Construct the appropriate signature algorithm object ──────
-            if self.mldsa_algo_radio.isChecked():
-                param_set = self.mldsa_params_combo.currentText()
+            is_hybrid = self.hybrid_algo_radio.isChecked()
+            is_mldsa  = self.mldsa_algo_radio.isChecked()
+            timestamp = lambda: time.strftime("%Y%m%d_%H%M%S")  # noqa: E731
+            param_set = "ML-DSA-65"  # the only supported ML-DSA parameter set
+
+            # ── Build primary (ECDSA / ML-DSA) algorithm object ──────────
+            if is_hybrid:
+                self.signature_algo = ECDSASignature()
+                algo_label = f"Hybrid (ECDSA-P256 + {param_set})"
+            elif is_mldsa:
                 self.signature_algo = MLDSASignature(parameter_set=param_set)
-                key_ext = ".bin"
                 algo_label = f"ML-DSA ({param_set})"
             else:
                 self.signature_algo = ECDSASignature()
-                key_ext = ".pem"
                 algo_label = "ECDSA-P256"
 
-            self.log(f"Setting up {algo_label} signature...")
+            self.log(f"Signing mode: {algo_label}")
 
+            # ── Load / generate primary key ───────────────────────────────
             if self.generate_keys_radio.isChecked():
-                # Generate new keys
                 self.keys_dir.mkdir(exist_ok=True)
-                timestamp = time.strftime("%Y%m%d_%H%M%S")
-                private_key_path = str(self.keys_dir / f"private_key_{timestamp}{key_ext}")
-                public_key_path  = str(self.keys_dir / f"public_key_{timestamp}{key_ext}")
+                ts = timestamp()
 
-                self.log(f"Generating new {algo_label} key pair...")
-                self.signature_algo.generate_keys(private_key_path, public_key_path)
-                self.log(f"Keys saved to {self.keys_dir}")
+                if is_hybrid:
+                    # Generate ECDSA key pair
+                    ecdsa_priv = str(self.keys_dir / f"ecdsa_private_{ts}.pem")
+                    ecdsa_pub  = str(self.keys_dir / f"ecdsa_public_{ts}.pem")
+                    self.log("Generating ECDSA-P256 key pair ...")
+                    self.signature_algo.generate_keys(ecdsa_priv, ecdsa_pub)
+                elif is_mldsa:
+                    mldsa_priv = str(self.keys_dir / f"mldsa_private_{ts}.bin")
+                    mldsa_pub  = str(self.keys_dir / f"mldsa_public_{ts}.bin")
+                    self.log(f"Generating {param_set} key pair ...")
+                    self.signature_algo.generate_keys(mldsa_priv, mldsa_pub)
+                else:
+                    ecdsa_priv = str(self.keys_dir / f"ecdsa_private_{ts}.pem")
+                    ecdsa_pub  = str(self.keys_dir / f"ecdsa_public_{ts}.pem")
+                    self.log("Generating ECDSA-P256 key pair ...")
+                    self.signature_algo.generate_keys(ecdsa_priv, ecdsa_pub)
+
+                self.log(f"Keys saved to: {self.keys_dir}")
             else:
-                # Use existing keys
-                private_key_path = self.private_key_path.text()
-                if not private_key_path or not Path(private_key_path).exists():
-                    self.log("ERROR: Private key file not found!")
+                # Use existing primary key
+                primary_path = self.private_key_path.text().strip()
+                if not primary_path or not Path(primary_path).exists():
+                    self.log("ERROR: Primary private key file not found!")
                     self.process_button.setEnabled(True)
                     self.version_spinbox.setEnabled(True)
                     return
+                self.log(f"Loading primary private key from {primary_path} ...")
+                self.signature_algo.load_keys(private_key_path=primary_path)
 
-                self.log(f"Loading {algo_label} private key from {private_key_path}...")
-                self.signature_algo.load_keys(private_key_path=private_key_path)
-                self.log("Private key loaded")
-            
-            # Process the file with CRC and signature
-            self.log(f"Processing binary file (version {self.image_version})...")
+            # ── Load / generate ML-DSA key (hybrid only) ─────────────────
+            hybrid_mldsa_algo = None
+            if is_hybrid:
+                hybrid_mldsa_algo = MLDSASignature(parameter_set=param_set)
+
+                if self.generate_keys_radio.isChecked():
+                    ts = timestamp()
+                    mldsa_priv = str(self.keys_dir / f"mldsa_private_{ts}.bin")
+                    mldsa_pub  = str(self.keys_dir / f"mldsa_public_{ts}.bin")
+                    self.log(f"Generating {param_set} key pair ...")
+                    hybrid_mldsa_algo.generate_keys(mldsa_priv, mldsa_pub)
+                else:
+                    mldsa_path = self.mldsa_key_path.text().strip()
+                    if not mldsa_path or not Path(mldsa_path).exists():
+                        self.log("ERROR: ML-DSA private key file not found!")
+                        self.process_button.setEnabled(True)
+                        self.version_spinbox.setEnabled(True)
+                        return
+                    self.log(f"Loading ML-DSA private key from {mldsa_path} ...")
+                    hybrid_mldsa_algo.load_keys(private_key_path=mldsa_path)
+
+            # ── Sign and write the image ──────────────────────────────────
+            self.log(f"Processing binary file (version {self.image_version}) ...")
             self.patched_file = process_binary(
-                self.selected_file, 
+                self.selected_file,
                 signature_algo=self.signature_algo,
+                hybrid_mldsa_algo=hybrid_mldsa_algo,
                 image_version=self.image_version,
             )
-            self.log(f"Created patched file: {self.patched_file}")
-            self.log("Ready to upload. Click UPLOAD.")
-            self.log("You can change the version and click Process again to create a new patched file.")
+            self.log(f"Output file: {self.patched_file}")
+            self.log("Ready to upload. Click '2 - Update' to start the upload.")
+            self.log("You can change the version and click Process again to re-sign.")
             
-            # Enable buttons (allow re-processing with different version)
-            self.upload_button.setEnabled(True)
             self.process_button.setEnabled(True)
             self.version_spinbox.setEnabled(True)
             
@@ -829,7 +950,6 @@ class MainWindow(QMainWindow):
             # Disable buttons during upload
             self.select_button.setEnabled(False)
             self.process_button.setEnabled(False)
-            self.upload_button.setEnabled(False)
             self.cancel_button.setEnabled(True)
             self.progress_bar.setValue(0)
             
@@ -903,7 +1023,6 @@ class MainWindow(QMainWindow):
             self.refresh_ports_button.setEnabled(False)
             self.connection_status_label.setText(f"Connected to {port}")
             self.connection_status_label.setStyleSheet("color: #00aa00; font-weight: bold; padding: 5px;")
-            self.upload_button.setText(f"UPLOAD to {port}")
             
         except serial.SerialException as e:
             self.log(f"ERROR: Failed to connect to {port}: {str(e)}")
@@ -920,8 +1039,14 @@ class MainWindow(QMainWindow):
             self.log(f"ERROR: Unexpected error connecting to board: {str(e)}")
     
     def disconnect_from_board(self):
-        """Disconnect from the board."""
+        """Disconnect from the board (also cancels any in-progress reconnect)."""
         try:
+            # Stop reconnect thread if active
+            if self.reconnect_thread and self.reconnect_thread.isRunning():
+                self.reconnect_thread.stop()
+                self.reconnect_thread.wait()
+                self.reconnect_thread = None
+
             # Stop receiver thread
             if self.receiver_thread and self.receiver_thread.isRunning():
                 self.receiver_thread.stop()
@@ -942,56 +1067,93 @@ class MainWindow(QMainWindow):
             self.refresh_ports_button.setEnabled(True)
             self.connection_status_label.setText("Not connected")
             self.connection_status_label.setStyleSheet("color: #cc0000; font-weight: bold; padding: 5px;")
-            self.upload_button.setText("UPLOAD")
             
         except Exception as e:
             self.log(f"ERROR: Error while disconnecting: {str(e)}")
     
     def on_connection_lost(self):
-        """Handle connection loss."""
-        self.log("ERROR: Connection to board lost!")
-        # Reset UI to disconnected state
-        self.connect_button.setEnabled(True)
-        self.disconnect_button.setEnabled(False)
-        self.com_port_combobox.setEnabled(True)
-        self.refresh_ports_button.setEnabled(True)
-        self.connection_status_label.setText("Connection lost")
-        self.connection_status_label.setStyleSheet("color: #cc0000; font-weight: bold; padding: 5px;")
-        
-    def send_text_command(self):
-        """Send text command to board as ECSS command packet and wait for ACK/NACK."""
+        """Handle connection loss - start automatic reconnect loop."""
+        self.log("Connection to board lost! Attempting to reconnect...")
+
+        # Clean up dead receiver and port
+        if self.receiver_thread:
+            self.receiver_thread.stop()
+            self.receiver_thread = None
+        if self.serial_port:
+            try:
+                self.serial_port.close()
+            except Exception:
+                pass
+            self.serial_port = None
+
+        port = self.com_port_combobox.currentText().strip()
+        self.connection_status_label.setText(f"Reconnecting to {port}...")
+        self.connection_status_label.setStyleSheet("color: #cc6600; font-weight: bold; padding: 5px;")
+        # Keep Disconnect available so the user can cancel
+        self.connect_button.setEnabled(False)
+        self.disconnect_button.setEnabled(True)
+
+        self.reconnect_thread = ReconnectThread(port)
+        self.reconnect_thread.reconnected.connect(self.on_reconnected)
+        self.reconnect_thread.start()
+
+    def on_reconnected(self, ser):
+        """Called by ReconnectThread when the port is successfully reopened."""
+        self.serial_port = ser
+        port = ser.port
+
+        self.receiver_thread = PacketReceiverThread(self.serial_port)
+        self.receiver_thread.debug_message.connect(self.log_uart_data)
+        self.receiver_thread.connection_lost.connect(self.on_connection_lost)
+        self.receiver_thread.start()
+
+        self.log(f"✓ Reconnected to {port}")
+        self.connection_status_label.setText(f"Connected to {port}")
+        self.connection_status_label.setStyleSheet("color: #00aa00; font-weight: bold; padding: 5px;")
+        self.connect_button.setEnabled(False)
+        self.disconnect_button.setEnabled(True)
+
+    def _send_command(self, char):
+        """Send a single-character command to the board as an ECSS command packet."""
         if not self.serial_port or not self.serial_port.is_open:
             self.log("ERROR: Not connected to board!")
             return
-
         if not self.receiver_thread:
             self.log("ERROR: Receiver thread not running!")
             return
 
-        text = self.text_input.text().strip()
-        if not text:
-            return
-
         try:
-            self.log(f"Sending command: {text}")
-            self.text_input.clear()
-            self.send_button.setEnabled(False)
+            labels = {'1': 'Boot', '2': 'Update', '3': 'Swap', '4': 'Check Versions', '5': 'Reset', '6': 'Skip Timeout'}
+            self.log(f"Sending command: '{char}' ({labels.get(char, char)})")
+            for btn in self._cmd_buttons:
+                btn.setEnabled(False)
 
-            self.command_thread = CommandSenderThread(self.serial_port, self.receiver_thread, text)
+            self.command_thread = CommandSenderThread(self.serial_port, self.receiver_thread, char)
             self.command_thread.finished.connect(self.on_command_finished)
             self.command_thread.start()
 
         except Exception as e:
             self.log(f"Error sending command: {str(e)}")
-            self.send_button.setEnabled(True)
+            for btn in self._cmd_buttons:
+                btn.setEnabled(True)
+
+    def _send_asw_command(self):
+        """Send the character typed in the ASW command input."""
+        text = self.asw_cmd_input.text().strip()
+        if not text:
+            self.log("ERROR: Enter a command character first (e.g. '1' or '2').")
+            return
+        self._send_command(text[0])
 
     def on_command_finished(self, success, message):
         """Handle command send completion."""
         if success:
-            self.log(f"\u2713 Command acknowledged: {message}")
+            # self.log(f"\u2713 Command acknowledged: {message}")
+            pass
         else:
             self.log(f"\u2717 Command failed: {message}")
-        self.send_button.setEnabled(True)
+        for btn in self._cmd_buttons:
+            btn.setEnabled(True)
     
     def cancel_upload(self):
         """Cancel the ongoing upload."""
@@ -1031,7 +1193,6 @@ class MainWindow(QMainWindow):
         """Reset UI elements to default state."""
         self.select_button.setEnabled(True)
         self.process_button.setEnabled(bool(self.selected_file))
-        self.upload_button.setEnabled(bool(self.patched_file))
         # Allow changing version whenever a file is selected (to re-process with different version)
         self.version_spinbox.setEnabled(bool(self.selected_file))
         self.cancel_button.setEnabled(False)
@@ -1058,10 +1219,39 @@ class MainWindow(QMainWindow):
         scrollbar = self.log_text.verticalScrollBar()
         scrollbar.setValue(scrollbar.maximum())
     
+    # BSW BootloaderStatus enum — mirrors NucleoF439-BSP/Inc/flash.h
+    _BSW_STATUS_DESCRIPTIONS = {
+        0xAA: "NOMINAL        - boot the application image",
+        0xBB: "STANDBY        - stay in standby, await commands",
+        0xCC: "SWAP           - automatic image swap required",
+        0xDD: "BOOT_ATTEMPTED - boot was attempted; app must clear this on successful start",
+        0x00: "UNKNOWN        - unrecognised command",
+        0x11: "UPDATE         - receive and store a new image",
+        0x22: "ROLLBACK       - evaluate and perform rollback",
+        0x33: "RESET          - system reset",
+        0x44: "CHECK_VERSIONS - print image headers",
+    }
+
+    @staticmethod
+    def _annotate_status_codes(text: str) -> str:
+        """Replace every '(current status: 0xXX)' with an annotated version."""
+        def _replace(match):
+            code = int(match.group(1), 16)
+            desc = MainWindow._BSW_STATUS_DESCRIPTIONS.get(
+                code, f"unknown status 0x{code:02X}"
+            )
+            return f"(current status: 0x{code:02X} - {desc})"
+
+        return re.sub(
+            r'\(current status: 0x([0-9A-Fa-f]{2})\)',
+            _replace,
+            text,
+        )
+
     def log_uart_data(self, data):
         """Add UART data from board to the log with special formatting."""
-        # Format UART data with a prefix to distinguish it
-        self.log_text.append(f"<span style='color: #0066cc;'><b>[BOARD]</b> {data}</span>")
+        annotated = self._annotate_status_codes(data)
+        self.log_text.append(f"<span style='color: #0066cc;'><b>[BOARD]</b> {annotated}</span>")
         # Auto-scroll to bottom
         scrollbar = self.log_text.verticalScrollBar()
         scrollbar.setValue(scrollbar.maximum())

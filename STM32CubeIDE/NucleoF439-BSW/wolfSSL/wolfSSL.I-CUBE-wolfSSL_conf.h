@@ -534,59 +534,64 @@
     #define NO_RSA
 #endif
 
-/* ECC */
-#undef HAVE_ECC
-#if defined(WOLF_CONF_ECC) && WOLF_CONF_ECC == 1
-    #define HAVE_ECC
+ /* ECC */
+ #undef HAVE_ECC
+ #if defined(WOLF_CONF_ECC) && WOLF_CONF_ECC == 1
+     #define HAVE_ECC
+     #define WOLFSSL_HAVE_SP_ECC
 
-    /* Manually define enabled curves */
-    #define ECC_USER_CURVES
+     /* Manually define enabled curves */
+     #define ECC_USER_CURVES
 
-    //#define HAVE_ECC192
-    //#define HAVE_ECC224
-    #undef NO_ECC256
-    //#define HAVE_ECC384
-    //#define HAVE_ECC521
+     //#define HAVE_ECC192
+     //#define HAVE_ECC224
+     #undef NO_ECC256
+     //#define HAVE_ECC384
+     //#define HAVE_ECC521
 
-    /* Fixed point cache (speeds repeated operations against same private key) */
-    #undef  FP_ECC
-    //#define FP_ECC
-    #ifdef FP_ECC
-        /* Bits / Entries */
-        #undef  FP_ENTRIES
-        #define FP_ENTRIES  2
-        #undef  FP_LUT
-        #define FP_LUT      4
-    #endif
+     #define NO_ECC_SIGN
+     #define NO_ECC_DHE
+     #define NO_ECC_KEY_EXPORT
 
-    /* Optional ECC calculation method */
-    /* Note: doubles heap usage, but slightly faster */
-    #undef  ECC_SHAMIR
-    #define ECC_SHAMIR
+     /* Fixed point cache (speeds repeated operations against same private key) */
+     #undef  FP_ECC
+     //#define FP_ECC
+     #ifdef FP_ECC
+         /* Bits / Entries */
+         #undef  FP_ENTRIES
+         #define FP_ENTRIES  2
+         #undef  FP_LUT
+         #define FP_LUT      4
+     #endif
 
-    /* Reduces heap usage, but slower */
-    #define ECC_TIMING_RESISTANT
+     /* Optional ECC calculation method */
+     /* Note: doubles heap usage, but slightly faster */
+     #undef  ECC_SHAMIR
+     #define ECC_SHAMIR
 
-    /* Compressed ECC key support */
-    //#define HAVE_COMP_KEY
+     /* Reduces heap usage, but slower */
+     #define ECC_TIMING_RESISTANT
 
-    #ifdef USE_FAST_MATH
-        #if defined(NO_RSA) && defined(NO_DH)
-            /* Custom fastmath size if not using RSA/DH */
-            /* MAX = ROUND32(ECC BITS) * 2 */
-            #define FP_MAX_BITS     (256 * 2)
-        #else
-            #define ALT_ECC_SIZE
-        #endif
+     /* Compressed ECC key support */
+     //#define HAVE_COMP_KEY
 
-        /* Enable TFM optimizations for ECC */
-        //#define TFM_ECC192
-        //#define TFM_ECC224
-        //#define TFM_ECC256
-        //#define TFM_ECC384
-        //#define TFM_ECC521
-    #endif
-#endif
+     #ifdef USE_FAST_MATH
+         #if defined(NO_RSA) && defined(NO_DH)
+             /* Custom fastmath size if not using RSA/DH */
+             /* MAX = ROUND32(ECC BITS) * 2 */
+             #define FP_MAX_BITS     (256 * 2)
+         #else
+             #define ALT_ECC_SIZE
+         #endif
+
+         /* Enable TFM optimizations for ECC */
+         //#define TFM_ECC192
+         //#define TFM_ECC224
+         //#define TFM_ECC256
+         //#define TFM_ECC384
+         //#define TFM_ECC521
+     #endif
+ #endif
 
 /* DH */
 #undef NO_DH
@@ -835,13 +840,34 @@
 #define NO_MD4
 #define NO_DES3
 
-#ifndef WOLFSSL_SHAKE128
-#define WOLFSSL_NO_SHAKE128
-#endif
+#if defined(HYBRID) || defined(POST_QUANTUM)
+	/* SHA-3 / SHAKE primitives required internally by Dilithium */
+	#undef  WOLFSSL_SHA3
+	#define WOLFSSL_SHA3
 
-#ifndef WOLFSSL_SHAKE256
-#define WOLFSSL_NO_SHAKE256
-#endif
+	#undef  WOLFSSL_NO_SHAKE128
+	#undef  WOLFSSL_SHAKE128
+	#define WOLFSSL_SHAKE128
+
+	#undef  WOLFSSL_NO_SHAKE256
+	#undef  WOLFSSL_SHAKE256
+	#define WOLFSSL_SHAKE256
+
+	/* wolfCrypt Dilithium / ML-DSA implementation */
+	#define HAVE_DILITHIUM
+	#define WOLFSSL_WC_DILITHIUM
+
+	#define WOLFSSL_DILITHIUM_ASSIGN_KEY
+
+	/* Public-key import + verification only */
+	// #define WOLFSSL_DILITHIUM_PUBLIC_KEY
+	// #define WOLFSSL_DILITHIUM_NO_SIGN
+	// #define WOLFSSL_DILITHIUM_NO_MAKE_KEY
+
+	#define WOLFSSL_NO_ML_DSA_87
+	#define WOLFSSL_DILITHIUM_VERIFY_ONLY
+	#define WOLFSSL_DILITHIUM_VERIFY_SMALL_MEM
+#endif /* ALGO_ML_DSA */
 
 /* In-lining of misc.c functions */
 /* If defined, must include wolfcrypt/src/misc.c in build */
@@ -855,44 +881,6 @@
 #ifndef HAL_RTC_MODULE_ENABLED
     #define NO_ASN_TIME
 #endif
-
-/* ------------------------------------------------------------------------- */
-/* Post-Quantum Digital Signatures — ML-DSA (Dilithium)                      */
-/* ------------------------------------------------------------------------- */
-/* Enable by adding  -DPOST_QUANTUM  to the project C compiler flags.        */
-/* This activates SHA-3/SHAKE (required internally by ML-DSA) and the        */
-/* wolfSSL WC Dilithium implementation.                                       */
-/*                                                                            */
-/* Only public-key import + verification are compiled in (signing code is     */
-/* excluded to save flash on the embedded target).                            */
-/*                                                                            */
-/* Supported parameter sets (select via ML_DSA_LEVEL in crypto.h):           */
-/*   ML_DSA_LEVEL 2  →  ML-DSA-44  (sig 2420 B, pk 1312 B, NIST cat. 2)     */
-/*   ML_DSA_LEVEL 3  →  ML-DSA-65  (sig 3309 B, pk 1952 B, NIST cat. 3)     */
-/* ------------------------------------------------------------------------- */
-#ifdef POST_QUANTUM
-    /* SHA-3 / SHAKE primitives required by Dilithium */
-    #undef  WOLFSSL_SHA3
-    #define WOLFSSL_SHA3
-
-    #undef  WOLFSSL_NO_SHAKE128
-    #undef  WOLFSSL_SHAKE128
-    #define WOLFSSL_SHAKE128
-
-    #undef  WOLFSSL_NO_SHAKE256
-    #undef  WOLFSSL_SHAKE256
-    #define WOLFSSL_SHAKE256
-
-    /* Enable the wolfCrypt Dilithium / ML-DSA implementation */
-    #define HAVE_DILITHIUM
-    #define WOLFSSL_WC_DILITHIUM
-
-    /* Expose public-key import (wc_dilithium_import_public) and verify */
-    #define WOLFSSL_DILITHIUM_PUBLIC_KEY
-
-    /* Exclude signing code — firmware only needs verification */
-    #define WOLFSSL_DILITHIUM_NO_SIGN
-#endif /* POST_QUANTUM */
 
 #ifdef __cplusplus
 }

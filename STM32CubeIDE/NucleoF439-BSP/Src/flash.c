@@ -57,11 +57,6 @@ int16_t writeFlashBlock(uint32_t address, uint32_t* buffer, uint32_t bufferSize)
 
 int16_t writeFlashSector(uint32_t sector, uint32_t address, uint32_t* buffer, uint32_t bufferSize)
 {
-	if (HAL_FLASH_Unlock() != HAL_OK)
-	{
-		return 1;
-	}
-
 	if (eraseFlashSector(sector) != 0)
 	{
 		return 1;
@@ -77,10 +72,30 @@ int16_t writeFlashSector(uint32_t sector, uint32_t address, uint32_t* buffer, ui
 		}
 	}
 
+	return 0;
+}
+
+BootloaderStatus getBootloaderStatus(void) {
+	return (BootloaderStatus)*((uint32_t*)COMM_FLASH_ADDRESS);
+}
+
+int16_t setBootloaderStatus(BootloaderStatus newStatus)
+{
+	if (HAL_FLASH_Unlock() != HAL_OK)
+	{
+		return 1;
+	}
+	if (eraseFlashSector(COMM_FLASH_SECTOR) != 0)
+	{
+		return 1;
+	}
+	if (writeFlashWord(COMM_FLASH_ADDRESS, newStatus) != 0)
+	{
+		return 1;
+	}
 	if (HAL_FLASH_Lock() != HAL_OK)
 	{
 		return 1;
 	}
-
 	return 0;
 }

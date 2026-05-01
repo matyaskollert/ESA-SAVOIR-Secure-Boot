@@ -80,6 +80,20 @@ LoopCopyDataInit:
   cmp r4, r1
   bcc CopyDataInit
   
+/* Zero fill CCMRAM. */
+ldr r2, =_sheap
+ldr r4, =_estack
+movs r3, #0
+b LoopFillZeroCCM
+
+FillZeroCCM:
+  str  r3, [r2]
+  adds r2, r2, #4
+
+LoopFillZeroCCM:
+  cmp r2, r4
+  bcc FillZeroCCM
+
 /* Zero fill the bss segment. */
   ldr r2, =_sbss
   ldr r4, =_ebss

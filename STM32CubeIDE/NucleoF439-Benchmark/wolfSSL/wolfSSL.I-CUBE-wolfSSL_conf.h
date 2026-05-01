@@ -413,7 +413,7 @@
         #define WOLFSSL_HAVE_SP_RSA
         //#define WOLFSSL_SP_NO_2048
         //#define WOLFSSL_SP_NO_3072
-        //#define WOLFSSL_SP_4096
+        #define WOLFSSL_SP_4096
     #endif
     #if defined(WOLF_CONF_DH) && WOLF_CONF_DH == 1
         #define WOLFSSL_HAVE_SP_DH
@@ -528,6 +528,9 @@
 
     /* RSA PSS Support — always enable for RSA-PSS signature benchmark */
     #define WC_RSA_PSS
+	#define WOLFSSL_RSA_PUBLIC_ONLY
+	#define WOLFSSL_RSA_VERIFY_INLINE
+	#define NO_CHECK_PRIVATE_KEY
 #else
     #define NO_RSA
 #endif
@@ -536,6 +539,7 @@
 #undef HAVE_ECC
 #if defined(WOLF_CONF_ECC) && WOLF_CONF_ECC == 1
     #define HAVE_ECC
+    #define WOLFSSL_HAVE_SP_ECC
 
     /* Manually define enabled curves */
     #define ECC_USER_CURVES
@@ -545,6 +549,10 @@
     #undef NO_ECC256
     //#define HAVE_ECC384
     //#define HAVE_ECC521
+
+    #define NO_ECC_SIGN
+    #define NO_ECC_DHE
+    #define NO_ECC_KEY_EXPORT
 
     /* Fixed point cache (speeds repeated operations against same private key) */
     #undef  FP_ECC
@@ -773,7 +781,7 @@
     #define DEBUG_WOLFSSL
 
     /* Use this to measure / print heap usage */
-    #if 0
+    #if 1
         #define USE_WOLFSSL_MEMORY
         #define WOLFSSL_TRACK_MEMORY
         #define WOLFSSL_DEBUG_MEMORY
@@ -874,32 +882,39 @@
 
 
 /* ------------------------------------------------------------------------- */
-/* ML-DSA / Dilithium  (ALGO_ML_DSA_44 = 3, ALGO_ML_DSA_65 = 4,             */
-/*                       ALGO_ML_DSA_87 = 5)                                 */
+/* ML-DSA / Dilithium  (ALGO_ML_DSA_44 = 3, ALGO_ML_DSA_65 = 4)              */
 /* Requires: HAVE_DILITHIUM, SHA-3, SHAKE-128/256.                           */
 /* Signing code is excluded to save flash — verify-only build.               */
 /* ------------------------------------------------------------------------- */
 
-/* SHA-3 / SHAKE primitives required internally by Dilithium */
-#undef  WOLFSSL_SHA3
-#define WOLFSSL_SHA3
+#if defined(BENCHMARK_ALGO) && (BENCHMARK_ALGO == ALGO_ML_DSA_44 || BENCHMARK_ALGO == ALGO_ML_DSA_65)
+	/* SHA-3 / SHAKE primitives required internally by Dilithium */
+	#undef  WOLFSSL_SHA3
+	#define WOLFSSL_SHA3
 
-#undef  WOLFSSL_NO_SHAKE128
-#undef  WOLFSSL_SHAKE128
-#define WOLFSSL_SHAKE128
+	#undef  WOLFSSL_NO_SHAKE128
+	#undef  WOLFSSL_SHAKE128
+	#define WOLFSSL_SHAKE128
 
-#undef  WOLFSSL_NO_SHAKE256
-#undef  WOLFSSL_SHAKE256
-#define WOLFSSL_SHAKE256
+	#undef  WOLFSSL_NO_SHAKE256
+	#undef  WOLFSSL_SHAKE256
+	#define WOLFSSL_SHAKE256
 
-/* wolfCrypt Dilithium / ML-DSA implementation */
-#define HAVE_DILITHIUM
-#define WOLFSSL_WC_DILITHIUM
+	/* wolfCrypt Dilithium / ML-DSA implementation */
+	#define HAVE_DILITHIUM
+	#define WOLFSSL_WC_DILITHIUM
 
-/* Public-key import + verification only */
-#define WOLFSSL_DILITHIUM_PUBLIC_KEY
-#define WOLFSSL_DILITHIUM_NO_SIGN
-#define WOLFSSL_DILITHIUM_NO_MAKE_KEY
+	#define WOLFSSL_DILITHIUM_ASSIGN_KEY
+
+	/* Public-key import + verification only */
+	// #define WOLFSSL_DILITHIUM_PUBLIC_KEY
+	// #define WOLFSSL_DILITHIUM_NO_SIGN
+	// #define WOLFSSL_DILITHIUM_NO_MAKE_KEY
+
+	#define WOLFSSL_NO_ML_DSA_87
+	#define WOLFSSL_DILITHIUM_VERIFY_ONLY
+	#define WOLFSSL_DILITHIUM_VERIFY_SMALL_MEM
+#endif /* ALGO_ML_DSA */
 
 /* ------------------------------------------------------------------------- */
 /* LMS  (ALGO_LMS = 7)                                                       */
@@ -907,12 +922,19 @@
 /* Requires: WOLFSSL_HAVE_LMS, SHA-256 (already enabled).                   */
 /* ------------------------------------------------------------------------- */
 
-#undef  WOLFSSL_EXPERIMENTAL_SETTINGS
-#define WOLFSSL_EXPERIMENTAL_SETTINGS
+#if defined(BENCHMARK_ALGO) && (BENCHMARK_ALGO == ALGO_LMS)
+    #undef  WOLFSSL_EXPERIMENTAL_SETTINGS
+    #define WOLFSSL_EXPERIMENTAL_SETTINGS
 
-#define WOLFSSL_HAVE_LMS
-#define WOLFSSL_LMS_VERIFY_ONLY
-#define WOLFSSL_WC_LMS
+    #define WOLFSSL_HAVE_LMS
+    #define WOLFSSL_LMS_VERIFY_ONLY
+    #define WOLFSSL_WC_LMS
+    //#define NO_STM32_HASH
+    #define WC_LMS_FULL_HASH
+#endif /* ALGO_LMS */
+
+#define WOLFSSL_STATIC_MEMORY
+// #define NO_STM32_HASH
 
 #ifdef __cplusplus
 }

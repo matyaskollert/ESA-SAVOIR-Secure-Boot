@@ -2,8 +2,8 @@
  * sig_rsa.c — RSA-PSS + SHA-256, host benchmark tool.
  *
  * Supports two key sizes selected at runtime via sig_rsa_get():
- *   RSA_2048  sig=256 B  pub=~294 B (SubjectPublicKeyInfo DER)
  *   RSA_3072  sig=384 B  pub=~423 B (SubjectPublicKeyInfo DER)
+ *   RSA_4096  sig=512 B  pub=~550 B (SubjectPublicKeyInfo DER)
  *
  * Key storage: DER files.
  *   Private key : PKCS#1 DER  (wc_RsaKeyToDer / wc_RsaPrivateKeyDecode)
@@ -36,8 +36,8 @@ typedef struct {
 } rsa_info_t;
 
 static const rsa_info_t s_info[2] = {
-    { 2048, 256, "RSA-2048-PSS" },
     { 3072, 384, "RSA-3072-PSS" },
+    { 4096, 512, "RSA-4096-PSS" },
 };
 
 typedef struct {
@@ -48,7 +48,7 @@ typedef struct {
     const rsa_info_t* info;
 } rsa_ctx_t;
 
-static sig_ctx_t* rsa_alloc_2048(void)
+static sig_ctx_t* rsa_alloc_3072(void)
 {
     rsa_ctx_t* context = (rsa_ctx_t*)calloc(1, sizeof(rsa_ctx_t));
     if (context)
@@ -56,7 +56,7 @@ static sig_ctx_t* rsa_alloc_2048(void)
     return (sig_ctx_t*)context;
 }
 
-static sig_ctx_t* rsa_alloc_3072(void)
+static sig_ctx_t* rsa_alloc_4096(void)
 {
     rsa_ctx_t* context = (rsa_ctx_t*)calloc(1, sizeof(rsa_ctx_t));
     if (context)
@@ -109,10 +109,10 @@ static int rsa_generate_keys(sig_ctx_t* ctx,
     }
 
     // Export private key as PKCS#1 DER
-    uint8_t* priv_der = (uint8_t*)malloc(4096);
+    uint8_t* priv_der = (uint8_t*)malloc(5000);
     if (!priv_der)
         return -1;
-    int priv_len = wc_RsaKeyToDer(&context->key, priv_der, 4096);
+    int priv_len = wc_RsaKeyToDer(&context->key, priv_der, 5000);
     if (priv_len <= 0)
     {
         free(priv_der);
@@ -121,13 +121,13 @@ static int rsa_generate_keys(sig_ctx_t* ctx,
     }
 
     // Export public key as SubjectPublicKeyInfo DER
-    uint8_t* pub_der = (uint8_t*)malloc(600);
+    uint8_t* pub_der = (uint8_t*)malloc(700);
     if (!pub_der)
     {
         free(priv_der);
         return -1;
     }
-    int pub_len = wc_RsaKeyToPublicDer(&context->key, pub_der, 600);
+    int pub_len = wc_RsaKeyToPublicDer(&context->key, pub_der, 700);
     if (pub_len <= 0)
     {
         free(priv_der);
@@ -261,7 +261,7 @@ static int rsa_verify(sig_ctx_t* ctx,
     wc_Sha256Final(&sha, digest);
     wc_Sha256Free(&sha);
 
-    uint8_t dec_buf[384]; // max size for RSA-3072
+    uint8_t dec_buf[512]; // max size for RSA-4096
 
     int result_code = wc_RsaPSS_Verify_ex((byte*)sig, (word32)sig_len,
                                           dec_buf, sizeof(dec_buf),
@@ -286,18 +286,6 @@ static int rsa_verify(sig_ctx_t* ctx,
     return 1;
 }
 
-static const sig_algo_t s_algo_2048 = {
-    .name          = "RSA-2048-PSS",
-    .key_extension = ".der",
-    .sig_len       = 256,
-    .alloc         = rsa_alloc_2048,
-    .free_ctx      = rsa_free,
-    .generate_keys = rsa_generate_keys,
-    .load_keys     = rsa_load_keys,
-    .sign          = rsa_sign,
-    .verify        = rsa_verify,
-};
-
 static const sig_algo_t s_algo_3072 = {
     .name          = "RSA-3072-PSS",
     .key_extension = ".der",
@@ -310,12 +298,24 @@ static const sig_algo_t s_algo_3072 = {
     .verify        = rsa_verify,
 };
 
+static const sig_algo_t s_algo_4096 = {
+    .name          = "RSA-4096-PSS",
+    .key_extension = ".der",
+    .sig_len       = 512,
+    .alloc         = rsa_alloc_4096,
+    .free_ctx      = rsa_free,
+    .generate_keys = rsa_generate_keys,
+    .load_keys     = rsa_load_keys,
+    .sign          = rsa_sign,
+    .verify        = rsa_verify,
+};
+
 const sig_algo_t* sig_rsa_get(rsa_bits_t bits)
 {
     switch (bits)
     {
-        case RSA_2048: return &s_algo_2048;
         case RSA_3072: return &s_algo_3072;
+        case RSA_4096: return &s_algo_4096;
         default:       return NULL;
     }
 }

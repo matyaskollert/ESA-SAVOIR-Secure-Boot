@@ -34,7 +34,7 @@
 
 #ifdef HASH_DIGEST
     /* The HASH_DIGEST register indicates SHA224/SHA256 support */
-    // #define STM32_HASH_SHA2
+    #define STM32_HASH_SHA2
     #if defined(WOLFSSL_STM32H5) || defined(WOLFSSL_STM32MP13)
         #define HASH_CR_SIZE    103
         #define HASH_MAX_DIGEST 64 /* Up to SHA512 */

@@ -2,8 +2,8 @@
  * sig_rsa.h — RSA-PSS + SHA-256 signature module (host benchmark tool).
  *
  * Supports two key sizes selected at runtime:
- *   RSA_2048  sig=256 B  pub=~294 B (SubjectPublicKeyInfo DER)
  *   RSA_3072  sig=384 B  pub=~423 B (SubjectPublicKeyInfo DER)
+ *   RSA_4096  sig=512 B  pub=~550 B (SubjectPublicKeyInfo DER)
  *
  * Keys are stored as DER files:
  *   private key : PKCS#1 DER
@@ -22,8 +22,8 @@ extern "C" {
 #endif
 
 typedef enum {
-    RSA_2048 = 2048,
     RSA_3072 = 3072,
+    RSA_4096 = 4096,
 } rsa_bits_t;
 
 /*
@@ -32,6 +32,7 @@ typedef enum {
  * Returns NULL for an unsupported key size.
  */
 const sig_algo_t* sig_rsa_get(rsa_bits_t bits);
+
 
 #ifdef __cplusplus
 }

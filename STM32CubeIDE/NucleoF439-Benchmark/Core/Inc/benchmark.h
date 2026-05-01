@@ -14,8 +14,8 @@
  *
  * ── ALGORITHM TABLE ──────────────────────────────────────────────────────
  *  ALGO_ECDSA       ECDSA-P256 + SHA-256          sig: ~72 B   pub: 91 B
- *  ALGO_RSA_2048    RSA-2048-PSS + SHA-256         sig: 256 B   pub: ~294 B
  *  ALGO_RSA_3072    RSA-3072-PSS + SHA-256         sig: 384 B   pub: ~423 B
+ *  ALGO_RSA_4096    RSA-4096-PSS + SHA-256         sig: 512 B   pub: ~550 B
  *  ALGO_ML_DSA_44   ML-DSA-44  (Dilithium L2)     sig: 2420 B  pub: 1312 B
  *  ALGO_ML_DSA_65   ML-DSA-65  (Dilithium L3)     sig: 3309 B  pub: 1952 B
  *  ALGO_LMS         LMS-SHA256-M32-H5/OTS-N32-W8  sig: ~1292 B pub:   60 B
@@ -36,15 +36,15 @@
 #define INC_BENCHMARK_H_
 
 #define ALGO_ECDSA      1
-#define ALGO_RSA_2048   2
-#define ALGO_RSA_3072   3
+#define ALGO_RSA_3072   2
+#define ALGO_RSA_4096   3
 #define ALGO_ML_DSA_44  4
 #define ALGO_ML_DSA_65  5
 #define ALGO_LMS        6
 
-// Can also be overridden via a -D compiler flag without editing this file.
+// SHOULD be overridden via a -D compiler flag without editing this file.
 #ifndef BENCHMARK_ALGO
-#define BENCHMARK_ALGO  ALGO_RSA_3072
+#define BENCHMARK_ALGO  ALGO_ECDSA
 #endif
 
 // Compile-time guard against invalid values.

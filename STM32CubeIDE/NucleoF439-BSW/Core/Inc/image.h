@@ -3,8 +3,9 @@
 
 #include <stdint.h>
 
-typedef enum {BOOT, UPDATE, SWAP} ImageSlot;
+typedef enum {BOOT, UPDATE, SWAP, RAM} ImageSlot;
 
+#define IMAGE_OFFSET 		0x1400
 #define IMAGE_MAGIC 		0xABCD
 #define BOOT_RAM_ADDRESS 	0x20008000
 

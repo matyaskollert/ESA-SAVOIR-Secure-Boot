@@ -19,8 +19,18 @@ int16_t disableSectorWriteProtection(uint32_t sectorMask)
 
 	FLASH_OBProgramInitTypeDef obInit;
 
-	HAL_FLASH_Unlock();
-	HAL_FLASH_OB_Unlock();
+	if (HAL_FLASH_Unlock() != HAL_OK)
+	{
+		printf("FLASH unlock failed\r\n");
+		return -1;
+	}
+	if (HAL_FLASH_OB_Unlock() != HAL_OK)
+	{
+		printf("OB unlock failed\r\n");
+		if (HAL_FLASH_Lock() != HAL_OK)
+			printf("FLASH lock failed\r\n");
+		return -1;
+	}
 
 	HAL_FLASHEx_OBGetConfig(&obInit);
 
@@ -34,14 +44,26 @@ int16_t disableSectorWriteProtection(uint32_t sectorMask)
 	if (HAL_FLASHEx_OBProgram(&obInit) != HAL_OK)
 	{
 		printf("WRP programming failed\r\n");
-		HAL_FLASH_OB_Lock();
-		HAL_FLASH_Lock();
+		if (HAL_FLASH_OB_Lock() != HAL_OK)
+			printf("OB lock failed\r\n");
+		if (HAL_FLASH_Lock() != HAL_OK)
+			printf("FLASH lock failed\r\n");
 		return -1;
 	}
 
-	HAL_FLASH_OB_Launch();
-	HAL_FLASH_OB_Lock();
-	HAL_FLASH_Lock();
+	if (HAL_FLASH_OB_Launch() != HAL_OK)
+	{
+		printf("OB launch failed\r\n");
+		if (HAL_FLASH_OB_Lock() != HAL_OK)
+			printf("OB lock failed\r\n");
+		if (HAL_FLASH_Lock() != HAL_OK)
+			printf("FLASH lock failed\r\n");
+		return -1;
+	}
+	if (HAL_FLASH_OB_Lock() != HAL_OK)
+		printf("OB lock failed\r\n");
+	if (HAL_FLASH_Lock() != HAL_OK)
+		printf("FLASH lock failed\r\n");
 	printf("WRP programmed (will take effect after reset)\r\n");
 	NVIC_SystemReset();
 }
@@ -56,8 +78,18 @@ int16_t enableSectorWriteProtection(uint32_t sectorMask)
 
 	FLASH_OBProgramInitTypeDef obInit;
 
-	HAL_FLASH_Unlock();
-	HAL_FLASH_OB_Unlock();
+	if (HAL_FLASH_Unlock() != HAL_OK)
+	{
+		printf("FLASH unlock failed\r\n");
+		return -1;
+	}
+	if (HAL_FLASH_OB_Unlock() != HAL_OK)
+	{
+		printf("OB unlock failed\r\n");
+		if (HAL_FLASH_Lock() != HAL_OK)
+			printf("FLASH lock failed\r\n");
+		return -1;
+	}
 
 	HAL_FLASHEx_OBGetConfig(&obInit);
 
@@ -71,13 +103,25 @@ int16_t enableSectorWriteProtection(uint32_t sectorMask)
 	if (HAL_FLASHEx_OBProgram(&obInit) != HAL_OK)
 	{
 		printf("WRP programming failed\r\n");
-		HAL_FLASH_OB_Lock();
-		HAL_FLASH_Lock();
+		if (HAL_FLASH_OB_Lock() != HAL_OK)
+			printf("OB lock failed\r\n");
+		if (HAL_FLASH_Lock() != HAL_OK)
+			printf("FLASH lock failed\r\n");
 		return -1;
 	}
-	HAL_FLASH_OB_Launch();
-	HAL_FLASH_OB_Lock();
-	HAL_FLASH_Lock();
+	if (HAL_FLASH_OB_Launch() != HAL_OK)
+	{
+		printf("OB launch failed\r\n");
+		if (HAL_FLASH_OB_Lock() != HAL_OK)
+			printf("OB lock failed\r\n");
+		if (HAL_FLASH_Lock() != HAL_OK)
+			printf("FLASH lock failed\r\n");
+		return -1;
+	}
+	if (HAL_FLASH_OB_Lock() != HAL_OK)
+		printf("OB lock failed\r\n");
+	if (HAL_FLASH_Lock() != HAL_OK)
+		printf("FLASH lock failed\r\n");
 	printf("WRP programmed (will take effect after reset)\r\n");
 	NVIC_SystemReset();
 }
@@ -89,10 +133,18 @@ int16_t checkSectorWriteProtection(uint32_t sectorMask)
 
 	if ((obInit.WRPSector & sectorMask) == 0)
 	{
-		printf("Sector %lu is write protected\r\n", sectorMask);
+		// printf("Sector %lu is write protected\r\n", sectorMask);
 		return 0;
 	}
 
-	printf("Sector %lu is NOT write protected\r\n", sectorMask);
+	// printf("Sector %lu is NOT write protected\r\n", sectorMask);
 	return 1;
+}
+
+int16_t checkAllSectorsUnprotected(uint32_t sectorMask)
+{
+	FLASH_OBProgramInitTypeDef obInit;
+	HAL_FLASHEx_OBGetConfig(&obInit);
+
+	return ((obInit.WRPSector & sectorMask) == sectorMask) ? 1 : 0;
 }

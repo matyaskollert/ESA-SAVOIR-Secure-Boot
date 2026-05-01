@@ -24,6 +24,7 @@
 
 #include <stdio.h>
 #include "input.h"
+#include "flash.h"
 
 /* USER CODE END Includes */
 
@@ -34,7 +35,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-
+#define CMD_POLL_TIMEOUT_MS        50U   /* polling interval for incoming commands */
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -46,7 +47,7 @@
 UART_HandleTypeDef huart3;
 
 /* USER CODE BEGIN PV */
-
+static uint8_t cmdDataBuf[1];
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -109,6 +110,8 @@ int main(void)
   /* USER CODE BEGIN 2 */
 
   HAL_Delay(200);
+  printf("App STARTED\r\n");
+  printf("Commands: 1 = OK (set NOMINAL + restart) | 2 = FAULT (restart without clearing status)\r\n");
 
   /* USER CODE END 2 */
 
@@ -116,11 +119,51 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-	  printf("App STARTED\r\n");
-
-	  //CDC_Transmit_FS(buffer, sizeof(buffer));
+	  /* Blink LED */
 	  HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
-	  HAL_Delay(1000);
+
+	  /* Poll for an ECSS command packet (short timeout so blink timing stays ~1 s) */
+	  ECSSPacketHeader hdr;
+	  uint32_t blinkStart = HAL_GetTick();
+	  while ((HAL_GetTick() - blinkStart) < 1000U)
+	  {
+		  int8_t rc = receivePacketHeaderWithTimeout(&huart3, &hdr, CMD_POLL_TIMEOUT_MS);
+		  if (rc == 0)
+		  {
+			  /* Receive payload (1 byte expected) */
+			  if (hdr.data_length > 0 && hdr.data_length <= sizeof(cmdDataBuf))
+			  {
+				  receivePacketData(&huart3, cmdDataBuf, hdr.data_length);
+			  }
+
+			  char cmd = (char)cmdDataBuf[0];
+
+			  if (cmd == '1')
+			  {
+				  /* Simulate healthy operation: clear BOOT_ATTEMPTED → set NOMINAL */
+				  printf("CMD 1: OK - setting status NOMINAL and restarting\r\n");
+				  if (setBootloaderStatus(BOOTLOADER_STATUS_NOMINAL) != 0)
+				  {
+					  printf("Failed to set status, only restarting");
+				  }
+				  sendAckPacket(&huart3, hdr.sequence_count);
+				  NVIC_SystemReset();
+			  }
+			  else if (cmd == '2')
+			  {
+				  /* Simulate fault: reset WITHOUT clearing BOOT_ATTEMPTED so BSW triggers rollback */
+				  printf("CMD 2: FAULT - resetting without clearing status\r\n");
+				  sendAckPacket(&huart3, hdr.sequence_count);
+				  NVIC_SystemReset();
+			  }
+			  else
+			  {
+				  printf("Unknown command: %c\r\n", cmd);
+				  sendNackPacket(&huart3, hdr.sequence_count, 15);
+			  }
+			  break; /* restart the 1 s blink cycle */
+		  }
+	  }
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */

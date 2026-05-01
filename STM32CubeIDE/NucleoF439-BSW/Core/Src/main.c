@@ -23,11 +23,9 @@
 /* USER CODE BEGIN Includes */
 
 #include <stdio.h>
-#include "boot.h"
-#include "input.h"
-#include "update.h"
 #include "report.h"
-#include "self_test.h"
+#include "main_loop.h"
+#include "input.h"
 
 /* USER CODE END Includes */
 
@@ -38,7 +36,6 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -58,6 +55,7 @@ HASH_HandleTypeDef hhash;
 RNG_HandleTypeDef hrng;
 
 UART_HandleTypeDef huart3;
+DMA_HandleTypeDef hdma_usart3_rx;
 
 /* USER CODE BEGIN PV */
 
@@ -66,6 +64,7 @@ UART_HandleTypeDef huart3;
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
+static void MX_DMA_Init(void);
 static void MX_USART3_UART_Init(void);
 static void MX_CRYP_Init(void);
 static void MX_HASH_Init(void);
@@ -82,6 +81,7 @@ int _write(int fd, char *ptr, int len)
 {
     if (fd == 1 || fd == 2)
     {
+    	// TODO: Save to secure boot report as well
         // Send debug output as ECSS DEBUG_LOG packet
         if (sendDebugPacket(&huart3, ptr, len) == 0)
             return len;
@@ -91,8 +91,7 @@ int _write(int fd, char *ptr, int len)
     return -1;
 }
 
-#define SMALL_RX_BUFFER_SIZE 1
-uint8_t mySmallRXBuffer[SMALL_RX_BUFFER_SIZE];
+
 
 /* USER CODE END 0 */
 
@@ -125,6 +124,7 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+  MX_DMA_Init();
   MX_USART3_UART_Init();
   MX_CRYP_Init();
   MX_HASH_Init();
@@ -132,145 +132,7 @@ int main(void)
   MX_CRC_Init();
   /* USER CODE BEGIN 2 */
 
-    // TODO: Add BSW CRC Check - where should the CRC be stored?
-
-    printf("Performing self-tests\r\n");
-
-    int16_t testResult = performSelfTests();
-	if (testResult != 0)
-	{
-		printf("System is in an invalid state\r\n");
-		NVIC_SystemReset();
-	}
-
-    printf("Bootloader loaded, enter '1' for boot or '2' for upload, '3' for swap, '4' to check image versions\r\n");
-
-  	// Receive command as ECSS packet
-  	ECSSPacketHeader cmd_header;
-  	int8_t ret = receivePacketHeader(&huart3, &cmd_header);
-  	if (ret != 0)
-  	{
-  		printf("Getting command packet header failed\r\n");
-  	}
-
-  	// Receive packet data (command character)
-  	if (cmd_header.data_length > 0 && cmd_header.data_length <= SMALL_RX_BUFFER_SIZE)
-  	{
-  		ret = receivePacketData(&huart3, mySmallRXBuffer, cmd_header.data_length);
-  		if (ret != 0)
-  		{
-  			printf("Getting command packet data failed\r\n");
-  		}
-  	}
-
-  	char* choice = (char *)mySmallRXBuffer;
-
-  	if (choice[0] == '1')
-  	{
-  		// NOMINAL MODE - Check if system is configured for nominal
-  		if (checkSystemForNominal() != 0)
-  		{
-  			printf("ERROR: System not configured for nominal mode\r\n");
-  			sendNackPacket(&huart3, cmd_header.sequence_count, 11);
-  			// TODO: Decide if we want to LOCK or if UPDATE has to happen
-  			setupSystemForNominal();
-  			NVIC_SystemReset();
-  		}
-  		
-  		// System ready - send ACK
-  		if (sendAckPacket(&huart3, cmd_header.sequence_count) != 0)
-  		{
-  			printf("Error sending ACK for command\r\n");
-  		}
-  		
-  		if (boot() != 0)
-  		{
-  			printf("Booting image failed\r\n");
-  			// TODO: Create ERROR report
-  			// TODO: REVERT if the versions allow it
-  		}
-  	}
-  	else if (choice[0] == '2')
-  	{
-  		// UPDATE MODE - Check if system is configured for update
-  		if (checkSystemForUpdate() != 0)
-		{
-			printf("ERROR: System not configured for update\r\n");
-			sendNackPacket(&huart3, cmd_header.sequence_count, 10);
-			setupSystemForUpdate();
-			NVIC_SystemReset();
-		}
-		
-		// System is ready - send ACK
-		printf("System ready for update\r\n");
-		if (sendAckPacket(&huart3, cmd_header.sequence_count) != 0)
-		{
-			printf("Error sending ACK for command\r\n");
-		}
-		
-  		if (receiveUpdateData(&huart3) != 0)
-  		{
-  			printf("Receiving image failed\r\n");
-  		}
-
-  		setupSystemForImageSwap();
-  		NVIC_SystemReset();
-  	}
-  	else if (choice[0] == '3')
-  	{
-  		// IMAGE SWAP MODE - Check if system is configured for swap
-  		if (checkSystemForImageSwap() != 0)
-  		{
-  			printf("ERROR: System not setup for swap, aborting\r\n");
-  			sendNackPacket(&huart3, cmd_header.sequence_count, 12);
-  			NVIC_SystemReset();
-  		}
-  		
-  		if (checkUpdateVersion() != 0)
-		{
-			printf("Cannot update - rollback protection\r\n");
-			sendNackPacket(&huart3, cmd_header.sequence_count, 9);
-			// no point staying in SWAP mode
-			setupSystemForNominal();
-			NVIC_SystemReset();
-		}
-
-  		// System ready - send ACK
-  		if (sendAckPacket(&huart3, cmd_header.sequence_count) != 0)
-  		{
-  			printf("Error sending ACK for command\r\n");
-  		}
-  		
-
-  		if (swapBootWithUpdate() != 0)
-  		{
-  			printf("Swapping images failed\r\n");
-  			NVIC_SystemReset();
-  		}
-  		if (updateRollbackCounter() != 0)
-  		{
-  			printf("Updating rollback counter failed\r\n");
-  			// TODO: What needs to happend here?
-  			NVIC_SystemReset();
-  		}
-  		setupSystemForNominal();
-		NVIC_SystemReset();
-  	}
-  	else if (choice[0] == '4')
-  	{
-  		if (sendAckPacket(&huart3, cmd_header.sequence_count) != 0)
-		{
-			printf("Error sending ACK for command\r\n");
-		}
-  		printImageHeaders();
-  		NVIC_SystemReset();
-  	}
-  	else
-  	{
-  		// TODO: Support storing BOOT REPORT
-  		printf("ERROR, reset\r\n");
-  		NVIC_SystemReset();
-  	}
+  run_main_loop(&huart3);
 
   /* USER CODE END 2 */
 
@@ -297,7 +159,7 @@ void SystemClock_Config(void)
   /** Configure the main internal regulator output voltage
   */
   __HAL_RCC_PWR_CLK_ENABLE();
-  __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE3);
+  __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE1);
 
   /** Initializes the RCC Oscillators according to the specified parameters
   * in the RCC_OscInitTypeDef structure.
@@ -307,10 +169,10 @@ void SystemClock_Config(void)
   RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
   RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSI;
-  RCC_OscInitStruct.PLL.PLLM = 16;
-  RCC_OscInitStruct.PLL.PLLN = 192;
+  RCC_OscInitStruct.PLL.PLLM = 8;
+  RCC_OscInitStruct.PLL.PLLN = 168;
   RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV2;
-  RCC_OscInitStruct.PLL.PLLQ = 4;
+  RCC_OscInitStruct.PLL.PLLQ = 7;
   if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
   {
     Error_Handler();
@@ -320,12 +182,12 @@ void SystemClock_Config(void)
   */
   RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
                               |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
-  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_HSI;
+  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
   RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
-  RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV1;
-  RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
+  RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV4;
+  RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV2;
 
-  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_0) != HAL_OK)
+  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_5) != HAL_OK)
   {
     Error_Handler();
   }
@@ -469,6 +331,22 @@ static void MX_USART3_UART_Init(void)
   /* USER CODE BEGIN USART3_Init 2 */
 
   /* USER CODE END USART3_Init 2 */
+
+}
+
+/**
+  * Enable DMA controller clock
+  */
+static void MX_DMA_Init(void)
+{
+
+  /* DMA controller clock enable */
+  __HAL_RCC_DMA1_CLK_ENABLE();
+
+  /* DMA interrupt init */
+  /* DMA1_Stream1_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Stream1_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Stream1_IRQn);
 
 }
 
