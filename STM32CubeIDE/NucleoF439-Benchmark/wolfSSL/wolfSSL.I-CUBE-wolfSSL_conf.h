@@ -413,7 +413,7 @@
         #define WOLFSSL_HAVE_SP_RSA
         //#define WOLFSSL_SP_NO_2048
         //#define WOLFSSL_SP_NO_3072
-        //#define WOLFSSL_SP_4096
+        #define WOLFSSL_SP_4096
     #endif
     #if defined(WOLF_CONF_DH) && WOLF_CONF_DH == 1
         #define WOLFSSL_HAVE_SP_DH
@@ -781,7 +781,7 @@
     #define DEBUG_WOLFSSL
 
     /* Use this to measure / print heap usage */
-    #if 0
+    #if 1
         #define USE_WOLFSSL_MEMORY
         #define WOLFSSL_TRACK_MEMORY
         #define WOLFSSL_DEBUG_MEMORY
@@ -934,7 +934,7 @@
 #endif /* ALGO_LMS */
 
 #define WOLFSSL_STATIC_MEMORY
-#define NO_STM32_HASH
+// #define NO_STM32_HASH
 
 #ifdef __cplusplus
 }

@@ -12,7 +12,7 @@
  *   --version <n>       imageVersion field in the header (default: 1)
  *   --force-keygen      Regenerate all key pairs even if keys/ exists
  *   --algo <name>       Run only the named algorithm (may be repeated)
- *                       Names: ECDSA-P256, RSA-2048-PSS, RSA-3072-PSS,
+ *                       Names: ECDSA-P256, RSA-3072-PSS, RSA-4096-PSS,
  *                              ML-DSA-44, ML-DSA-65,
  *                              LMS-SHA256-H5-W8
  *
@@ -476,8 +476,8 @@ static int run_random_benchmarks(int image_version,
 static void registry_init()
 {
     s_registry[s_registry_n++] = (algo_entry_t){ &sig_ecdsa, 1 };
-    s_registry[s_registry_n++] = (algo_entry_t){ sig_rsa_get(RSA_2048), 1 };
     s_registry[s_registry_n++] = (algo_entry_t){ sig_rsa_get(RSA_3072), 1 };
+    s_registry[s_registry_n++] = (algo_entry_t){ sig_rsa_get(RSA_4096), 1 };
     s_registry[s_registry_n++] = (algo_entry_t){ sig_mldsa_get(ML_DSA_44), 1 };
     s_registry[s_registry_n++] = (algo_entry_t){ sig_mldsa_get(ML_DSA_65), 1 };
     s_registry[s_registry_n++] = (algo_entry_t){ &sig_lms, 1 };
@@ -537,7 +537,7 @@ int main(int argc, char **argv)
             puts("  --force-keygen      Regenerate all key pairs");
             puts("  --algo <name>       Run only this algorithm (repeatable)");
             puts("");
-            puts("  Algorithms: ECDSA-P256  RSA-2048-PSS  RSA-3072-PSS");
+            puts("  Algorithms: ECDSA-P256  RSA-3072-PSS  RSA-4096-PSS");
             puts("              ML-DSA-44  ML-DSA-65");
             puts("              LMS-SHA256-H5-W8");
             puts("");

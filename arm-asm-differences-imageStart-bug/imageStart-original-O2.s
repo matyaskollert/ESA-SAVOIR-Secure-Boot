@@ -24,7 +24,7 @@
  8000a7e:       f8d3 3404       ldr.w   r3, [r3, #1028] @ 0x404
  8000a82:       6088            str     r0, [r1, #8]
  8000a84:       f382 8808       msr     MSP, r2
- 8000a88:       e8bd 4010       ldmia.w sp!, {r4, lr}
+ 8000a88:       e8bd 4010       ldmia.w sp!, {r4, lr}   @ ERROR: sp is already set to the address in R2
  8000a8c:       4718            bx      r3
  8000a8e:       bf00            nop
  8000a90:       20009400        .word   0x20009400

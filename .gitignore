@@ -5,3 +5,5 @@
 
 # Local environment variables (contains private key paths, port names)
 tests/.env
+
+NucleoF439-Test/
