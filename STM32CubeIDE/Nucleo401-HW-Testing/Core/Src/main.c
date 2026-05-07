@@ -95,9 +95,9 @@ int main(void)
 
   // HAL_DELAY(50);
 
-  const uint8_t verification = 0xDEADBEEF;
+  const uint8_t verification = 0xAA;
 
-  if (verification == 0xAAAAAAAA)
+  if (verification == 0xBB)
   {
 	  const uint8_t message[] = "BROKEN\r\n";
 	  HAL_UART_Transmit(&huart2, message, sizeof(message), 5000);
