@@ -56,32 +56,32 @@ class TestSwapHappyPath:
         assert ack is not None
         bsw.drain_debug_log(timeout=5.0)  # let the swap finish
 
-        # Flash contents must be UNCHANGED – swap is flag-based, no data movement.
+        # After the swap the primary slot must contain v2 and the secondary v1.
+        # This holds regardless of whether the BSW uses a flag-based swap
+        # (flag flips, flash data unchanged) or a hardware swap (data moves,
+        # flag unchanged): get_primary_slot() always resolves to the slot that
+        # physically holds the new primary image.
         assert (
-            board.flash_read(board.SLOT_A_FLASH_ADDRESS, len(slot_a_img)) == slot_a_img
-        ), "SLOT_A flash contents must be unchanged after flag-based swap"
+            _slot_version(board.get_primary_slot()) == 2
+        ), "Primary slot must contain v2 after swap"
         assert (
-            board.flash_read(board.SLOT_B_FLASH_ADDRESS, len(slot_b_img)) == slot_b_img
-        ), "SLOT_B flash contents must be unchanged after flag-based swap"
-        # Primary slot flag must now point to SLOT_B.
-        assert (
-            board.get_primary_flag() == board.PROTECTED_BSW_STATE_PRIMARY_SLOT_B
-        ), "primary_slot flag must be SLOT_B after swap"
-        # Rollback counter must advance to the new primary (SLOT_B) version.
+            _slot_version(board.get_secondary_slot()) == 1
+        ), "Secondary slot must contain v1 after swap"
+        # Rollback counter must advance to the new primary version.
         assert (
             board.get_rollback_counter() == 2
         ), "Rollback counter must be updated to new primary version after swap"
-        # SLOT_B (new primary) and PROTECTED_BSW_STATE must be re-protected.
+        # New primary slot and PROTECTED_BSW_STATE must be re-protected.
         assert board.is_write_protected(
-            board.OB_WRP_SLOT_B
-        ), "New primary slot (SLOT_B) must be write-protected after swap"
+            board.get_primary_slot_ob_mask()
+        ), "New primary slot must be write-protected after swap"
         assert board.is_write_protected(
             board.OB_WRP_PROTECTED_BSW_STATE
         ), "PROTECTED_BSW_STATE sector must be re-protected after swap"
-        # SLOT_A (now secondary) must be unprotected.
+        # Old primary (now secondary) must be unprotected.
         assert not board.is_write_protected(
-            board.OB_WRP_SLOT_A
-        ), "Old primary (SLOT_A) must be unprotected after swap"
+            board.get_secondary_slot_ob_mask()
+        ), "Old primary (now secondary) must be unprotected after swap"
 
 
 class TestSwapBootSectorStillProtected:
@@ -269,7 +269,7 @@ class TestSwapRollbackCounterEdges:
         board.reset_board()
         bsw.send_command("3", sequence=0)
         bsw.wait_for_ack(expected_sequence=0)
-        bsw.drain_debug_log(timeout=2.0)
+        bsw.drain_debug_log(timeout=3.0)
         time.sleep(1.0)
 
         # Counter was already 2 (== new BOOT version 2); must stay 2.

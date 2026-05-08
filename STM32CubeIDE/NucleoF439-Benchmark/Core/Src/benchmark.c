@@ -17,12 +17,12 @@
 
 void benchmarkRun(void)
 {
-    const image_header_t* header = (const image_header_t*)BOOT_FLASH_ADDRESS;
+    const image_header_t* header = (const image_header_t*)SLOT_A_FLASH_ADDRESS;
 
     if (header->imageMagic != IMAGE_MAGIC)
     {
         printf("benchmarkRun: no valid image at 0x%08lX (magic=0x%04X)\r\n",
-               (uint32_t)BOOT_FLASH_ADDRESS, header->imageMagic);
+               (uint32_t)SLOT_A_FLASH_ADDRESS, header->imageMagic);
         return;
     }
 
@@ -38,7 +38,7 @@ void benchmarkRun(void)
     printf("=========================================\r\n");
 
     void* ramDst = (void*)BOOT_RAM_ADDRESS;
-    memcpy(ramDst, (const void*)BOOT_FLASH_ADDRESS, copySize);
+    memcpy(ramDst, (const void*)SLOT_A_FLASH_ADDRESS, copySize);
 
     // Signed region: [CRC excluded] imageMagic..imageSize..sig=0..padding..code
     // IMAGE_HEADER_DS_OFFSET skips the leading CRC (4 B), magic (2 B),

@@ -8,6 +8,7 @@ Flash memory map (STM32F439ZI):
     0x08000000  Sectors 0-4  BSW (bootloader) - never overwritten by tests
     0x08020000  Sector 5     SLOT_A image slot  (128 KB)
     0x08040000  Sector 6     SLOT_B image slot  (128 KB)
+    0x08060000  Sector 7     SWAP   (image copy scratch space for hardware swap, 128 KB)
     0x08080000  Sector 8     COMM   (bootloader status word, 4 B)
     0x080A0000  Sector 9     PROTECTED_BSW_STATE (rollback_counter + primary_slot)
     0x080C0000  Sector 10    REPORT
@@ -75,14 +76,11 @@ OB_WRP_PROTECTED_BSW_STATE = 1 << 9  # protected BSW state sector 9
 # Full nWRP bitmask for every sector managed by the tests.
 # Used by _temporarily_unprotected() to detect and lift WRP before writes.
 _ADDR_TO_OB_MASK = {
-    0x08020000: 1 << 5,  # SLOT_A
-    0x08040000: 1 << 6,  # SLOT_B
-    0x08060000: 1 << 7,  # reserved
-    0x08080000: 1 << 8,  # COMM
-    0x080A0000: 1 << 9,  # protected BSW state
+    0x08020000: OB_WRP_SLOT_A,  # SLOT_A
+    0x08040000: OB_WRP_SLOT_B,  # SLOT_B
     0x08060000: 1 << 7,  # SWAP
     0x08080000: 1 << 8,  # COMM
-    0x080A0000: 1 << 9,  # COUNTER
+    0x080A0000: OB_WRP_PROTECTED_BSW_STATE,  # protected BSW state
     0x080C0000: 1 << 10,  # REPORT
     0x080E0000: 1 << 11,
 }
@@ -99,26 +97,22 @@ COMM_STATUS_BOOT_ATTEMPTED = 0xDD
 # ---------------------------------------------------------------------------
 
 
-def _run(extra_args, check=True):
+def _run(extra_args, check=True) -> tuple[str, str]:
     """Run STM32_Programmer_CLI with extra_args and return the result."""
     cmd = [STM32CUBEPROG] + _CONNECT + extra_args
     result = subprocess.run(cmd, capture_output=True)
     # STM32CubeProgrammer outputs non-UTF-8 bytes on Windows (e.g. Windows-1252
     # symbols in its banner).  Decode as cp1252 with a fallback replacement so
     # we never get a UnicodeDecodeError, and the output is always a str.
-    result.stdout = (
-        result.stdout.decode("cp1252", errors="replace") if result.stdout else ""
-    )
-    result.stderr = (
-        result.stderr.decode("cp1252", errors="replace") if result.stderr else ""
-    )
+    stdout = result.stdout.decode("cp1252", errors="replace") if result.stdout else ""
+    stderr = result.stderr.decode("cp1252", errors="replace") if result.stderr else ""
     if check and result.returncode != 0:
         raise RuntimeError(
             f"STM32CubeProgrammer failed (exit {result.returncode}):\n"
             f"Command: {' '.join(cmd)}\n"
-            f"stdout: {result.stdout}\nstderr: {result.stderr}"
+            f"stdout: {stdout}\nstderr: {stderr}"
         )
-    return result
+    return stdout, stderr
 
 
 def _tmp_write(data):
@@ -322,6 +316,32 @@ def get_secondary_slot():
     )
 
 
+def get_primary_slot_ob_mask():
+    """Return the nWRP OB bitmask for the currently-primary image slot.
+
+    Works for both swap modes:
+      - Flag-based swap: the flag has already been updated to point to the new
+        primary slot, so this returns that slot's mask.
+      - Hardware swap: the flag still points to SLOT_A (which physically holds
+        the new primary image after the data move), so this also returns the
+        correct slot's mask.
+    """
+    return (
+        OB_WRP_SLOT_B
+        if get_primary_flag() == PROTECTED_BSW_STATE_PRIMARY_SLOT_B
+        else OB_WRP_SLOT_A
+    )
+
+
+def get_secondary_slot_ob_mask():
+    """Return the nWRP OB bitmask for the currently-secondary image slot."""
+    return (
+        OB_WRP_SLOT_A
+        if get_primary_flag() == PROTECTED_BSW_STATE_PRIMARY_SLOT_B
+        else OB_WRP_SLOT_B
+    )
+
+
 # ---------------------------------------------------------------------------
 # Option bytes (nWRP write-protection) via STM32CubeProgrammer -ob
 # ---------------------------------------------------------------------------
@@ -334,7 +354,7 @@ def _read_nwrp():
     Parses the individual nWRP0..nWRP23 fields shown by STM32CubeProgrammer.
     """
     result = _run(["-ob", "displ"])
-    output = result.stdout + result.stderr
+    output = result[0] + result[1]
     # Each line looks like:  "     nWRP9        : 0x0 (Write protection active)"
     matches = re.findall(r"nWRP(\d+)\s*:\s*(0x[0-9a-fA-F]+)", output, re.IGNORECASE)
     if not matches:

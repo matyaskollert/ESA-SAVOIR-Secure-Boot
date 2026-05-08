@@ -82,20 +82,18 @@ class TestFullUpdateCycle:
         _do_full_upload(bsw, update_img)
         _do_swap(bsw)
 
-        # Flag-based swap: SLOT_B (v2) is now primary, SLOT_A (v1) is secondary.
-        assert (
-            board.get_primary_flag() == board.PROTECTED_BSW_STATE_PRIMARY_SLOT_B
-        ), "Primary flag must point to SLOT_B after first swap"
+        # After the swap the primary slot must contain v2 and the secondary v1,
+        # regardless of whether a flag-based or hardware swap was performed.
         assert (
             _slot_version(board.get_primary_slot()) == 2
         ), "New primary must hold v2 after swap"
         assert (
             _slot_version(board.get_secondary_slot()) == 1
-        ), "Old primary (SLOT_A) still holds v1"
+        ), "Old primary still holds v1"
         assert board.get_rollback_counter() == 2, "Counter must advance to 2"
         assert board.is_write_protected(
-            board.OB_WRP_SLOT_B
-        ), "New primary (SLOT_B) must be protected after cycle"
+            board.get_primary_slot_ob_mask()
+        ), "New primary slot must be protected after cycle"
         assert board.is_write_protected(
             board.OB_WRP_PROTECTED_BSW_STATE
         ), "PROTECTED_BSW_STATE must be protected after cycle"

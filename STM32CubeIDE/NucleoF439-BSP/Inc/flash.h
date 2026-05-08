@@ -23,7 +23,10 @@ typedef enum { SLOT_A, SLOT_B, RAM } ImageSlot;
 #define SLOT_B_FLASH_ADDRESS	0x08040000U
 #define SLOT_B_FLASH_SECTOR		FLASH_SECTOR_6
 #define SLOT_B_FLASH_OB_SECTOR	OB_WRP_SECTOR_6
-/* Sector 7 (0x08060000) is reserved / unused. */
+/* Image swap sector used when HARDWARE_SWAP is enabled (sector 7, 128KB). */
+#define SWAP_FLASH_ADDRESS      0x08060000U
+#define SWAP_FLASH_SECTOR      FLASH_SECTOR_7
+#define SWAP_FLASH_OB_SECTOR    OB_WRP_SECTOR_7
 
 #define COMM_FLASH_ADDRESS  	0x08080000U
 #define COMM_FLASH_SECTOR 		FLASH_SECTOR_8

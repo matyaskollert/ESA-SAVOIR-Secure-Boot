@@ -227,35 +227,38 @@ int16_t receiveUpdateData(UART_HandleTypeDef* uart)
 
 int16_t swapBootWithUpdate(void)
 {
-	printf("Swapping primary partition (flag change only)...\r\n");
+#ifdef HARDWARE_SWAP
+	printf("Swapping updated image into primary partition\r\n");
+#else
+	printf("Updating primary partition flag\r\n");
+#endif
 
-	/* Flip the primary-partition flag: the slot that was secondary becomes
-	 * primary and vice versa.  No data is physically moved. */
-	uint32_t currentFlag = getPrimaryFlag();
-	uint32_t newFlag = (currentFlag == PROTECTED_BSW_STATE_PRIMARY_SLOT_B)
-	                   ? PROTECTED_BSW_STATE_PRIMARY_SLOT_A
-	                   : PROTECTED_BSW_STATE_PRIMARY_SLOT_B;
-
-	/* After the flag flip, the current secondary becomes the new primary.
-	 * Compute the updated rollback counter now so the flag flip and counter
-	 * update are written in a single setProtectedBswState call (one erase). */
-	ImageSlot newPrimary   = getSecondarySlot();
-	ImageSlot newSecondary = getPrimarySlot();
-	const image_header_t* newPrimaryImage   = (const image_header_t *)(getSlotFlashAddress(newPrimary));
-	const image_header_t* newSecondaryImage = (const image_header_t *)(getSlotFlashAddress(newSecondary));
-	uint32_t newPrimaryVersion   = (uint32_t)newPrimaryImage->imageVersion;
-	uint32_t newSecondaryVersion = (uint32_t)newSecondaryImage->imageVersion;
+	ImageSlot newImageSlot = getSecondarySlot();
+	ImageSlot oldImageSlot = getPrimarySlot();
+	const image_header_t* oldImageHeader = imageGetHeader(oldImageSlot);
+	if (oldImageHeader == NULL)
+	{
+		return 1;
+	}
+	const image_header_t* newImageHeader = imageGetHeader(newImageSlot);
+	if (newImageHeader == NULL)
+	{
+		return 1;
+	}
+	
+	uint32_t oldVersion = (uint32_t)oldImageHeader->imageVersion;
+	uint32_t newVersion = (uint32_t)newImageHeader->imageVersion;
 	uint32_t counter = getCounterValue();
 
 	uint32_t newCounter;
-	if (counter >= newPrimaryVersion && counter >= newSecondaryVersion)
+	if (counter >= newVersion && counter >= oldVersion)
 	{
 		newCounter = counter;
 	}
-	else if (newPrimaryVersion > counter && newPrimaryVersion > newSecondaryVersion)
+	else if (newVersion > counter && newVersion > oldVersion)
 	{
-		printf("Updating rollback counter from %lu to %lu\r\n", counter, newPrimaryVersion);
-		newCounter = newPrimaryVersion;
+		printf("Updating rollback counter from %lu to %lu\r\n", counter, newVersion);
+		newCounter = newVersion;
 	}
 	else
 	{
@@ -263,14 +266,60 @@ int16_t swapBootWithUpdate(void)
 		return 1;
 	}
 
+#ifdef HARDWARE_SWAP
+	uint32_t newFlag = getPrimaryFlag();
+	const uint32_t oldImageSizeWords = (oldImageHeader->imageSize + IMAGE_OFFSET) / 4U;
+	const uint32_t newImageSizeWords = (newImageHeader->imageSize + IMAGE_OFFSET) / 4U;
+	if (HAL_FLASH_Unlock() != HAL_OK)
+	{
+		return 2;
+	}
+	if (writeFlashSector(SWAP_FLASH_SECTOR, SWAP_FLASH_ADDRESS, (uint32_t *)oldImageHeader, oldImageSizeWords) != 0)
+	{
+		printf("Failed to write old image to swap sector\r\n");
+		HAL_FLASH_Lock();
+		return 3;
+	}
+	if (writeFlashSector(getSlotFlashSector(oldImageSlot), getSlotFlashAddress(oldImageSlot),
+	                     (uint32_t *)newImageHeader, newImageSizeWords) != 0)
+	{
+		printf("Failed to write new image to old image slot\r\n");
+		HAL_FLASH_Lock();
+		return 3;
+	}
+	if (writeFlashSector(getSlotFlashSector(newImageSlot), getSlotFlashAddress(newImageSlot),
+	                     (uint32_t *)SWAP_FLASH_ADDRESS, oldImageSizeWords) != 0)
+	{
+		printf("Failed to write old image from swap sector to new image slot\r\n");
+		HAL_FLASH_Lock();
+		return 3;
+	}
+	if (HAL_FLASH_Lock() != HAL_OK)
+	{
+		return 2;
+	}
+#else
+	/* Flip the primary-partition flag: the slot that was secondary becomes
+	 * primary and vice versa.  No data is physically moved. */
+	uint32_t currentFlag = getPrimaryFlag();
+	uint32_t newFlag = (currentFlag == PROTECTED_BSW_STATE_PRIMARY_SLOT_B)
+	                   ? PROTECTED_BSW_STATE_PRIMARY_SLOT_A
+	                   : PROTECTED_BSW_STATE_PRIMARY_SLOT_B;
+#endif
+
 	if (setProtectedBswState(newCounter, newFlag) != 0)
 	{
 		printf("Failed to write BSW state\r\n");
 		return 1;
 	}
 
+#ifdef HARDWARE_SWAP
+	printf("Images swapped in flash");
+#else
 	printf("Primary slot updated: primary is now %s\r\n",
 	       (newFlag == PROTECTED_BSW_STATE_PRIMARY_SLOT_B) ? "SLOT_B" : "SLOT_A");
+#endif
+
 	return 0;
 }
 
@@ -413,8 +462,8 @@ int16_t checkRollbackCondition(void)
 {
     ImageSlot primary   = getPrimarySlot();
     ImageSlot secondary = getSecondarySlot();
-    const image_header_t* primaryImage   = (const image_header_t *)(getSlotFlashAddress(primary));
-    const image_header_t* secondaryImage = (const image_header_t *)(getSlotFlashAddress(secondary));
+    const image_header_t* primaryImage   = imageGetHeader(primary);
+    const image_header_t* secondaryImage = imageGetHeader(secondary);
     uint32_t primaryVersion   = (uint32_t)primaryImage->imageVersion;
     uint32_t secondaryVersion = (uint32_t)secondaryImage->imageVersion;
     uint32_t lowestAllowed    = getLowestAllowedVersion();

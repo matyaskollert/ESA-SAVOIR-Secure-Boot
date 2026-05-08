@@ -2,8 +2,7 @@
 #define INC_IMAGE_H_
 
 #include <stdint.h>
-
-typedef enum {BOOT, UPDATE, SWAP} ImageSlot;
+#include "flash.h"
 
 #define IMAGE_MAGIC             0xABCD
 #define BOOT_RAM_ADDRESS        0x20008000
