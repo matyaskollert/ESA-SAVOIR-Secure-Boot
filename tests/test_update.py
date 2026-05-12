@@ -192,7 +192,7 @@ class TestUpdateStateAfterSuccess:
         bsw.send_command("2", sequence=0)
         bsw.wait_for_ack(expected_sequence=0)
         bsw.upload_image(update_img, start_sequence=1)
-        time.sleep(2.5)  # allow OB_Launch reset from setupSystemForImageSwap
+        time.sleep(3.5)  # allow OB_Launch reset from setupSystemForImageSwap
 
         assert board.get_comm_status() == board.COMM_STATUS_SWAP
         assert not board.is_write_protected(

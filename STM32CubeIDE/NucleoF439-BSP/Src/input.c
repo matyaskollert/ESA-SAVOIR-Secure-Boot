@@ -204,3 +204,10 @@ int16_t sendDebugPacket(UART_HandleTypeDef* uart, const char* message, uint16_t 
 	ecss_create_header(&header, PKT_DEBUG_LOG, debug_sequence++, length, 0);
 	return sendPacket(uart, &header, (const uint8_t*)message);
 }
+
+int16_t sendReportDataPacket(UART_HandleTypeDef* uart, uint16_t sequence, const uint8_t* data, uint16_t length)
+{
+	ECSSPacketHeader header;
+	ecss_create_header(&header, PKT_REPORT_DATA, sequence, length, 0);
+	return sendPacket(uart, &header, data);
+}

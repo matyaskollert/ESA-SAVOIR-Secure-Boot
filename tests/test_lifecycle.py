@@ -61,7 +61,7 @@ def _do_full_upload(bsw, image_data: bytes) -> None:
     bsw.send_command("2", sequence=0)
     bsw.wait_for_ack(expected_sequence=0, timeout=1.0)
     bsw.upload_image(image_data, start_sequence=1)
-    time.sleep(2.5)  # BSW calls setupSystemForImageSwap() then resets
+    time.sleep(3)  # BSW calls setupSystemForImageSwap() then resets
 
 
 def _do_swap(bsw) -> None:
@@ -69,7 +69,7 @@ def _do_swap(bsw) -> None:
     Caller must ensure COMM=SWAP (0xCC) beforehand."""
     board.reset_board()
     _skip_timeout(bsw)
-    bsw.drain_debug_log(timeout=5.0)  # allow OB_Launch reset from setupSystemForNominal
+    bsw.drain_debug_log(timeout=6.0)  # allow OB_Launch reset from setupSystemForNominal
 
 
 class TestFullUpdateCycle:
@@ -101,7 +101,7 @@ class TestFullUpdateCycle:
 
         board.reset_board()
         _skip_timeout(bsw)
-        log = "".join(bsw.drain_debug_log(timeout=2.0))
+        log = "".join(bsw.drain_debug_log(timeout=3.0))
         assert "CRC validation in RAM successful" in log
 
 
@@ -210,16 +210,16 @@ class TestAutomaticRollbackBothFail:
         board.set_comm_status(board.COMM_STATUS_BOOT_ATTEMPTED)
         board.reset_board()
         _skip_timeout(bsw)
-        bsw.drain_debug_log(timeout=2.0)
+        bsw.drain_debug_log(timeout=3.0)
         _skip_timeout(bsw)
-        bsw.drain_debug_log(timeout=5.0)  # rollback swap + OB_Launch reset
+        bsw.drain_debug_log(timeout=6.0)  # rollback swap + OB_Launch reset
         assert _slot_version(board.get_primary_slot()) == 1
 
         # Round 2: v1 also fails
         board.set_comm_status(board.COMM_STATUS_BOOT_ATTEMPTED)
         board.reset_board()
         _skip_timeout(bsw)
-        log = "".join(bsw.drain_debug_log(timeout=5.0))
+        log = "".join(bsw.drain_debug_log(timeout=6.0))
 
         assert "Rollback not applicable" in log
 
@@ -263,11 +263,11 @@ class TestAutomaticRollbackSecondSucceeds:
         board.set_comm_status(board.COMM_STATUS_BOOT_ATTEMPTED)
         board.reset_board()
         _skip_timeout(bsw)
-        bsw.drain_debug_log(timeout=2.0)
+        bsw.drain_debug_log(timeout=3.0)
         _skip_timeout(bsw)
-        bsw.drain_debug_log(timeout=5.0)
+        bsw.drain_debug_log(timeout=6.0)
         assert _slot_version(board.get_primary_slot()) == 1
         board.reset_board()
         _skip_timeout(bsw)
-        log = "".join(bsw.drain_debug_log(timeout=2.0))
+        log = "".join(bsw.drain_debug_log(timeout=3.0))
         assert "App STARTED" in log

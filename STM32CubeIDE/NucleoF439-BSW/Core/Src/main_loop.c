@@ -13,6 +13,7 @@
 #include "report.h"
 #include "self_test.h"
 #include "flash.h"
+#include "bsw_report.h"
 
 #define STANDBY_TIMEOUT_MS  15000
 
@@ -27,6 +28,7 @@ static BootloaderStatus commandToStatus(uint8_t cmd)
 		case '4': return BOOTLOADER_STATUS_CHECK_VERSIONS;
 		case '5': return BOOTLOADER_STATUS_RESET;
 		case '6': return BOOTLOADER_STATUS_STANDBY;   /* no-op */
+		case '7': return BOOTLOADER_STATUS_REPORT;
 		default:  return BOOTLOADER_STATUS_UNKNOWN;
 	}
 }
@@ -174,6 +176,18 @@ static void standbyLoop(UART_HandleTypeDef* uart, BootloaderStatus initial_statu
 				handleRollback(uart);
 				break;
 
+			case BOOTLOADER_STATUS_REPORT:
+				/* Return all 5 stored boot-event reports, newest first */
+				sendAckPacket(uart, seq);
+				for (uint8_t age = 0; age < BSW_REPORT_MAX_COUNT; age++)
+				{
+					const bsw_report_t *rep = bsw_report_get_by_age(age);
+					sendReportDataPacket(uart, (uint16_t)age,
+					                     (const uint8_t *)rep,
+					                     (uint16_t)sizeof(bsw_report_t));
+				}
+				break;
+
 			case BOOTLOADER_STATUS_STANDBY:
 				/* No-op (command '6') */
 				if (sendAckPacket(uart, seq) != 0)
@@ -219,6 +233,8 @@ static void handleRollback(UART_HandleTypeDef* uart)
 
 void run_main_loop(UART_HandleTypeDef* uart)
 {
+    bsw_report_load();
+
     printf("Performing self-tests\r\n");
 
   	int16_t testResult = performSelfTests();

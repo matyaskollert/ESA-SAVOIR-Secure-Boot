@@ -25,18 +25,3 @@ void printImageHeaders(void)
 	       (primary == SLOT_B) ? "PRIMARY" : "SECONDARY");
 	(void)secondary;
 }
-
-int16_t createErrorReport(ReportLevel level)
-{
-	switch (level)
-	{
-	case ERROR_REPORT:
-		// TODO: Implement ERROR BOOT REPORT
-		break;
-	case INFO_REPORT:
-		// TODO: Implement INFO BOOT REPORT
-		break;
-	}
-
-	return 0;
-}

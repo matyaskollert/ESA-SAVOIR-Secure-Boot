@@ -16,6 +16,7 @@ typedef enum {
     PKT_DATA_CHUNK = 0x02,
     PKT_END_UPLOAD = 0x03,
     PKT_DEBUG_LOG = 0x04,
+    PKT_REPORT_DATA = 0x05,  /* BSW boot-event report payload */
     PKT_ACK = 0x06,
     PKT_NACK = 0x15
 } PacketServiceType;

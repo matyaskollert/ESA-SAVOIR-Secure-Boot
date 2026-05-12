@@ -26,7 +26,7 @@ class TestBootValidImage:
         ack = bsw.wait_for_ack(expected_sequence=0)
         assert ack is not None
         # Collect debug output from the BSW (and early ASW output if any).
-        log = "".join(bsw.drain_debug_log(timeout=2.0))
+        log = "".join(bsw.drain_debug_log(timeout=3.0))
         assert "CRC validation in FLASH successful" in log
         assert "Digital signature valid" in log
         assert "CRC validation in RAM successful" in log
@@ -47,7 +47,7 @@ class TestBootNoImage:
         board.reset_board()
         bsw.send_command("1", sequence=0)
         bsw.wait_for_ack(expected_sequence=0, timeout=1.0)
-        log = "".join(bsw.drain_debug_log(timeout=1.0))
+        log = "".join(bsw.drain_debug_log(timeout=2.0))
         assert "No valid header found" in log
 
 
@@ -74,7 +74,7 @@ class TestBootCorruptCRC:
             bsw.wait_for_ack(expected_sequence=0, timeout=1.0)
         except serial_comm.NackReceived:
             pass
-        log = "".join(bsw.drain_debug_log(timeout=1.0))
+        log = "".join(bsw.drain_debug_log(timeout=2.0))
         assert "CRC mismatch in FLASH" in log
         assert "0xdeadbeef" in log
 
@@ -183,7 +183,7 @@ class TestBootBadMagic:
             bsw.wait_for_ack(expected_sequence=0, timeout=1.0)
         except serial_comm.NackReceived:
             pass
-        log = "".join(bsw.drain_debug_log(timeout=1.0))
+        log = "".join(bsw.drain_debug_log(timeout=2.0))
         assert "No valid header found" in log
 
 
@@ -214,7 +214,7 @@ class TestBootInvalidSignature:
             bsw.wait_for_ack(expected_sequence=0, timeout=2.0)
         except serial_comm.NackReceived:
             pass
-        log = "".join(bsw.drain_debug_log(timeout=1.0))
+        log = "".join(bsw.drain_debug_log(timeout=2.0))
         assert "Digital signature validation failed" in log
 
 

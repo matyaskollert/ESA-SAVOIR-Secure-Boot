@@ -12,8 +12,4 @@
 
 void printImageHeaders(void);
 
-typedef enum {ERROR_REPORT, INFO_REPORT} ReportLevel;
-
-int16_t createBootReport(ReportLevel level);
-
 #endif /* INC_REPORT_H_ */

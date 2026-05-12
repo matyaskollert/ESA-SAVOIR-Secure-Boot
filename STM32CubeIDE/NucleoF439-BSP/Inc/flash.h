@@ -68,6 +68,7 @@ typedef enum {
     BOOTLOADER_STATUS_ROLLBACK       = 0x22,  /* Evaluate and perform rollback */
     BOOTLOADER_STATUS_RESET          = 0x33,  /* System reset */
     BOOTLOADER_STATUS_CHECK_VERSIONS = 0x44,  /* Print image headers */
+    BOOTLOADER_STATUS_REPORT         = 0x55,  /* Return the 5 stored boot-event reports */
 } BootloaderStatus;
 
 int16_t eraseFlashSector(uint32_t sector);

@@ -13,6 +13,7 @@ class PacketType(IntEnum):
     DATA_CHUNK = 0x02
     END_UPLOAD = 0x03
     DEBUG_LOG = 0x04
+    REPORT_DATA = 0x05
     ACK = 0x06
     NACK = 0x15
 

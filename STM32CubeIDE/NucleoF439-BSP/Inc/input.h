@@ -24,5 +24,6 @@ int16_t sendPacket(UART_HandleTypeDef* uart, const ECSSPacketHeader* header, con
 int16_t sendAckPacket(UART_HandleTypeDef* uart, uint16_t sequence);
 int16_t sendNackPacket(UART_HandleTypeDef* uart, uint16_t sequence, uint8_t error_code);
 int16_t sendDebugPacket(UART_HandleTypeDef* uart, const char* message, uint16_t length);
+int16_t sendReportDataPacket(UART_HandleTypeDef* uart, uint16_t sequence, const uint8_t* data, uint16_t length);
 
 #endif /* INC_INPUT_H_ */
