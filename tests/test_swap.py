@@ -33,7 +33,9 @@ class TestSwapHappyPath:
     """Happy-path swap: SLOT_A=v1 (primary), SLOT_B=v2 (secondary), COMM=SWAP-ready,
     WRP unlocked for primary slot and PROTECTED_BSW_STATE."""
 
-    def test_swap_performs_correctly(self, bsw, clean_flash, slot_config, image_factory, config):
+    def test_swap_performs_correctly(
+        self, bsw, clean_flash, slot_config, image_factory, config
+    ):
         """ACK received; primary_slot flipped, counter=2, sectors re-protected."""
         primary_img = image_factory.build(version=1)
         secondary_img = image_factory.build(version=2)
@@ -46,7 +48,8 @@ class TestSwapHappyPath:
         board.set_comm_status(board.COMM_STATUS_SWAP)
         board.set_write_protection(
             protect_mask=0,
-            unprotect_mask=slot_config.primary_ob_mask | board.OB_WRP_PROTECTED_BSW_STATE,
+            unprotect_mask=slot_config.primary_ob_mask
+            | board.OB_WRP_PROTECTED_BSW_STATE,
         )
         board.reset_board()
         bsw.send_command("3", sequence=0)
@@ -198,7 +201,9 @@ class TestSwapBadUpdateSlot:
     checks before reading the version field.
     """
 
-    def test_nack_when_update_slot_empty(self, swap_ready_state, slot_config, bsw, config):
+    def test_nack_when_update_slot_empty(
+        self, swap_ready_state, slot_config, bsw, config
+    ):
         """UPDATE slot erased → imageGetHeader fails → NACK (via checkUpdateVersion)."""
         board.flash_erase_slot(slot_config.secondary_address)
 
@@ -301,7 +306,8 @@ class TestSwapVersionRejectionRecovery:
         board.set_comm_status(board.COMM_STATUS_SWAP)
         board.set_write_protection(
             protect_mask=0,
-            unprotect_mask=slot_config.primary_ob_mask | board.OB_WRP_PROTECTED_BSW_STATE,
+            unprotect_mask=slot_config.primary_ob_mask
+            | board.OB_WRP_PROTECTED_BSW_STATE,
         )
 
     def test_nack_9_on_version_below_floor(self, bsw, config):
@@ -401,7 +407,8 @@ class TestSwapRollbackEnforcement:
         board.set_comm_status(board.COMM_STATUS_SWAP)
         board.set_write_protection(
             protect_mask=0,
-            unprotect_mask=slot_config.primary_ob_mask | board.OB_WRP_PROTECTED_BSW_STATE,
+            unprotect_mask=slot_config.primary_ob_mask
+            | board.OB_WRP_PROTECTED_BSW_STATE,
         )
 
     def test_nack9_and_state_unchanged_after_rejection(self, slot_config, bsw, config):
@@ -451,7 +458,8 @@ class TestSwapPrimarySlotErased:
         board.set_comm_status(board.COMM_STATUS_SWAP)
         board.set_write_protection(
             protect_mask=0,
-            unprotect_mask=slot_config.primary_ob_mask | board.OB_WRP_PROTECTED_BSW_STATE,
+            unprotect_mask=slot_config.primary_ob_mask
+            | board.OB_WRP_PROTECTED_BSW_STATE,
         )
         yield
         board.set_write_protection(

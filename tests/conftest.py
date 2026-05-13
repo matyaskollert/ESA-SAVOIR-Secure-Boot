@@ -114,7 +114,10 @@ def real_asw_image(config, image_factory):
 # ---------------------------------------------------------------------------
 
 
-@pytest.fixture(params=["slot_a_primary", "slot_b_primary"], ids=["primary=SLOT_A", "primary=SLOT_B"])
+@pytest.fixture(
+    params=["slot_a_primary", "slot_b_primary"],
+    ids=["primary=SLOT_A", "primary=SLOT_B"],
+)
 def slot_config(request):
     """Parametrized fixture: each test runs twice — once with SLOT_A as the
     primary (active) image slot, and once with SLOT_B as primary.
@@ -128,6 +131,7 @@ def slot_config(request):
         primary_slot_enum   — IMAGE_SLOT_A or IMAGE_SLOT_B (matches BSW report field)
     """
     from types import SimpleNamespace
+
     if request.param == "slot_a_primary":
         return SimpleNamespace(
             primary_flag=board.PROTECTED_BSW_STATE_PRIMARY_SLOT_A,

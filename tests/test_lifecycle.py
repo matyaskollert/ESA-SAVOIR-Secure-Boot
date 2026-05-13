@@ -267,7 +267,8 @@ class TestAutomaticRollbackBothFail:
             or board.is_write_protected(slot_config.secondary_ob_mask)
         ):
             board.set_write_protection(
-                protect_mask=slot_config.primary_ob_mask | board.OB_WRP_PROTECTED_BSW_STATE,
+                protect_mask=slot_config.primary_ob_mask
+                | board.OB_WRP_PROTECTED_BSW_STATE,
                 unprotect_mask=slot_config.secondary_ob_mask,
             )
         yield primary_img, secondary_img
@@ -302,7 +303,9 @@ class TestAutomaticRollbackSecondSucceeds:
     """
 
     @pytest.fixture
-    def rollback_succeeds_state(self, clean_flash, slot_config, image_factory, real_asw_image):
+    def rollback_succeeds_state(
+        self, clean_flash, slot_config, image_factory, real_asw_image
+    ):
         """Primary=v2 (synthetic), Secondary=real-ASW-v1,
         counter=2, COMM=NOMINAL, nominal WRP."""
         primary_img = image_factory.build(version=2)
@@ -317,7 +320,8 @@ class TestAutomaticRollbackSecondSucceeds:
             or board.is_write_protected(slot_config.secondary_ob_mask)
         ):
             board.set_write_protection(
-                protect_mask=slot_config.primary_ob_mask | board.OB_WRP_PROTECTED_BSW_STATE,
+                protect_mask=slot_config.primary_ob_mask
+                | board.OB_WRP_PROTECTED_BSW_STATE,
                 unprotect_mask=slot_config.secondary_ob_mask,
             )
         yield primary_img, real_asw_image

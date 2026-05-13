@@ -54,7 +54,9 @@ class TestBootValidImage:
 class TestBootNoImage:
     """MAIN slot is erased (no magic number) → BSW must send error log."""
 
-    def test_debug_log_reports_missing_header(self, clean_flash, slot_config, bsw, config):
+    def test_debug_log_reports_missing_header(
+        self, clean_flash, slot_config, bsw, config
+    ):
         board.reset_board()
         bsw.send_command("1", sequence=0)
         bsw.wait_for_ack(expected_sequence=0, timeout=1.0)
@@ -182,7 +184,8 @@ class TestBootBothSectorsUnprotected:
     def setup_both_unprotected(self, nominal_state, slot_config):
         board.set_write_protection(
             protect_mask=0,
-            unprotect_mask=slot_config.primary_ob_mask | board.OB_WRP_PROTECTED_BSW_STATE,
+            unprotect_mask=slot_config.primary_ob_mask
+            | board.OB_WRP_PROTECTED_BSW_STATE,
         )
         yield
         board.set_write_protection(
