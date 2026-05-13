@@ -1,5 +1,5 @@
 """
-test_protocol.py – ECSS packet protocol robustness tests for the BSW.
+test_protocol.py - ECSS packet protocol robustness tests for the BSW.
 
 These tests send malformed, out-of-order, or unexpected packet sequences to
 verify that the BSW handles every error path in the protocol layer without
@@ -31,27 +31,28 @@ class TestUnknownCommand:
     def test_unknown_command_does_not_hang(self, nominal_state, bsw, config):
         """Send 'X'; the BSW should reach the else-branch and eventually reset."""
         board.reset_board()
-        bsw.send_command('X', sequence=0)
+        bsw.send_command("X", sequence=0)
         # Give the BSW up to 2 s to respond or reset; we only care it doesn't hang.
         try:
             bsw.wait_for_ack(expected_sequence=0, timeout=2.0)
         except (serial_comm.NackReceived, TimeoutError, AssertionError):
-            pass  # any response (or none) is acceptable – we just mustn't block forever
+            pass  # any response (or none) is acceptable - we just mustn't block forever
 
-
-    def test_unknown_command_does_not_corrupt_boot_slot(self, nominal_state, bsw, config):
-        """The BOOT slot must be byte-for-byte intact after an unknown command."""
+    def test_unknown_command_does_not_corrupt_boot_slot(
+        self, nominal_state, bsw, config
+    ):
+        """The MAIN slot must be byte-for-byte intact after an unknown command."""
         golden = board.flash_read(board.SLOT_A_FLASH_ADDRESS, 32)
 
         board.reset_board()
-        bsw.send_command('X', sequence=0)
+        bsw.send_command("X", sequence=0)
         try:
             bsw.wait_for_ack(expected_sequence=0, timeout=2.0)
         except (serial_comm.NackReceived, TimeoutError, AssertionError):
             pass
 
         after = board.flash_read(board.SLOT_A_FLASH_ADDRESS, 32)
-        assert after == golden, "BOOT slot must not be modified by an unknown command"
+        assert after == golden, "MAIN slot must not be modified by an unknown command"
 
 
 class TestCommandWithEmptyData:
@@ -82,7 +83,7 @@ class TestUploadStartErrors:
     def test_nack_3_when_start_data_length_wrong(self, nominal_state, bsw, config):
         """START_UPLOAD with data_length ≠ 4 must produce NACK error code 3."""
         board.reset_board()
-        bsw.send_command('2', sequence=0)
+        bsw.send_command("2", sequence=0)
         bsw.wait_for_ack(expected_sequence=0)
 
         # Send a START_UPLOAD with an 8-byte payload instead of the expected 4.
@@ -95,7 +96,7 @@ class TestUploadStartErrors:
     def test_nack_2_when_wrong_service_type_at_start(self, nominal_state, bsw, config):
         """Sending DATA_CHUNK where START_UPLOAD is expected → NACK error code 2."""
         board.reset_board()
-        bsw.send_command('2', sequence=0)
+        bsw.send_command("2", sequence=0)
         bsw.wait_for_ack(expected_sequence=0)
 
         # Send DATA_CHUNK instead of START_UPLOAD
@@ -109,11 +110,13 @@ class TestUploadStartErrors:
 class TestUploadChunkErrors:
     """Verify error handling during the DATA_CHUNK phase."""
 
-    def test_nack_7_when_wrong_service_type_in_chunk_phase(self, nominal_state, bsw, config, image_factory):
+    def test_nack_7_when_wrong_service_type_in_chunk_phase(
+        self, nominal_state, bsw, config, image_factory
+    ):
         """After a valid START, sending START_UPLOAD again → NACK error code 7."""
         update_img = image_factory.build(version=2)
         board.reset_board()
-        bsw.send_command('2', sequence=0)
+        bsw.send_command("2", sequence=0)
         bsw.wait_for_ack(expected_sequence=0)
 
         # Valid START
@@ -168,13 +171,15 @@ class TestUploadEndBeforeAllData:
     ACK the END packet.
     """
 
-    def test_end_before_all_data_acks_and_does_not_corrupt_boot(self, nominal_state, bsw, config, image_factory):
-        """Early END must be ACKed and must not touch the BOOT slot."""
+    def test_end_before_all_data_acks_and_does_not_corrupt_boot(
+        self, nominal_state, bsw, config, image_factory
+    ):
+        """Early END must be ACKed and must not touch the MAIN slot."""
         golden = board.flash_read(board.SLOT_A_FLASH_ADDRESS, 32)
         update_img = image_factory.build(version=2)
 
         board.reset_board()
-        bsw.send_command('2', sequence=0)
+        bsw.send_command("2", sequence=0)
         bsw.wait_for_ack(expected_sequence=0)
         bsw.send_start_upload(512, sequence=1)
         bsw.wait_for_ack(expected_sequence=1)

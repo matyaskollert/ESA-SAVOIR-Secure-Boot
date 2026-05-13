@@ -1,7 +1,7 @@
 /*
  * benchmark.c
  *
- * Loads the BOOT image from BOOT_FLASH_ADDRESS into RAM (mimicking
+ * Loads the MAIN image from SLOT_A_FLASH_ADDRESS into RAM (mimicking
  * imageLoad() from image.c but without launching the image), zeroes the
  * signature field as the signer did, then runs the signature verification
  * algorithm BENCHMARK_ITERATIONS times and prints timing results.

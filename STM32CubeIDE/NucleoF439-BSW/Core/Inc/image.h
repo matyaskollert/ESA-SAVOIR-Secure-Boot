@@ -28,5 +28,6 @@ int16_t imageLoad(ImageSlot slot);
 
 void imageStart(void);
 
+void printImageHeaders(void);
 
 #endif /* INC_IMAGE_H_ */

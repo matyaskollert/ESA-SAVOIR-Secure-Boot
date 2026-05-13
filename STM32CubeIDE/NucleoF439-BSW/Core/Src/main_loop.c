@@ -5,12 +5,12 @@
  *      Author: Matyas
  */
 
-#include "main_loop.h"
 #include <stdio.h>
+#include "main_loop.h"
+#include "image.h"
 #include "boot.h"
 #include "input.h"
 #include "update.h"
-#include "report.h"
 #include "self_test.h"
 #include "flash.h"
 #include "bsw_report.h"
@@ -38,27 +38,49 @@ static void handleRollback(UART_HandleTypeDef* uart); /* forward declaration */
 /* Handle a swap command: verify preconditions, perform swap, reset */
 static void handleSwap(UART_HandleTypeDef* uart, uint16_t sequence_count)
 {
+	bsw_report_t report;
+	bsw_report_init(&report, BSW_REPORT_TYPE_SWAP);
+
 	if (checkSystemForImageSwap() != 0)
 	{
 		printf("Setting up system for image swap\r\n");
+		report.outcome = 7;
+		bsw_report_flush(&report);
 		sendNackPacket(uart, sequence_count, 12);
-		setupSystemForImageSwap();;
+		setupSystemForImageSwap();
 		NVIC_SystemReset();
 	}
+	report.step_flags |= BSW_SWAP_FLAG_SYSTEM_OK;
+
 	if (checkUpdateVersion() != 0)
 	{
+		report.outcome = 8;
+		bsw_report_flush(&report);
 		sendNackPacket(uart, sequence_count, 9);
 		return;
 	}
-	if (checkUpdateValidity() != 0)
+	report.step_flags |= BSW_SWAP_FLAG_VERSION_OK;
+
+	int16_t validity_ret = checkUpdateValidity();
+	if (validity_ret != 0)
 	{
+		if (validity_ret == 2) /* CRC passed, signature failed */
+		{
+			report.step_flags |= BSW_SWAP_FLAG_CRC_OK;
+			report.outcome = 10;
+		}
+		else /* CRC failed */
+		{
+			report.outcome = 9;
+		}
+		bsw_report_flush(&report);
 		sendNackPacket(uart, sequence_count, 9);
 		return;
 	}
 
 	sendAckPacket(uart, sequence_count);
 
-	if (swapBootWithUpdate() != 0)
+	if (swapMainWithUpdate(&report) != 0)
 	{
 		printf("Swapping images failed\r\n");
 		return;
@@ -110,26 +132,36 @@ static void standbyLoop(UART_HandleTypeDef* uart, BootloaderStatus initial_statu
 		switch (status)
 		{
 			case BOOTLOADER_STATUS_NOMINAL:
+			{
 				/* Boot */
+				bsw_report_t report;
+				bsw_report_init(&report, BSW_REPORT_TYPE_NOMINAL);
 				if (checkSystemForNominal() != 0)
 				{
 					printf("System not configured for nominal mode\r\n");
+					report.outcome = 5;
+					bsw_report_flush(&report);
 					sendNackPacket(uart, seq, 11);
 					setupSystemForNominal();
 					NVIC_SystemReset();
 				}
 				sendAckPacket(uart, seq);
-
-				int16_t ret = boot();
+				int16_t ret = boot(&report);
 				if (ret != 0)
 					printf("Booting image failed: %d\r\n", ret);
 				break;
+			}
 
 			case BOOTLOADER_STATUS_UPDATE:
+			{
 				/* Update */
+				bsw_report_t report;
+				bsw_report_init(&report, BSW_REPORT_TYPE_UPDATE);
 				if (checkSystemForUpdate() != 0)
 				{
 					printf("System not configured for update\r\n");
+					report.outcome = 15;
+					bsw_report_flush(&report);
 					sendNackPacket(uart, seq, 10);
 					setupSystemForUpdate();
 					NVIC_SystemReset();
@@ -139,20 +171,18 @@ static void standbyLoop(UART_HandleTypeDef* uart, BootloaderStatus initial_statu
 					printf("Error sending ACK for command\r\n");
 					break;
 				}
-
-				if (receiveUpdateData(uart) != 0)
+				if (receiveUpdateData(uart, &report) != 0)
 				{
 					printf("Receiving image failed\r\n");
 					break;
 				}
-
 				if (setupSystemForImageSwap() != 0)
 				{
 					printf("Setting up system for image swap failed\r\n");
 					break;
 				}
 				NVIC_SystemReset();
-
+			}
 			case BOOTLOADER_STATUS_SWAP:
 				/* Swap */
 				handleSwap(uart, seq);
@@ -297,9 +327,13 @@ void run_main_loop(UART_HandleTypeDef* uart)
 	{
 		/* ── NOMINAL ── */
 		printf("Nominal mode - booting application\r\n");
+		bsw_report_t report;
+		bsw_report_init(&report, BSW_REPORT_TYPE_NOMINAL);
 		if (checkSystemForNominal() != 0)
 		{
 			printf("System not configured for nominal mode\r\n");
+			report.outcome = 5;
+			bsw_report_flush(&report);
 			if (inputReceived == 0)
 				sendNackPacket(uart, effective_seq, 11);
 			setupSystemForNominal();
@@ -307,7 +341,7 @@ void run_main_loop(UART_HandleTypeDef* uart)
 		}
 		if (sendAckPacket(uart, effective_seq) != 0)
 			printf("Error sending ACK\r\n");
-		int16_t ret = boot();
+		int16_t ret = boot(&report);
 		if (ret != 0)
 		{
 			printf("Booting image failed: %d\r\n", ret);

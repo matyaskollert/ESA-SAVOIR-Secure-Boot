@@ -38,7 +38,7 @@ from signature_ecdsa import ECDSASignature  # noqa: E402
 from signature_mldsa import MLDSASignature  # noqa: E402
 
 # ---------------------------------------------------------------------------
-# Constants – mirror binary_processor.py exactly
+# Constants - mirror binary_processor.py exactly
 # ---------------------------------------------------------------------------
 HEADER_PARTITION_SIZE = 5 * 1024  # 5 120 bytes total
 SIGNATURE_SIZE = 4096  # bytes reserved for the signature
@@ -100,7 +100,7 @@ class ImageFactory:
                            synthetic payload is used.
 
         Returns:
-            bytes – complete image (header partition + image data).
+            bytes - complete image (header partition + image data).
         """
         if image_payload is None:
             image_payload = _minimal_arm_payload(self._min_size)
@@ -152,7 +152,7 @@ class ImageFactory:
     def bump_version(image: bytes, new_version: int) -> bytes:
         """Return a copy of *image* with the version field replaced.
 
-        WARNING: this invalidates the CRC and signature – useful to test the
+        WARNING: this invalidates the CRC and signature - useful to test the
         version-check path where the firmware reads the version before verifying.
         """
         crc = image[:4]

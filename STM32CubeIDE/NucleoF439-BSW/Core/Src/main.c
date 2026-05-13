@@ -23,7 +23,6 @@
 /* USER CODE BEGIN Includes */
 
 #include <stdio.h>
-#include "report.h"
 #include "main_loop.h"
 #include "input.h"
 

@@ -551,23 +551,23 @@ _REPORT_TYPE_NAMES = {0x01: "NOMINAL", 0x02: "UPDATE", 0x03: "SWAP"}
 _SLOT_NAMES = {0: "SLOT_A", 1: "SLOT_B", 2: "RAM"}
 
 _NOMINAL_FLAGS = [
-    (1 << 0, "STATUS_SET  – BOOT_ATTEMPTED status written to flash"),
-    (1 << 1, "CRC_OK      – primary-slot CRC (imageValidate) passed"),
-    (1 << 2, "SIG_OK      – primary-slot digital signature (imageLoad) passed"),
-    (1 << 3, "RAM_CRC_OK  – RAM copy CRC (imageValidateInRAM) passed"),
+    (1 << 0, "STATUS_SET  - BOOT_ATTEMPTED status written to flash"),
+    (1 << 1, "CRC_OK      - primary-slot CRC (imageValidate) passed"),
+    (1 << 2, "SIG_OK      - primary-slot digital signature (imageLoad) passed"),
+    (1 << 3, "RAM_CRC_OK  - RAM copy CRC (imageValidateInRAM) passed"),
 ]
 _UPDATE_FLAGS = [
-    (1 << 0, "VERSION_OK  – received version ≥ rollback floor"),
-    (1 << 1, "RAM_CRC_OK  – received image CRC passed"),
-    (1 << 2, "RAM_SIG_OK  – received image digital signature passed"),
-    (1 << 3, "FLASH_OK    – image written to secondary flash slot"),
+    (1 << 0, "VERSION_OK  - received version ≥ rollback floor"),
+    (1 << 1, "RAM_CRC_OK  - received image CRC passed"),
+    (1 << 2, "RAM_SIG_OK  - received image digital signature passed"),
+    (1 << 3, "FLASH_OK    - image written to secondary flash slot"),
 ]
 _SWAP_FLAGS = [
-    (1 << 0, "VERSION_OK   – secondary version ≥ rollback floor"),
-    (1 << 1, "CRC_OK       – secondary-slot CRC passed"),
-    (1 << 2, "SIG_OK       – secondary-slot signature passed"),
-    (1 << 3, "COUNTER_OK   – rollback counter written to protected state"),
-    (1 << 4, "SLOT_FLIPPED – primary-slot flag updated"),
+    (1 << 0, "VERSION_OK   - secondary version ≥ rollback floor"),
+    (1 << 1, "CRC_OK       - secondary-slot CRC passed"),
+    (1 << 2, "SIG_OK       - secondary-slot signature passed"),
+    (1 << 3, "COUNTER_OK   - rollback counter written to protected state"),
+    (1 << 4, "SLOT_FLIPPED - primary-slot flag updated"),
 ]
 _FLAGS_BY_TYPE = {0x01: _NOMINAL_FLAGS, 0x02: _UPDATE_FLAGS, 0x03: _SWAP_FLAGS}
 

@@ -107,8 +107,8 @@ int16_t bsw_report_flush(const bsw_report_t *r)
 
     int16_t ret = writeFlashSector(REPORT_FLASH_SECTOR,
                                    REPORT_FLASH_ADDRESS,
-                                   (uint32_t *)(uintptr_t)g_reports,
-                                   sizeof(g_reports) / sizeof(uint32_t));
+                                   (uint32_t *)g_reports,
+                                   sizeof(g_reports) / 4);
 
     HAL_FLASH_Lock();
 

@@ -91,6 +91,45 @@ COMM_STATUS_STANDBY = 0xBB
 COMM_STATUS_SWAP = 0xCC
 COMM_STATUS_BOOT_ATTEMPTED = 0xDD
 
+# ---------------------------------------------------------------------------
+# BSW report flash constants (mirror bsw_report.h / flash.h)
+# ---------------------------------------------------------------------------
+REPORT_FLASH_ADDRESS = 0x080C0000  # sector 10
+BSW_REPORT_MAGIC = 0xBEEF0042
+BSW_REPORT_MAX_COUNT = 5
+BSW_REPORT_SLOT_SIZE = 20  # sizeof(bsw_report_t), packed
+
+# ImageSlot enum values (SLOT_A=0, SLOT_B=1, must match C enum)
+IMAGE_SLOT_A = 0
+IMAGE_SLOT_B = 1
+
+# Report type codes
+BSW_REPORT_TYPE_NOMINAL = 0x01
+BSW_REPORT_TYPE_UPDATE = 0x02
+BSW_REPORT_TYPE_SWAP = 0x03
+
+# Step flags - NOMINAL boot
+BSW_NOMINAL_FLAG_STATUS_SET = 1 << 0  # BOOT_ATTEMPTED status written
+BSW_NOMINAL_FLAG_CRC_OK = 1 << 1  # Flash CRC passed
+BSW_NOMINAL_FLAG_SIG_OK = 1 << 2  # Digital signature passed
+BSW_NOMINAL_FLAG_RAM_CRC_OK = 1 << 3  # RAM copy CRC passed
+BSW_NOMINAL_FLAG_SYSTEM_OK = 1 << 4  # checkSystemForNominal() passed
+
+# Step flags - UPDATE
+BSW_UPDATE_FLAG_VERSION_OK = 1 << 0  # Version >= rollback floor
+BSW_UPDATE_FLAG_RAM_CRC_OK = 1 << 1  # Received image CRC passed
+BSW_UPDATE_FLAG_RAM_SIG_OK = 1 << 2  # Received image signature valid
+BSW_UPDATE_FLAG_FLASH_OK = 1 << 3  # Image written to secondary slot
+BSW_UPDATE_FLAG_SYSTEM_OK = 1 << 4  # checkSystemForUpdate() passed
+
+# Step flags - SWAP
+BSW_SWAP_FLAG_VERSION_OK = 1 << 0  # Secondary version >= floor
+BSW_SWAP_FLAG_CRC_OK = 1 << 1  # Secondary CRC passed
+BSW_SWAP_FLAG_SIG_OK = 1 << 2  # Secondary signature verified
+BSW_SWAP_FLAG_COUNTER_OK = 1 << 3  # Rollback counter written
+BSW_SWAP_FLAG_SLOT_FLIPPED = 1 << 4  # Primary-slot flag updated
+BSW_SWAP_FLAG_SYSTEM_OK = 1 << 5  # checkSystemForImageSwap() passed
+
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -400,3 +439,74 @@ def set_write_protection(protect_mask, unprotect_mask=0):
     # -y suppresses the confirmation prompt
     _run(["-y"] + ob_args)
     time.sleep(1.5)  # wait for OB_Launch reset to complete
+
+
+# ---------------------------------------------------------------------------
+# BSW report flash helpers
+# ---------------------------------------------------------------------------
+
+
+def erase_reports():
+    """Erase the REPORT flash sector (sector 10, 0x080C0000), clearing all stored reports."""
+    flash_erase_sector(REPORT_FLASH_ADDRESS)
+
+
+def read_report(slot_index: int):
+    """Read and parse one bsw_report_t slot from flash (0-based slot index).
+
+    Returns a dict with parsed fields if the slot contains a valid report
+    (magic == BSW_REPORT_MAGIC), or None if the slot is erased/invalid.
+
+    Field layout matches the packed C struct in bsw_report.h:
+      magic (4B), type (1B), outcome (1B), primary_slot (1B), pad (1B),
+      rollback_counter (4B), primary_version (2B), secondary_version (2B),
+      step_flags (4B)  →  total 20 bytes.
+    """
+    addr = REPORT_FLASH_ADDRESS + slot_index * BSW_REPORT_SLOT_SIZE
+    data = flash_read(addr, BSW_REPORT_SLOT_SIZE)
+    magic, rtype, outcome, primary_slot, _pad, counter, pver, sver, flags = (
+        struct.unpack("<IBBBBIHHI", data)
+    )
+    if magic != BSW_REPORT_MAGIC:
+        return None
+    return {
+        "magic": magic,
+        "type": rtype,
+        "outcome": outcome,
+        "primary_slot": primary_slot,
+        "rollback_counter": counter,
+        "primary_version": pver,
+        "secondary_version": sver,
+        "step_flags": flags,
+    }
+
+
+def read_all_reports():
+    """Read all BSW_REPORT_MAX_COUNT slots and return a list of valid report dicts.
+
+    Reports are returned in slot order (slot 0 first).  Erased/invalid slots
+    are omitted.  Use get_latest_report() if you only need the newest entry.
+    """
+    result = []
+    for i in range(BSW_REPORT_MAX_COUNT):
+        r = read_report(i)
+        if r is not None:
+            result.append(r)
+    return result
+
+
+def get_latest_report():
+    """Return the most recently flushed report (age == 0) or None if no reports exist.
+
+    Mirrors bsw_report_get_by_age(0): the newest report is one slot before
+    g_next_idx (the first empty slot), wrapping around the circular buffer.
+    """
+    next_idx = BSW_REPORT_MAX_COUNT  # all slots filled → g_next_idx wraps to 0
+    for i in range(BSW_REPORT_MAX_COUNT):
+        if read_report(i) is None:
+            next_idx = i
+            break
+    if next_idx == BSW_REPORT_MAX_COUNT:
+        next_idx = 0
+    newest_idx = (next_idx + BSW_REPORT_MAX_COUNT - 1) % BSW_REPORT_MAX_COUNT
+    return read_report(newest_idx)

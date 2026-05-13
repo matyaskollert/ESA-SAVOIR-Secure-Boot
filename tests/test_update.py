@@ -1,5 +1,5 @@
 """
-test_update.py – E2E tests for the BSW firmware update path (command '2').
+test_update.py - E2E tests for the BSW firmware update path (command '2').
 
 Flow under test:
   1. Send '2' command  →  BSW prepares for update and ACKs.
@@ -31,9 +31,9 @@ class TestUpdateHappyPath:
     """Upload a valid version-2 image and verify it lands in the SLOT_B slot."""
 
     def test_upload_completes_and_update_slot_correct(
-        self, nominal_state, bsw, config, image_factory
+        self, nominal_state, slot_config, bsw, config, image_factory
     ):
-        """Upload must complete without NACK; SLOT_B slot must have correct header and bytes."""
+        """Upload must complete without NACK; secondary slot must have correct header and bytes."""
         update_img = image_factory.build(version=2)
         board.reset_board()
         bsw.send_command("2", sequence=0)
@@ -45,24 +45,40 @@ class TestUpdateHappyPath:
         assert "Writing to flash" in log
         assert "Flash write complete" in log
 
-        hdr = _read_header_from_slot(board.SLOT_B_FLASH_ADDRESS)
+        hdr = _read_header_from_slot(slot_config.secondary_address)
         assert hdr["magic"] == 0xABCD
         assert hdr["version"] == 2
-        flash_content = board.flash_read(board.SLOT_B_FLASH_ADDRESS, len(update_img))
+        flash_content = board.flash_read(slot_config.secondary_address, len(update_img))
         assert flash_content == update_img
+
+        # Verify the BSW report persisted to flash
+        report = board.get_latest_report()
+        assert (
+            report is not None
+        ), "An UPDATE report must be written after a successful upload"
+        assert report["type"] == board.BSW_REPORT_TYPE_UPDATE
+        assert report["outcome"] == 0
+        assert report["step_flags"] == (
+            board.BSW_UPDATE_FLAG_SYSTEM_OK
+            | board.BSW_UPDATE_FLAG_VERSION_OK
+            | board.BSW_UPDATE_FLAG_RAM_CRC_OK
+            | board.BSW_UPDATE_FLAG_RAM_SIG_OK
+            | board.BSW_UPDATE_FLAG_FLASH_OK
+        )
+        assert report["primary_slot"] == slot_config.primary_slot_enum
 
 
 class TestUpdateVersionTooLow:
     """BSW must reject an image whose version is below the rollback floor."""
 
     @pytest.fixture(autouse=True)
-    def setup_counter(self, clean_flash, image_factory):
-        """Plant a version-5 image in BOOT and set the counter to 5.
+    def setup_counter(self, clean_flash, slot_config, image_factory):
+        """Plant a version-5 image in the primary slot and set the counter to 5.
         Rollback window = 1, so the lowest allowed version = 4.
         An image at version 3 must be rejected.
         """
         boot_img = image_factory.build(version=5)
-        board.flash_image(board.SLOT_A_FLASH_ADDRESS, boot_img)
+        board.flash_image(slot_config.primary_address, boot_img)
         board.set_rollback_counter(5)
 
     def test_nack_on_version_below_floor(self, bsw, config, image_factory):
@@ -76,12 +92,25 @@ class TestUpdateVersionTooLow:
         bsw.send_start_upload(len(old_img), sequence=1)
         bsw.wait_for_ack(expected_sequence=1)
 
-        # Send first chunk – this is where BSW inspects the version
+        # Send first chunk - this is where BSW inspects the version
         chunk = old_img[:256]
         bsw.send_data_chunk(chunk, sequence=2)
         with pytest.raises(serial_comm.NackReceived) as exc_info:
             bsw.wait_for_ack(expected_sequence=2)
         assert exc_info.value.error_code == 9
+
+        time.sleep(1.0)  # allow time for BSW to write report after NACK
+
+        # BSW must write an UPDATE report recording the version rejection
+        report = board.get_latest_report()
+        assert (
+            report is not None
+        ), "An UPDATE report must be written on version rejection"
+        assert report["type"] == board.BSW_REPORT_TYPE_UPDATE
+        assert report["outcome"] == 9
+        assert (
+            report["step_flags"] == board.BSW_UPDATE_FLAG_SYSTEM_OK
+        ), "Only SYSTEM_OK set when version check fails"
 
     def test_version_at_floor_is_accepted(self, bsw, config, image_factory):
         """A version-4 image (floor=4) must be accepted."""
@@ -91,24 +120,39 @@ class TestUpdateVersionTooLow:
         bsw.wait_for_ack(expected_sequence=0)
         bsw.upload_image(floor_img, start_sequence=1)  # should not raise
 
+        time.sleep(3.0)  # allow time for BSW to write report after NACK
 
-class TestUpdateUnprotectedBootSector:
-    """BSW must reject the update command when the BOOT sector is unprotected."""
+        # Verify that the UPDATE report shows a successful upload
+        report = board.get_latest_report()
+        assert report is not None
+        assert report["type"] == board.BSW_REPORT_TYPE_UPDATE
+        assert report["outcome"] == 0
+        assert report["step_flags"] == (
+            board.BSW_UPDATE_FLAG_SYSTEM_OK
+            | board.BSW_UPDATE_FLAG_VERSION_OK
+            | board.BSW_UPDATE_FLAG_RAM_CRC_OK
+            | board.BSW_UPDATE_FLAG_RAM_SIG_OK
+            | board.BSW_UPDATE_FLAG_FLASH_OK
+        )
+
+
+class TestUpdateUnprotectedMainSector:
+    """BSW must reject the update command when the MAIN sector is unprotected."""
 
     @pytest.fixture(autouse=True)
-    def setup_boot_unprotected(self, nominal_state):
-        """Temporarily remove write-protection from the BOOT sector."""
+    def setup_main_unprotected(self, nominal_state, slot_config):
+        """Temporarily remove write-protection from the MAIN sector."""
         board.set_write_protection(
             protect_mask=0,
-            unprotect_mask=board.OB_WRP_SLOT_A,
+            unprotect_mask=slot_config.primary_ob_mask,
         )
         yield
         board.set_write_protection(
-            protect_mask=board.OB_WRP_SLOT_A | board.OB_WRP_PROTECTED_BSW_STATE,
-            unprotect_mask=board.OB_WRP_SLOT_B,
+            protect_mask=slot_config.primary_ob_mask | board.OB_WRP_PROTECTED_BSW_STATE,
+            unprotect_mask=slot_config.secondary_ob_mask,
         )
 
-    def test_nack_when_boot_sector_unprotected(self, bsw, config):
+    def test_nack_when_main_sector_unprotected(self, bsw, config):
         """BSW must refuse to update if checkSystemForUpdate() fails."""
         board.reset_board()
         bsw.send_command("2", sequence=0)
@@ -116,24 +160,33 @@ class TestUpdateUnprotectedBootSector:
             bsw.wait_for_ack(expected_sequence=0, timeout=2.0)
         assert exc_info.value.error_code == 10
 
+        # BSW writes an UPDATE report (outcome=15) before calling setupSystemForUpdate()
+        report = board.get_latest_report()
+        assert (
+            report is not None
+        ), "An UPDATE report must be written on system check failure"
+        assert report["type"] == board.BSW_REPORT_TYPE_UPDATE
+        assert report["outcome"] == 15
+        assert report["step_flags"] == 0
 
-class TestUpdateUnprotectedCounterSector:
-    """BSW must reject the update command when the COUNTER sector is unprotected."""
+
+class TestUpdateUnprotectedBSWStateSector:
+    """BSW must reject the update command when the PROTECTED_BSW_STATE sector is unprotected."""
 
     @pytest.fixture(autouse=True)
-    def setup_counter_unprotected(self, nominal_state):
-        """Temporarily remove write-protection from the COUNTER sector."""
+    def setup_bsw_state_unprotected(self, nominal_state, slot_config):
+        """Temporarily remove write-protection from the PROTECTED_BSW_STATE sector."""
         board.set_write_protection(
             protect_mask=0,
             unprotect_mask=board.OB_WRP_PROTECTED_BSW_STATE,
         )
         yield
         board.set_write_protection(
-            protect_mask=board.OB_WRP_SLOT_A | board.OB_WRP_PROTECTED_BSW_STATE,
-            unprotect_mask=board.OB_WRP_SLOT_B,
+            protect_mask=slot_config.primary_ob_mask | board.OB_WRP_PROTECTED_BSW_STATE,
+            unprotect_mask=slot_config.secondary_ob_mask,
         )
 
-    def test_nack_and_sectors_reprotected(self, bsw, config):
+    def test_nack_and_sectors_reprotected(self, slot_config, bsw, config):
         """BSW must NACK 10 and then re-protect both sectors via setupSystemForNominal()."""
         board.reset_board()
         bsw.send_command("2", sequence=0)
@@ -141,8 +194,17 @@ class TestUpdateUnprotectedCounterSector:
             bsw.wait_for_ack(expected_sequence=0, timeout=2.0)
         assert exc_info.value.error_code == 10
         time.sleep(1.0)
-        assert board.is_write_protected(board.OB_WRP_SLOT_A)
+        assert board.is_write_protected(slot_config.primary_ob_mask)
         assert board.is_write_protected(board.OB_WRP_PROTECTED_BSW_STATE)
+
+        # BSW writes an UPDATE report (outcome=15) before calling setupSystemForUpdate()
+        report = board.get_latest_report()
+        assert (
+            report is not None
+        ), "An UPDATE report must be written on system check failure"
+        assert report["type"] == board.BSW_REPORT_TYPE_UPDATE
+        assert report["outcome"] == 15
+        assert report["step_flags"] == 0
 
 
 class TestUpdateSectorProtectedDuringUpdate:
@@ -153,17 +215,17 @@ class TestUpdateSectorProtectedDuringUpdate:
     """
 
     @pytest.fixture(autouse=True)
-    def setup_update_protected(self, nominal_state):
-        # Protect SLOT_B (secondary) in addition to the already-protected SLOT_A+PROTECTED_BSW_STATE
+    def setup_update_protected(self, nominal_state, slot_config):
+        # Protect secondary slot in addition to the already-protected primary+PROTECTED_BSW_STATE
         board.set_write_protection(
-            protect_mask=board.OB_WRP_SLOT_A
+            protect_mask=slot_config.primary_ob_mask
             | board.OB_WRP_PROTECTED_BSW_STATE
-            | board.OB_WRP_SLOT_B,
+            | slot_config.secondary_ob_mask,
         )
         yield
         board.set_write_protection(
-            protect_mask=board.OB_WRP_SLOT_A | board.OB_WRP_PROTECTED_BSW_STATE,
-            unprotect_mask=board.OB_WRP_SLOT_B,
+            protect_mask=slot_config.primary_ob_mask | board.OB_WRP_PROTECTED_BSW_STATE,
+            unprotect_mask=slot_config.secondary_ob_mask,
         )
 
     def test_nack_and_log_mentions_update_protected(self, bsw, config):
@@ -174,19 +236,28 @@ class TestUpdateSectorProtectedDuringUpdate:
             bsw.wait_for_ack(expected_sequence=0, timeout=2.0)
         assert exc_info.value.error_code == 10
 
+        # BSW writes an UPDATE report (outcome=15) before calling setupSystemForUpdate()
+        report = board.get_latest_report()
+        assert (
+            report is not None
+        ), "An UPDATE report must be written on system check failure"
+        assert report["type"] == board.BSW_REPORT_TYPE_UPDATE
+        assert report["outcome"] == 15
+        assert report["step_flags"] == 0
+
 
 class TestUpdateStateAfterSuccess:
     """After a successful upload the system must be in swap-ready state.
 
     setupSystemForImageSwap() is called before the reset:
       - COMM word = 0xCC (COMM_STATUS_SWAP)
-      - BOOT (sector 5) and COUNTER (sector 9) write-protection must be lifted
+      - MAIN (sector 5) and PROTECTED_BSW_STATE (sector 9) write-protection must be lifted
     """
 
     def test_system_state_after_successful_upload(
-        self, nominal_state, bsw, config, image_factory
+        self, nominal_state, slot_config, bsw, config, image_factory
     ):
-        """After upload: COMM=SWAP, BOOT+COUNTER unlocked, SLOT_B slot has correct version."""
+        """After upload: COMM=SWAP, primary slot + PROTECTED_BSW_STATE unlocked, secondary slot has correct version."""
         update_img = image_factory.build(version=2)
         board.reset_board()
         bsw.send_command("2", sequence=0)
@@ -196,23 +267,36 @@ class TestUpdateStateAfterSuccess:
 
         assert board.get_comm_status() == board.COMM_STATUS_SWAP
         assert not board.is_write_protected(
-            board.OB_WRP_SLOT_A
-        ), "SLOT_A sector must be unlocked after upload"
+            slot_config.primary_ob_mask
+        ), "Primary slot sector must be unlocked after upload"
         assert not board.is_write_protected(
             board.OB_WRP_PROTECTED_BSW_STATE
         ), "PROTECTED_BSW_STATE sector must be unlocked after upload"
-        hdr = _read_header_from_slot(board.SLOT_B_FLASH_ADDRESS)
+        hdr = _read_header_from_slot(slot_config.secondary_address)
         assert hdr["version"] == 2
+
+        # The UPDATE report must be in flash (written before setupSystemForImageSwap reset)
+        report = board.get_latest_report()
+        assert report is not None
+        assert report["type"] == board.BSW_REPORT_TYPE_UPDATE
+        assert report["outcome"] == 0
+        assert report["step_flags"] == (
+            board.BSW_UPDATE_FLAG_SYSTEM_OK
+            | board.BSW_UPDATE_FLAG_VERSION_OK
+            | board.BSW_UPDATE_FLAG_RAM_CRC_OK
+            | board.BSW_UPDATE_FLAG_RAM_SIG_OK
+            | board.BSW_UPDATE_FLAG_FLASH_OK
+        )
 
 
 class TestRollbackPrevention:
     """The rollback counter must prevent downgrades beyond the allowed window."""
 
     @pytest.fixture(autouse=True)
-    def setup(self, clean_flash, image_factory):
+    def setup(self, clean_flash, slot_config, image_factory):
         """Counter = 10, window = 1 → floor = 9.  Upload version 8 → should fail."""
         boot_img = image_factory.build(version=10)
-        board.flash_image(board.SLOT_A_FLASH_ADDRESS, boot_img)
+        board.flash_image(slot_config.primary_address, boot_img)
         board.set_rollback_counter(10)
 
     def test_nack9_and_counter_unchanged_after_rejection(

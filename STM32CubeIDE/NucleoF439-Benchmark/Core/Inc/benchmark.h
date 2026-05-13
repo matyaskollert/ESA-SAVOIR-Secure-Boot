@@ -58,7 +58,7 @@
 #endif
 
 /**
- * Load the BOOT image from BOOT_FLASH_ADDRESS into RAM, zero its signature
+ * Load the MAIN image from SLOT_A_FLASH_ADDRESS into RAM, zero its signature
  * field, then verify the signature BENCHMARK_ITERATIONS times using the
  * algorithm selected by BENCHMARK_ALGO.  Timing and pass/fail results are
  * printed over UART (printf).

@@ -49,19 +49,81 @@ typedef enum {
 #define BSW_NOMINAL_FLAG_CRC_OK      (1U << 1)  /* Primary-slot CRC (imageValidate) passed                 */
 #define BSW_NOMINAL_FLAG_SIG_OK      (1U << 2)  /* Primary-slot digital signature (imageVerify) passed     */
 #define BSW_NOMINAL_FLAG_RAM_CRC_OK  (1U << 3)  /* RAM copy CRC (imageValidateInRAM) passed                */
+#define BSW_NOMINAL_FLAG_SYSTEM_OK   (1U << 4)  /* checkSystemForNominal() passed (sectors protected)      */
 
 /* -- UPDATE sequence (type == BSW_REPORT_TYPE_UPDATE) -------------------- */
 #define BSW_UPDATE_FLAG_VERSION_OK   (1U << 0)  /* Received version >= rollback floor */
 #define BSW_UPDATE_FLAG_RAM_CRC_OK   (1U << 1)  /* Received image CRC passed          */
 #define BSW_UPDATE_FLAG_RAM_SIG_OK   (1U << 2)  /* Received image signature valid     */
 #define BSW_UPDATE_FLAG_FLASH_OK     (1U << 3)  /* Image written to secondary slot    */
+#define BSW_UPDATE_FLAG_SYSTEM_OK    (1U << 4)  /* checkSystemForUpdate() passed      */
 
 /* -- SWAP sequence (type == BSW_REPORT_TYPE_SWAP) ------------------------ */
-#define BSW_SWAP_FLAG_VERSION_OK     (1U << 0)  /* Secondary version >= floor        */
-#define BSW_SWAP_FLAG_CRC_OK         (1U << 1)  /* Secondary-slot CRC passed         */
-#define BSW_SWAP_FLAG_SIG_OK         (1U << 2)  /* Secondary-slot signature verified */
-#define BSW_SWAP_FLAG_COUNTER_OK     (1U << 3)  /* Rollback counter written          */
-#define BSW_SWAP_FLAG_SLOT_FLIPPED   (1U << 4)  /* Primary-slot flag updated         */
+#define BSW_SWAP_FLAG_VERSION_OK     (1U << 0)  /* Secondary version >= floor                             */
+#define BSW_SWAP_FLAG_CRC_OK         (1U << 1)  /* Secondary-slot CRC passed                              */
+#define BSW_SWAP_FLAG_SIG_OK         (1U << 2)  /* Secondary-slot signature verified                      */
+#define BSW_SWAP_FLAG_COUNTER_OK     (1U << 3)  /* Rollback counter written                               */
+#define BSW_SWAP_FLAG_SLOT_FLIPPED   (1U << 4)  /* Primary-slot flag updated                              */
+#define BSW_SWAP_FLAG_SYSTEM_OK      (1U << 5)  /* checkSystemForImageSwap() passed (sectors unlocked)    */
+
+/* =========================================================================
+ * Outcome codes
+ *
+ * The outcome field is 0 on success.  On failure it holds the code of the
+ * step that failed; the step_flags field shows how far execution reached
+ * before the failure occurred.
+ *
+ * -- BSW_REPORT_TYPE_NOMINAL (boot.c :: boot()) ---------------------------
+ *
+ *  0  Success — all checks passed; imageStart() was called.
+ *  1  setBootloaderStatus(BOOT_ATTEMPTED) failed (flash write error).
+ *  2  imageValidate(primary) failed — CRC mismatch in flash.
+ *  3  imageLoad(primary) failed — digital signature invalid or RAM write error.
+ *  4  imageValidateInRAM(primary) failed — CRC mismatch after RAM copy.
+ *  5  checkSystemForNominal() failed — primary slot or BSW-state sector not write-protected.
+ *     (written in main_loop.c; boot() is never entered)
+ *
+ * -- BSW_REPORT_TYPE_UPDATE (update.c :: receiveUpdateData()) --------------
+ *
+ *  0  Success — image verified in RAM and written to the secondary slot.
+ *  1  UART error receiving the START_UPLOAD packet header.
+ *  2  Unexpected packet type where START_UPLOAD was expected.
+ *  3  START_UPLOAD payload length is not 4 bytes.
+ *  4  UART error receiving the START_UPLOAD payload (image size field).
+ *  5  UART error sending the ACK for the START_UPLOAD packet.
+ *  6  UART error receiving a DATA_CHUNK packet header.
+ *  7  Unexpected packet type where DATA_CHUNK was expected.
+ *  8  UART error receiving a DATA_CHUNK payload.
+ *  9  First chunk rejected: bad magic number or version below rollback floor.
+ * 10  UART error sending the ACK for a DATA_CHUNK packet.
+ * 11  imageValidateInRAM(RAM) failed — CRC mismatch after full image received.
+ * 12  verifySignature() failed — digital signature of received image invalid.
+ * 13  HAL_FLASH_Unlock() or HAL_FLASH_Lock() returned an error.
+ * 14  writeFlashSector() failed — could not write image to secondary slot.
+ * 15  checkSystemForUpdate() failed — primary slot or BSW-state sector not write-protected,
+ *     or secondary slot is write-protected.  (written in main_loop.c; receiveUpdateData() is never entered)
+ *
+ * -- BSW_REPORT_TYPE_SWAP (update.c :: swapBootWithUpdate() and main_loop.c) -
+ *
+ *  0  Success — primary-slot flag (and counter) updated; images exchanged.
+ *  1  imageGetHeader(primary) returned NULL — primary slot has no valid header.
+ *  2  imageGetHeader(secondary) returned NULL — secondary slot has no valid header.
+ *  3  Cannot determine the new rollback counter value (counter logic error).
+ *  4  HAL_FLASH_Unlock() or HAL_FLASH_Lock() returned an error
+ *     (hardware-swap build only).
+ *  5  writeFlashSector() failed during the physical image copy
+ *     (hardware-swap build only).
+ *  6  setProtectedBswState() failed — could not persist counter or slot flag.
+ *  7  checkSystemForImageSwap() failed — primary slot or BSW-state sector not unlocked.
+ *     (written in main_loop.c; swapBootWithUpdate() is never entered)
+ *  8  checkUpdateVersion() failed — secondary image version is below the rollback floor,
+ *     or secondary slot has no valid header.
+ *     (written in main_loop.c; swapBootWithUpdate() is never entered)
+ *  9  checkUpdateValidity() failed at CRC — secondary-slot CRC mismatch.
+ *     (written in main_loop.c; swapBootWithUpdate() is never entered)
+ * 10  checkUpdateValidity() failed at signature — secondary-slot digital signature invalid.
+ *     (written in main_loop.c; swapBootWithUpdate() is never entered)
+ * ========================================================================= */
 
 /* =========================================================================
  * Report entry — stored packed in one flash slot per entry.
@@ -130,15 +192,5 @@ int16_t bsw_report_flush(const bsw_report_t *r);
  * is the oldest (or the next slot to be overwritten).
  */
 const bsw_report_t* bsw_report_get_by_age(uint8_t age);
-
-/**
- * Flush the report to flash, then trigger a system reset.
- * This is the single safe-reset point; all code paths that need to restart
- * (swap setup resets, rollback resets, etc.) should call this instead of
- * NVIC_SystemReset() directly, ensuring the current report is always persisted.
- *
- * Passing NULL skips the flush and resets immediately.
- */
-__attribute__((noreturn)) void bsw_safe_reset(const bsw_report_t *r);
 
 #endif /* INC_BSW_REPORT_H_ */

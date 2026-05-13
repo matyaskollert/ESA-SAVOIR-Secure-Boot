@@ -47,7 +47,7 @@ static int16_t rx_read(UART_HandleTypeDef* uuart,
 	if (!dmaReady || uart != uuart)
 	{
 		// printf("DMA not ready or wrong UART instance, falling back to polling\r\n");
-		/* Polling fallback – used by ASW which has no DMA configured */
+		/* Polling fallback - used by ASW which has no DMA configured */
 		HAL_StatusTypeDef ret = HAL_UART_Receive(uart, dst, len, timeout_ms);
 		if (ret == HAL_TIMEOUT) return -1;
 		if (ret != HAL_OK)      return  1;

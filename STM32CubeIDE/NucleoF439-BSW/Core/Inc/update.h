@@ -9,10 +9,11 @@
 #define INC_UPDATE_H_
 
 #include "stm32f4xx_hal.h"
+#include "bsw_report.h"
 
-int16_t receiveUpdateData(UART_HandleTypeDef* uart);
+int16_t receiveUpdateData(UART_HandleTypeDef* uart, bsw_report_t *report);
 
-int16_t swapBootWithUpdate(void);
+int16_t swapMainWithUpdate(bsw_report_t *report);
 
 int16_t setProtectedBswState(uint32_t rollback_counter, uint32_t primary_slot);
 

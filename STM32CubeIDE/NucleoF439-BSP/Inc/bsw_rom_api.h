@@ -19,7 +19,7 @@
  *
  * ─────────────────────────────────────────────────────────────────────────
  *
- * Layout in BSW Flash (sector 0, 0x08000000 – 0x08003FFF):
+ * Layout in BSW Flash (sector 0, 0x08000000 - 0x08003FFF):
  *
  *   0x08000000  ISR vector table   (max ~0x1B8 bytes for STM32F439)
  *   0x08000200  bsw_rom_api_t      (this table, placed by BSW linker script)

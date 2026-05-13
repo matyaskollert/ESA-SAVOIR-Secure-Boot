@@ -25,10 +25,10 @@ uint8_t myRXBuffer[RX_BUFFER_SIZE];
 
 
 // ECSS packet protocol implementation
-int16_t receiveUpdateData(UART_HandleTypeDef* uart)
+int16_t receiveUpdateData(UART_HandleTypeDef* uart, bsw_report_t *report)
 {
-	bsw_report_t report;
-	bsw_report_init(&report, BSW_REPORT_TYPE_UPDATE);
+	/* Reaching this function means checkSystemForUpdate() already passed. */
+	report->step_flags |= BSW_UPDATE_FLAG_SYSTEM_OK;
 
 	ECSSPacketHeader header;
 	uint32_t dataLength = 0;
@@ -43,8 +43,8 @@ int16_t receiveUpdateData(UART_HandleTypeDef* uart)
 	{
 		printf("Error receiving START packet header\r\n");
 		sendNackPacket(uart, 0, 1);
-		report.outcome = 1;
-		bsw_report_flush(&report);
+		report->outcome = 1;
+		bsw_report_flush(report);
 		return 1;
 	}
 	
@@ -52,8 +52,8 @@ int16_t receiveUpdateData(UART_HandleTypeDef* uart)
 	{
 		printf("Expected START_UPLOAD, got 0x%02X\r\n", header.service_type);
 		sendNackPacket(uart, header.sequence_count, 2);
-		report.outcome = 2;
-		bsw_report_flush(&report);
+		report->outcome = 2;
+		bsw_report_flush(report);
 		return 2;
 	}
 	
@@ -62,8 +62,8 @@ int16_t receiveUpdateData(UART_HandleTypeDef* uart)
 	{
 		printf("START packet should contain 4 bytes\r\n");
 		sendNackPacket(uart, header.sequence_count, 3);
-		report.outcome = 3;
-		bsw_report_flush(&report);
+		report->outcome = 3;
+		bsw_report_flush(report);
 		return 3;
 	}
 	
@@ -71,8 +71,8 @@ int16_t receiveUpdateData(UART_HandleTypeDef* uart)
 	{
 		printf("Error receiving START packet data\r\n");
 		sendNackPacket(uart, header.sequence_count, 4);
-		report.outcome = 4;
-		bsw_report_flush(&report);
+		report->outcome = 4;
+		bsw_report_flush(report);
 		return 4;
 	}
 	
@@ -83,8 +83,8 @@ int16_t receiveUpdateData(UART_HandleTypeDef* uart)
 	if (sendAckPacket(uart, header.sequence_count) != 0)
 	{
 		printf("Error sending ACK for START\r\n");
-		report.outcome = 5;
-		bsw_report_flush(&report);
+		report->outcome = 5;
+		bsw_report_flush(report);
 		return 5;
 	}
 	
@@ -100,8 +100,8 @@ int16_t receiveUpdateData(UART_HandleTypeDef* uart)
 		{
 			printf("Error receiving DATA packet header\r\n");
 			sendNackPacket(uart, expectedSequence, 6);
-			report.outcome = 6;
-			bsw_report_flush(&report);
+			report->outcome = 6;
+			bsw_report_flush(report);
 			return 6;
 		}
 		
@@ -116,8 +116,8 @@ int16_t receiveUpdateData(UART_HandleTypeDef* uart)
 		{
 			printf("Expected DATA_CHUNK, got 0x%02X\r\n", header.service_type);
 			sendNackPacket(uart, header.sequence_count, 7);
-			report.outcome = 7;
-			bsw_report_flush(&report);
+			report->outcome = 7;
+			bsw_report_flush(report);
 			return 7;
 		}
 		
@@ -133,8 +133,8 @@ int16_t receiveUpdateData(UART_HandleTypeDef* uart)
 		{
 			printf("Error receiving chunk data\r\n");
 			sendNackPacket(uart, header.sequence_count, 8);
-			report.outcome = 8;
-			bsw_report_flush(&report);
+			report->outcome = 8;
+			bsw_report_flush(report);
 			return 8;
 		}
 		
@@ -150,12 +150,12 @@ int16_t receiveUpdateData(UART_HandleTypeDef* uart)
 				printf("Invalid image or version too low (magic=0x%04X, version=%u)\r\n",
 				       updateMagic, updateVersion);
 				sendNackPacket(uart, header.sequence_count, 9);
-				report.outcome = 9;
-				bsw_report_flush(&report);
+				report->outcome = 9;
+				bsw_report_flush(report);
 				return 9;
 			}
 			printf("Image validated: magic=0x%04X, version=%u\r\n", updateMagic, updateVersion);
-			report.step_flags |= BSW_UPDATE_FLAG_VERSION_OK;
+			report->step_flags |= BSW_UPDATE_FLAG_VERSION_OK;
 		}
 		
 		// Copy data to RAM
@@ -166,8 +166,8 @@ int16_t receiveUpdateData(UART_HandleTypeDef* uart)
 		if (sendAckPacket(uart, header.sequence_count) != 0)
 		{
 			printf("Error sending ACK for chunk\r\n");
-			report.outcome = 10;
-			bsw_report_flush(&report);
+			report->outcome = 10;
+			bsw_report_flush(report);
 			return 10;
 		}
 		
@@ -208,11 +208,11 @@ int16_t receiveUpdateData(UART_HandleTypeDef* uart)
 	// Check CRC in RAM
 	if (imageValidateInRAM(RAM) != 0) {
 		printf("CRC verification failed\r\n");
-		report.outcome = 11;
-		bsw_report_flush(&report);
+		report->outcome = 11;
+		bsw_report_flush(report);
 		return 11;
 	}
-	report.step_flags |= BSW_UPDATE_FLAG_RAM_CRC_OK;
+	report->step_flags |= BSW_UPDATE_FLAG_RAM_CRC_OK;
 
 	// Check Digital Signature in RAM
 	const image_header_t* imageHeader = imageGetHeader(RAM);
@@ -225,11 +225,11 @@ int16_t receiveUpdateData(UART_HandleTypeDef* uart)
 	if (verifySignature(ramImageAddress, dataLength - 4, signature) != 1)
 	{
 		printf("Digital signature validation failed\r\n");
-		report.outcome = 12;
-		bsw_report_flush(&report);
+		report->outcome = 12;
+		bsw_report_flush(report);
 	    return 12;
 	}
-	report.step_flags |= BSW_UPDATE_FLAG_RAM_SIG_OK;
+	report->step_flags |= BSW_UPDATE_FLAG_RAM_SIG_OK;
 	// set digital signature to the correct value for saving
 	memcpy(ramDestination + dsHeaderOffset, signature, 4096);
 
@@ -237,8 +237,8 @@ int16_t receiveUpdateData(UART_HandleTypeDef* uart)
 	printf("Writing to flash...\r\n");
 	if (HAL_FLASH_Unlock() != HAL_OK)
 	{
-		report.outcome = 13;
-		bsw_report_flush(&report);
+		report->outcome = 13;
+		bsw_report_flush(report);
 		return 13;
 	}
 	ImageSlot secondary = getSecondarySlot();
@@ -247,29 +247,28 @@ int16_t receiveUpdateData(UART_HandleTypeDef* uart)
 	{
 		printf("Flash write failed\r\n");
 		HAL_FLASH_Lock();
-		report.outcome = 14;
-		bsw_report_flush(&report);
+		report->outcome = 14;
+		bsw_report_flush(report);
 		return 14;
 	}
 	if (HAL_FLASH_Lock() != HAL_OK)
 	{
-		report.outcome = 13;
-		bsw_report_flush(&report);
+		report->outcome = 13;
+		bsw_report_flush(report);
 		return 13;
 	}
 	printf("Flash write complete!\r\n");
-	report.step_flags |= BSW_UPDATE_FLAG_FLASH_OK;
-	bsw_report_flush(&report);
+	report->step_flags |= BSW_UPDATE_FLAG_FLASH_OK;
+	bsw_report_flush(report);
 	return 0;
 }
 
-int16_t swapBootWithUpdate(void)
+int16_t swapMainWithUpdate(bsw_report_t *report)
 {
-	bsw_report_t report;
-	bsw_report_init(&report, BSW_REPORT_TYPE_SWAP);
 	/* Version check and image validity (CRC + sig) were confirmed by the caller
-	 * (handleSwap) before this function was invoked. */
-	report.step_flags |= BSW_SWAP_FLAG_VERSION_OK | BSW_SWAP_FLAG_CRC_OK | BSW_SWAP_FLAG_SIG_OK;
+	 * (handleSwap) before this function was invoked. checkSystemForImageSwap() also
+	 * already passed. */
+	report->step_flags |= BSW_SWAP_FLAG_SYSTEM_OK | BSW_SWAP_FLAG_VERSION_OK | BSW_SWAP_FLAG_CRC_OK | BSW_SWAP_FLAG_SIG_OK;
 
 #ifdef HARDWARE_SWAP
 	printf("Swapping updated image into primary partition\r\n");
@@ -281,78 +280,103 @@ int16_t swapBootWithUpdate(void)
 	ImageSlot oldImageSlot = getPrimarySlot();
 	const image_header_t* oldImageHeader = imageGetHeader(oldImageSlot);
 	if (oldImageHeader == NULL)
-	{
-		return 1;
-	}
+		printf("Primary slot image header is NULL — proceeding without old version info\r\n");
+
 	const image_header_t* newImageHeader = imageGetHeader(newImageSlot);
 	if (newImageHeader == NULL)
 	{
+		printf("Secondary slot image header is NULL\r\n");
+		report->outcome = 2;
+		bsw_report_flush(report);
 		return 1;
 	}
-	
-	uint32_t oldVersion = (uint32_t)oldImageHeader->imageVersion;
+
 	uint32_t newVersion = (uint32_t)newImageHeader->imageVersion;
 	uint32_t counter = getCounterValue();
 	printf("Current rollback counter: %lu\r\n", counter);
 
 	uint32_t newCounter;
-	if (counter >= newVersion && counter >= oldVersion)
+	if (oldImageHeader == NULL)
 	{
-		newCounter = counter;
-	}
-	else if (newVersion > counter && newVersion > oldVersion)
-	{
-		printf("Updating rollback counter from %lu to %lu\r\n", counter, newVersion);
-		newCounter = newVersion;
+		/* Old version unknown; keep counter if it already covers newVersion,
+		 * otherwise advance it to newVersion. */
+		newCounter = (counter >= newVersion) ? counter : newVersion;
 	}
 	else
 	{
-		printf("Cannot determine new rollback counter value\r\n");
-		report.outcome = 1;
-		bsw_report_flush(&report);
-		return 1;
+		uint32_t oldVersion = (uint32_t)oldImageHeader->imageVersion;
+		if (counter >= newVersion && counter >= oldVersion)
+		{
+			newCounter = counter;
+		}
+		else if (newVersion > counter && newVersion > oldVersion)
+		{
+			printf("Updating rollback counter from %lu to %lu\r\n", counter, newVersion);
+			newCounter = newVersion;
+		}
+		else
+		{
+			printf("Cannot determine new rollback counter value\r\n");
+			report->outcome = 3;
+			bsw_report_flush(report);
+			return 1;
+		}
 	}
 
 #ifdef HARDWARE_SWAP
 	uint32_t newFlag = getPrimaryFlag();
-	const uint32_t oldImageSizeWords = (oldImageHeader->imageSize + IMAGE_OFFSET) / 4U;
 	const uint32_t newImageSizeWords = (newImageHeader->imageSize + IMAGE_OFFSET) / 4U;
 	if (HAL_FLASH_Unlock() != HAL_OK)
 	{
-		report.outcome = 2;
-		bsw_report_flush(&report);
+		report->outcome = 4;
+		bsw_report_flush(report);
 		return 2;
 	}
-	if (writeFlashSector(SWAP_FLASH_SECTOR, SWAP_FLASH_ADDRESS, (uint32_t *)oldImageHeader, oldImageSizeWords) != 0)
+	if (oldImageHeader != NULL)
 	{
-		printf("Failed to write old image to swap sector\r\n");
-		HAL_FLASH_Lock();
-		report.outcome = 3;
-		bsw_report_flush(&report);
-		return 3;
+		/* MAIN → SWAP: back up the current primary image before overwriting it. */
+		const uint32_t oldImageSizeWords = (oldImageHeader->imageSize + IMAGE_OFFSET) / 4U;
+		if (writeFlashSector(SWAP_FLASH_SECTOR, SWAP_FLASH_ADDRESS, (uint32_t *)oldImageHeader, oldImageSizeWords) != 0)
+		{
+			printf("Failed to write old image to swap sector\r\n");
+			HAL_FLASH_Lock();
+			report->outcome = 5;
+			bsw_report_flush(report);
+			return 3;
+		}
 	}
+	else
+	{
+		printf("Primary slot header is NULL — skipping MAIN->SWAP backup\r\n");
+	}
+	/* UPDATE → MAIN: write new image into the primary slot. */
 	if (writeFlashSector(getSlotFlashSector(oldImageSlot), getSlotFlashAddress(oldImageSlot),
 	                     (uint32_t *)newImageHeader, newImageSizeWords) != 0)
 	{
-		printf("Failed to write new image to old image slot\r\n");
+		printf("Failed to write new image to primary slot\r\n");
 		HAL_FLASH_Lock();
-		report.outcome = 3;
-		bsw_report_flush(&report);
+		report->outcome = 5;
+		bsw_report_flush(report);
 		return 3;
 	}
-	if (writeFlashSector(getSlotFlashSector(newImageSlot), getSlotFlashAddress(newImageSlot),
-	                     (uint32_t *)SWAP_FLASH_ADDRESS, oldImageSizeWords) != 0)
+	if (oldImageHeader != NULL)
 	{
-		printf("Failed to write old image from swap sector to new image slot\r\n");
-		HAL_FLASH_Lock();
-		report.outcome = 3;
-		bsw_report_flush(&report);
-		return 3;
+		/* SWAP → UPDATE: move backed-up old image into the secondary slot. */
+		const uint32_t oldImageSizeWords = (oldImageHeader->imageSize + IMAGE_OFFSET) / 4U;
+		if (writeFlashSector(getSlotFlashSector(newImageSlot), getSlotFlashAddress(newImageSlot),
+		                     (uint32_t *)SWAP_FLASH_ADDRESS, oldImageSizeWords) != 0)
+		{
+			printf("Failed to write old image from swap sector to secondary slot\r\n");
+			HAL_FLASH_Lock();
+			report->outcome = 5;
+			bsw_report_flush(report);
+			return 3;
+		}
 	}
 	if (HAL_FLASH_Lock() != HAL_OK)
 	{
-		report.outcome = 2;
-		bsw_report_flush(&report);
+		report->outcome = 4;
+		bsw_report_flush(report);
 		return 2;
 	}
 #else
@@ -367,11 +391,11 @@ int16_t swapBootWithUpdate(void)
 	if (setProtectedBswState(newCounter, newFlag) != 0)
 	{
 		printf("Failed to write BSW state\r\n");
-		report.outcome = 4;
-		bsw_report_flush(&report);
+		report->outcome = 6;
+		bsw_report_flush(report);
 		return 1;
 	}
-	report.step_flags |= BSW_SWAP_FLAG_COUNTER_OK | BSW_SWAP_FLAG_SLOT_FLIPPED;
+	report->step_flags |= BSW_SWAP_FLAG_COUNTER_OK | BSW_SWAP_FLAG_SLOT_FLIPPED;
 
 #ifdef HARDWARE_SWAP
 	printf("Images swapped in flash");
@@ -380,7 +404,7 @@ int16_t swapBootWithUpdate(void)
 	       (newFlag == PROTECTED_BSW_STATE_PRIMARY_SLOT_B) ? "SLOT_B" : "SLOT_A");
 #endif
 
-	bsw_report_flush(&report);
+	bsw_report_flush(report);
 	return 0;
 }
 
