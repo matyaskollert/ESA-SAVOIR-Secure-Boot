@@ -55,6 +55,50 @@ The BSW reconfigures protection automatically as part of lifecycle management.
 
 ---
 
+## Build-Time Configuration
+
+All flags are passed as preprocessor defines (`-D<FLAG>`) in STM32CubeIDE under
+*Project → Properties → C/C++ Build → Settings → MCU GCC Compiler → Preprocessor*.
+
+### BSW (`NucleoF439-BSW`)
+
+| Define | Default | Effect |
+|--------|---------|--------|
+| *(none)* | ECDSA-P256, software swap | Classical ECDSA-P256 signature verification; swap changes only the `primary_slot` pointer in `PROTECTED_BSW_STATE` |
+| `POST_QUANTUM` | — | Use ML-DSA-65 (Dilithium level 3) instead of ECDSA-P256 for signature verification |
+| `HYBRID` | — | Verify both ECDSA-P256 **and** ML-DSA-65; both must pass (ECDSA first, then ML-DSA) |
+| `HARDWARE_SWAP` | — | During a swap, physically relocate image bytes between flash sectors (`primary → SWAP → update → primary`) instead of just flipping the `primary_slot` pointer |
+
+`POST_QUANTUM` and `HYBRID` are mutually exclusive.  `HYBRID` takes precedence
+if both are defined.  The uploader and test suite must use a key and `KEY_TYPE`
+that matches the define active in the flashed BSW.
+
+### Benchmark firmware (`NucleoF439-Benchmark`)
+
+| Define | Example value | Effect |
+|--------|---------------|--------|
+| `BENCHMARK_ALGO` | `BENCHMARK_ALGO_ECDSA_P256` | Selects the algorithm exercised by the on-target benchmark; see `benchmark.h` for the full list of `BENCHMARK_ALGO_*` constants |
+
+#### Hardware vs. software hashing
+
+The STM32F439 has a hardware SHA-256 accelerator.  By default the wolfSSL
+configuration (`wolfSSL.I-CUBE-wolfSSL_conf.h`) uses it (`NO_STM32_HASH` is
+*not* defined, because the platform block `#undef`s it for `STM32F439xx`).
+
+To benchmark **software hashing** instead — and isolate the pure CPU cost —
+uncomment the override near the bottom of the config file:
+
+```c
+// In wolfSSL.I-CUBE-wolfSSL_conf.h (near the end of the file):
+#define NO_STM32_HASH   // <-- uncomment this line
+```
+
+This forces wolfCrypt to use its portable C SHA-256 implementation regardless of
+the platform section, letting you directly compare HW-accelerated vs.
+software-only timings for the same algorithm.
+
+---
+
 ## Image Header Format
 
 Every signed image starts with a 5 120-byte header partition:
