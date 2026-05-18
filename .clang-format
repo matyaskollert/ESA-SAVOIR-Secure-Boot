@@ -1,0 +1,32 @@
+BasedOnStyle: Microsoft
+IndentWidth: 4
+TabWidth: 4
+UseTab: ForIndentation
+ColumnLimit: 100
+PointerAlignment: Left
+
+# Include order is significant for STM32 HAL — do not reorder.
+SortIncludes: false
+
+# Alignment
+AlignConsecutiveAssignments:
+  Enabled: true
+  AcrossEmptyLines: false
+  AcrossComments: false
+AlignConsecutiveDeclarations: false
+AlignTrailingComments:
+  Kind: Always
+  OverEmptyLines: 0
+
+# Spacing
+SpaceInEmptyParentheses: false
+SpacesBeforeTrailingComments: 2
+SpaceAfterCStyleCast: false
+
+# Keep short blocks/functions on one line only if they are truly trivial.
+AllowShortBlocksOnASingleLine: Never
+AllowShortFunctionsOnASingleLine: None
+AllowShortIfStatementsOnASingleLine: Never
+
+# Doxygen / block comments: do not reflow.
+ReflowComments: false

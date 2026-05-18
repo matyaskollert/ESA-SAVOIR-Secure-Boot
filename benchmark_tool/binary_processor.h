@@ -29,16 +29,17 @@
 #include "sig_algo.h"
 
 #ifdef __cplusplus
-extern "C" {
+extern "C"
+{
 #endif
 
-#define IMAGE_MAGIC       0xABCDU
-#define IMAGE_OFFSET      0x1400U       // 5120 bytes — total header region
-#define SIGNATURE_FIELD   4096U         // bytes reserved for the signature
-#define HEADER_FIXED      12U           // CRC(4)+magic(2)+version(2)+size(4)
-#define PADDING_SIZE      (IMAGE_OFFSET - HEADER_FIXED - SIGNATURE_FIELD) // 1012
+#define IMAGE_MAGIC 0xABCDU
+#define IMAGE_OFFSET 0x1400U   // 5120 bytes — total header region
+#define SIGNATURE_FIELD 4096U  // bytes reserved for the signature
+#define HEADER_FIXED 12U       // CRC(4)+magic(2)+version(2)+size(4)
+#define PADDING_SIZE (IMAGE_OFFSET - HEADER_FIXED - SIGNATURE_FIELD)  // 1012
 
-/*
+	/*
  * Build the signing region into *out_buf (caller-allocated, must be at least
  * IMAGE_OFFSET - 4 + image_size bytes).
  *
@@ -49,11 +50,10 @@ extern "C" {
  *
  * Returns the total number of bytes written into out_buf.
  */
-size_t make_sign_region(const uint8_t* image_data, size_t image_size,
-                        uint16_t image_version,
-                        uint8_t* out_buf, size_t out_buf_capacity);
+	size_t make_sign_region(const uint8_t* image_data, size_t image_size, uint16_t image_version,
+	                        uint8_t* out_buf, size_t out_buf_capacity);
 
-/*
+	/*
  * Sign image_data, assemble the full firmware image, and write it to out_path.
  *
  * @param image_data      Raw application binary bytes.
@@ -70,11 +70,10 @@ size_t make_sign_region(const uint8_t* image_data, size_t image_size,
  * @param sign_region_len_out If non-NULL, set to the length of sign_region_out.
  * @return 0 on success, negative on error.
  */
-int build_signed_image(const uint8_t* image_data, size_t image_size,
-                       const sig_algo_t* algo, sig_ctx_t* ctx,
-                       const char* out_path, uint16_t image_version,
-                       uint8_t** raw_sig_out, size_t* raw_sig_len_out,
-                       uint8_t** sign_region_out, size_t* sign_region_len_out);
+	int build_signed_image(const uint8_t* image_data, size_t image_size, const sig_algo_t* algo,
+	                       sig_ctx_t* ctx, const char* out_path, uint16_t image_version,
+	                       uint8_t** raw_sig_out, size_t* raw_sig_len_out,
+	                       uint8_t** sign_region_out, size_t* sign_region_len_out);
 
 #ifdef __cplusplus
 }

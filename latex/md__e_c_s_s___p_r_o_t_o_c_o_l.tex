@@ -1,0 +1,209 @@
+\chapter{ECSS-\/\+Inspired Packet Protocol }
+\hypertarget{md__e_c_s_s___p_r_o_t_o_c_o_l}{}\label{md__e_c_s_s___p_r_o_t_o_c_o_l}\index{ECSS-\/Inspired Packet Protocol@{ECSS-\/Inspired Packet Protocol}}
+\label{md__e_c_s_s___p_r_o_t_o_c_o_l_autotoc_md0}%
+\Hypertarget{md__e_c_s_s___p_r_o_t_o_c_o_l_autotoc_md0}%
+
+
+This project implements a simplified ECSS-\/inspired packet protocol for uploading firmware to STM32\+F4 microcontrollers via UART. The protocol is based on ECSS-\/\+E-\/\+ST-\/70-\/41C telemetry and telecommand packet structures, adapted for a proof-\/of-\/concept implementation.\hypertarget{md__e_c_s_s___p_r_o_t_o_c_o_l_autotoc_md1}{}\doxysection{\texorpdfstring{Protocol Overview}{Protocol Overview}}\label{md__e_c_s_s___p_r_o_t_o_c_o_l_autotoc_md1}
+\hypertarget{md__e_c_s_s___p_r_o_t_o_c_o_l_autotoc_md2}{}\doxysubsection{\texorpdfstring{Packet Structure}{Packet Structure}}\label{md__e_c_s_s___p_r_o_t_o_c_o_l_autotoc_md2}
+Each packet consists of:\+
+\begin{DoxyEnumerate}
+\item {\bfseries{Primary Header}} (7 bytes) -\/ Fixed header with metadata
+\item {\bfseries{Data Field}} (variable) -\/ Payload data
+\end{DoxyEnumerate}\hypertarget{md__e_c_s_s___p_r_o_t_o_c_o_l_autotoc_md3}{}\doxysubsection{\texorpdfstring{Primary Header Format}{Primary Header Format}}\label{md__e_c_s_s___p_r_o_t_o_c_o_l_autotoc_md3}
+
+\begin{DoxyCode}{0}
+\DoxyCodeLine{Byte\ 0:\ Version/Type/Flags}
+\DoxyCodeLine{\ \ -\/\ Bits\ 7-\/5:\ Packet\ Version\ Number\ (3\ bits)\ =\ 001\ (version\ 1)}
+\DoxyCodeLine{\ \ -\/\ Bit\ 4:\ Packet\ Type\ (1\ bit)}
+\DoxyCodeLine{\ \ \ \ -\/\ 1\ =\ Telecommand\ (uplink\ from\ host\ to\ board)}
+\DoxyCodeLine{\ \ \ \ -\/\ 0\ =\ Telemetry\ (downlink\ from\ board\ to\ host)}
+\DoxyCodeLine{\ \ -\/\ Bits\ 3-\/0:\ Reserved\ (set\ to\ 0)}
+\DoxyCodeLine{}
+\DoxyCodeLine{Byte\ 1:\ Service\ Type}
+\DoxyCodeLine{\ \ -\/\ 0x01\ =\ START\_UPLOAD}
+\DoxyCodeLine{\ \ -\/\ 0x02\ =\ DATA\_CHUNK}
+\DoxyCodeLine{\ \ -\/\ 0x03\ =\ END\_UPLOAD}
+\DoxyCodeLine{\ \ -\/\ 0x06\ =\ ACK\ (acknowledgment)}
+\DoxyCodeLine{\ \ -\/\ 0x15\ =\ NACK\ (negative\ acknowledgment)}
+\DoxyCodeLine{}
+\DoxyCodeLine{Bytes\ 2-\/3:\ Sequence\ Count\ (big-\/endian,\ 16-\/bit)}
+\DoxyCodeLine{\ \ -\/\ Packet\ sequence\ number\ (0-\/65535)}
+\DoxyCodeLine{}
+\DoxyCodeLine{Bytes\ 4-\/5:\ Data\ Length\ (big-\/endian,\ 16-\/bit)}
+\DoxyCodeLine{\ \ -\/\ Length\ of\ data\ field\ in\ bytes\ (0-\/65535)}
+\DoxyCodeLine{}
+\DoxyCodeLine{Byte\ 6:\ Header\ Checksum}
+\DoxyCodeLine{\ \ -\/\ XOR\ checksum\ of\ bytes\ 0-\/5}
+
+\end{DoxyCode}
+\hypertarget{md__e_c_s_s___p_r_o_t_o_c_o_l_autotoc_md4}{}\doxysubsection{\texorpdfstring{Data Field}{Data Field}}\label{md__e_c_s_s___p_r_o_t_o_c_o_l_autotoc_md4}
+Variable-\/length payload data. The length is specified in the header\textquotesingle{}s Data Length field.\hypertarget{md__e_c_s_s___p_r_o_t_o_c_o_l_autotoc_md5}{}\doxysection{\texorpdfstring{Upload Protocol Sequence}{Upload Protocol Sequence}}\label{md__e_c_s_s___p_r_o_t_o_c_o_l_autotoc_md5}
+\hypertarget{md__e_c_s_s___p_r_o_t_o_c_o_l_autotoc_md6}{}\doxysubsection{\texorpdfstring{1. START\+\_\+\+UPLOAD Phase}{1. START\+\_\+\+UPLOAD Phase}}\label{md__e_c_s_s___p_r_o_t_o_c_o_l_autotoc_md6}
+{\bfseries{Host → Board:\+}}
+\begin{DoxyItemize}
+\item Service Type:\+ {\ttfamily START\+\_\+\+UPLOAD (0x01)}
+\item Sequence:\+ 0
+\item Data Length:\+ 4 bytes
+\item Data:\+ Total file size (32-\/bit, little-\/endian)
+\end{DoxyItemize}
+
+{\bfseries{Board → Host:\+}}
+\begin{DoxyItemize}
+\item Service Type:\+ {\ttfamily ACK (0x06)}
+\item Sequence:\+ 0
+\item Data Length:\+ 0
+\end{DoxyItemize}\hypertarget{md__e_c_s_s___p_r_o_t_o_c_o_l_autotoc_md7}{}\doxysubsection{\texorpdfstring{2. DATA\+\_\+\+CHUNK Phase}{2. DATA\+\_\+\+CHUNK Phase}}\label{md__e_c_s_s___p_r_o_t_o_c_o_l_autotoc_md7}
+{\bfseries{Host → Board:\+}} (repeated for each chunk)
+\begin{DoxyItemize}
+\item Service Type:\+ {\ttfamily DATA\+\_\+\+CHUNK (0x02)}
+\item Sequence:\+ Incrementing (1, 2, 3, ...)
+\item Data Length:\+ Chunk size (typically 256 bytes)
+\item Data:\+ Binary chunk data
+\end{DoxyItemize}
+
+{\bfseries{Board → Host:\+}} (after each chunk)
+\begin{DoxyItemize}
+\item Service Type:\+ {\ttfamily ACK (0x06)}
+\item Sequence:\+ Same as received chunk
+\item Data Length:\+ 0
+\end{DoxyItemize}\hypertarget{md__e_c_s_s___p_r_o_t_o_c_o_l_autotoc_md8}{}\doxysubsection{\texorpdfstring{3. END\+\_\+\+UPLOAD Phase}{3. END\+\_\+\+UPLOAD Phase}}\label{md__e_c_s_s___p_r_o_t_o_c_o_l_autotoc_md8}
+{\bfseries{Host → Board:\+}}
+\begin{DoxyItemize}
+\item Service Type:\+ {\ttfamily END\+\_\+\+UPLOAD (0x03)}
+\item Sequence:\+ Last sequence + 1
+\item Data Length:\+ 0
+\item Data:\+ None
+\end{DoxyItemize}
+
+{\bfseries{Board → Host:\+}}
+\begin{DoxyItemize}
+\item Service Type:\+ {\ttfamily ACK (0x06)}
+\item Sequence:\+ Same as received
+\item Data Length:\+ 0
+\end{DoxyItemize}\hypertarget{md__e_c_s_s___p_r_o_t_o_c_o_l_autotoc_md9}{}\doxysubsection{\texorpdfstring{Error Handling}{Error Handling}}\label{md__e_c_s_s___p_r_o_t_o_c_o_l_autotoc_md9}
+If the board detects an error, it sends:\+
+\begin{DoxyItemize}
+\item Service Type:\+ {\ttfamily NACK (0x15)}
+\item Sequence:\+ Related packet sequence
+\item Data Length:\+ 1 byte
+\item Data:\+ Error code
+\end{DoxyItemize}\hypertarget{md__e_c_s_s___p_r_o_t_o_c_o_l_autotoc_md10}{}\doxysection{\texorpdfstring{Implementation Files}{Implementation Files}}\label{md__e_c_s_s___p_r_o_t_o_c_o_l_autotoc_md10}
+\hypertarget{md__e_c_s_s___p_r_o_t_o_c_o_l_autotoc_md11}{}\doxysubsection{\texorpdfstring{Python (Host Side)}{Python (Host Side)}}\label{md__e_c_s_s___p_r_o_t_o_c_o_l_autotoc_md11}
+
+\begin{DoxyItemize}
+\item {\ttfamily uploader/\+ecss\+\_\+packet.\+py} -\/ ECSS packet implementation
+\begin{DoxyItemize}
+\item {\ttfamily ECSSPacket} class for packing/\+unpacking packets
+\item Helper functions:\+ {\ttfamily create\+\_\+start\+\_\+packet()}, {\ttfamily create\+\_\+data\+\_\+packet()}, {\ttfamily create\+\_\+end\+\_\+packet()}
+\item {\ttfamily Packet\+Type} enum for service types
+\end{DoxyItemize}
+\item {\ttfamily uploader/\+main.\+py} -\/ GUI application with ECSS protocol support
+\begin{DoxyItemize}
+\item {\ttfamily wait\+\_\+for\+\_\+ack\+\_\+packet()} -\/ Parse and validate ACK/\+\+NACK packets
+\item {\ttfamily run()} -\/ Upload sequence using ECSS packets
+\end{DoxyItemize}
+\end{DoxyItemize}\hypertarget{md__e_c_s_s___p_r_o_t_o_c_o_l_autotoc_md12}{}\doxysubsection{\texorpdfstring{Firmware (STM32 Side)}{Firmware (STM32 Side)}}\label{md__e_c_s_s___p_r_o_t_o_c_o_l_autotoc_md12}
+
+\begin{DoxyItemize}
+\item {\ttfamily Core/\+\+Inc/\+ecss\+\_\+packet.\+h} -\/ C header for ECSS protocol
+\begin{DoxyItemize}
+\item {\ttfamily ECSSPacket\+Header} structure
+\item Function prototypes for packet operations
+\end{DoxyItemize}
+\item {\ttfamily Core/\+\+Src/\+ecss\+\_\+packet.\+c} -\/ C implementation
+\begin{DoxyItemize}
+\item {\ttfamily ecss\+\_\+parse\+\_\+header()} -\/ Parse received packet header
+\item {\ttfamily ecss\+\_\+create\+\_\+header()} -\/ Create packet header for transmission
+\item {\ttfamily ecss\+\_\+calculate\+\_\+header\+\_\+checksum()} -\/ Checksum calculation
+\end{DoxyItemize}
+\item {\ttfamily Core/\+\+Src/\+input.\+c} -\/ UART packet I/\+O functions
+\begin{DoxyItemize}
+\item {\ttfamily receive\+Packet\+Header()} -\/ Receive and validate packet header
+\item {\ttfamily receive\+Packet\+Data()} -\/ Receive packet data field
+\item {\ttfamily send\+Ack\+Packet()} -\/ Send ACK packet
+\item {\ttfamily send\+Nack\+Packet()} -\/ Send NACK packet
+\end{DoxyItemize}
+\item {\ttfamily Core/\+\+Src/\+update.\+c} -\/ Firmware update handler
+\begin{DoxyItemize}
+\item {\ttfamily receive\+Update\+Data()} -\/ Main upload handler using ECSS protocol
+\end{DoxyItemize}
+\end{DoxyItemize}\hypertarget{md__e_c_s_s___p_r_o_t_o_c_o_l_autotoc_md13}{}\doxysection{\texorpdfstring{Example Packet}{Example Packet}}\label{md__e_c_s_s___p_r_o_t_o_c_o_l_autotoc_md13}
+{\bfseries{START\+\_\+\+UPLOAD Packet (Total size:\+ 10240 bytes)}}
+
+
+\begin{DoxyCode}{0}
+\DoxyCodeLine{Header\ (7\ bytes):}
+\DoxyCodeLine{\ \ 0x30\ \ \ \ \ \ \ \ \ \ -\/\ Version\ 1,\ Type=Telecommand}
+\DoxyCodeLine{\ \ 0x01\ \ \ \ \ \ \ \ \ \ -\/\ Service\ Type:\ START\_UPLOAD}
+\DoxyCodeLine{\ \ 0x00\ 0x00\ \ \ \ \ -\/\ Sequence:\ 0}
+\DoxyCodeLine{\ \ 0x00\ 0x04\ \ \ \ \ -\/\ Data\ Length:\ 4\ bytes}
+\DoxyCodeLine{\ \ 0x35\ \ \ \ \ \ \ \ \ \ -\/\ Checksum}
+\DoxyCodeLine{}
+\DoxyCodeLine{Data\ (4\ bytes):}
+\DoxyCodeLine{\ \ 0x00\ 0x28\ 0x00\ 0x00\ -\/\ Size:\ 10240\ (little-\/endian)}
+
+\end{DoxyCode}
+
+
+{\bfseries{ACK Packet}}
+
+
+\begin{DoxyCode}{0}
+\DoxyCodeLine{Header\ (7\ bytes):}
+\DoxyCodeLine{\ \ 0x20\ \ \ \ \ \ \ \ \ \ -\/\ Version\ 1,\ Type=Telemetry}
+\DoxyCodeLine{\ \ 0x06\ \ \ \ \ \ \ \ \ \ -\/\ Service\ Type:\ ACK}
+\DoxyCodeLine{\ \ 0x00\ 0x00\ \ \ \ \ -\/\ Sequence:\ 0}
+\DoxyCodeLine{\ \ 0x00\ 0x00\ \ \ \ \ -\/\ Data\ Length:\ 0}
+\DoxyCodeLine{\ \ 0x26\ \ \ \ \ \ \ \ \ \ -\/\ Checksum}
+
+\end{DoxyCode}
+\hypertarget{md__e_c_s_s___p_r_o_t_o_c_o_l_autotoc_md14}{}\doxysection{\texorpdfstring{Advantages Over Simple Protocol}{Advantages Over Simple Protocol}}\label{md__e_c_s_s___p_r_o_t_o_c_o_l_autotoc_md14}
+
+\begin{DoxyEnumerate}
+\item {\bfseries{Structured Headers}} -\/ Well-\/defined packet format similar to space standards
+\item {\bfseries{Error Detection}} -\/ Header checksum validates packet integrity
+\item {\bfseries{Sequence Tracking}} -\/ Detect lost or out-\/of-\/order packets
+\item {\bfseries{Extensible}} -\/ Easy to add new service types
+\item {\bfseries{Standards-\/\+Based}} -\/ Follows ECSS concepts for professional development
+\item {\bfseries{ACK/\+\+NACK Support}} -\/ Explicit acknowledgment and error reporting
+\end{DoxyEnumerate}\hypertarget{md__e_c_s_s___p_r_o_t_o_c_o_l_autotoc_md15}{}\doxysection{\texorpdfstring{Notes}{Notes}}\label{md__e_c_s_s___p_r_o_t_o_c_o_l_autotoc_md15}
+
+\begin{DoxyItemize}
+\item This is a {\bfseries{simplified}} ECSS implementation for proof-\/of-\/concept
+\item Full ECSS compliance includes additional features:\+
+\begin{DoxyItemize}
+\item CRC-\/16 or CRC-\/32 for data integrity
+\item Secondary headers for timestamps and source IDs
+\item Application ID (APID) for multiple services
+\item More sophisticated error correction
+\end{DoxyItemize}
+\item Designed for single-\/point UART communication (no packet routing)
+\item Byte order:\+ Big-\/endian for header fields (network byte order)
+\item Data payloads can use application-\/specific byte order
+\end{DoxyItemize}\hypertarget{md__e_c_s_s___p_r_o_t_o_c_o_l_autotoc_md16}{}\doxysection{\texorpdfstring{Future Enhancements}{Future Enhancements}}\label{md__e_c_s_s___p_r_o_t_o_c_o_l_autotoc_md16}
+
+\begin{DoxyItemize}
+\item[\DoxyUnchecked] Add CRC-\/16 for data field integrity
+\end{DoxyItemize}
+\begin{DoxyItemize}
+\item[\DoxyUnchecked] Implement secondary header with timestamps
+\end{DoxyItemize}
+\begin{DoxyItemize}
+\item[\DoxyUnchecked] Add multiple service types for diagnostics
+\end{DoxyItemize}
+\begin{DoxyItemize}
+\item[\DoxyUnchecked] Implement packet retransmission on NACK
+\end{DoxyItemize}
+\begin{DoxyItemize}
+\item[\DoxyUnchecked] Add flow control mechanisms
+\end{DoxyItemize}
+\begin{DoxyItemize}
+\item[\DoxyUnchecked] Support for larger transfers with fragmentation
+\end{DoxyItemize}\hypertarget{md__e_c_s_s___p_r_o_t_o_c_o_l_autotoc_md17}{}\doxysection{\texorpdfstring{References}{References}}\label{md__e_c_s_s___p_r_o_t_o_c_o_l_autotoc_md17}
+
+\begin{DoxyItemize}
+\item ECSS-\/\+E-\/\+ST-\/70-\/41C:\+ Telemetry and telecommand packet utilization
+\item STM32\+F4 HAL UART documentation
+\item Py\+Side6 serial communication 
+\end{DoxyItemize}

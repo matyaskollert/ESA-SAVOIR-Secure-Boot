@@ -16,20 +16,22 @@
 #include "sig_algo.h"
 
 #ifdef __cplusplus
-extern "C" {
+extern "C"
+{
 #endif
 
-typedef enum {
-    ML_DSA_44 = 2,
-    ML_DSA_65 = 3,
-} ml_dsa_level_t;
+	typedef enum
+	{
+		ML_DSA_44 = 2,
+		ML_DSA_65 = 3,
+	} ml_dsa_level_t;
 
-/*
+	/*
  * Return a sig_algo_t descriptor for the requested ML-DSA parameter set.
  * The returned pointer is valid for the lifetime of the process.
  * Returns NULL for an invalid level.
  */
-const sig_algo_t* sig_mldsa_get(ml_dsa_level_t level);
+	const sig_algo_t* sig_mldsa_get(ml_dsa_level_t level);
 
 #ifdef __cplusplus
 }

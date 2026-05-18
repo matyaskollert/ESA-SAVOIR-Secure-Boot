@@ -1,8 +1,21 @@
 """
-serial_comm.py – ECSS serial I/O for E2E tests.
+serial_comm.py \u2014 ECSS serial I/O layer for the BSW E2E test suite.
 
-Mirrors the protocol in uploader/ecss_packet.py so tests speak the same
-framing as the GUI tool. All I/O is synchronous (the BSW is single-threaded).
+Mirrors the framing logic in uploader/ecss_packet.py so that tests can speak
+the same protocol as the GUI uploader without importing its PySide6 dependency.
+All I/O is synchronous; the BSW is single-threaded and processes one command at
+a time so blocking reads with a timeout are sufficient.
+
+Public API
+----------
+  PacketType        \u2014 service-type enum (subset used by tests)
+  send_command      \u2014 send a single-byte bootloader command packet
+  recv_packet       \u2014 receive and parse one ECSS packet with timeout
+  recv_ack          \u2014 receive and assert a PKT_ACK packet
+  NackReceived      \u2014 exception raised when a NACK is returned by the BSW
+  send_start_upload \u2014 initiate an image upload session
+  send_chunk        \u2014 send one DATA_CHUNK packet
+  send_end_upload   \u2014 terminate an upload session
 """
 
 import struct
@@ -12,29 +25,32 @@ from typing import Optional
 
 import serial
 
+# ---------------------------------------------------------------------------
+# Packet types - must match BSW firmware and uploader/ecss_packet.py
+# ---------------------------------------------------------------------------
 
-# ---------------------------------------------------------------------------
-# Packet types – must match BSW firmware and uploader/ecss_packet.py
-# ---------------------------------------------------------------------------
 
 class PacketType(IntEnum):
     START_UPLOAD = 0x01
-    DATA_CHUNK   = 0x02
-    END_UPLOAD   = 0x03
-    DEBUG_LOG    = 0x04
-    ACK          = 0x06
-    NACK         = 0x15
+    DATA_CHUNK = 0x02
+    END_UPLOAD = 0x03
+    DEBUG_LOG = 0x04
+    ACK = 0x06
+    NACK = 0x15
 
 
-HEADER_SIZE = 7    # bytes
-VERSION     = 0b001
+HEADER_SIZE = 7  # bytes
+VERSION = 0b001
 
 
 # ---------------------------------------------------------------------------
 # Packet helpers
 # ---------------------------------------------------------------------------
 
-def _build_header(service_type: int, sequence: int, data_len: int, is_tc: bool = True) -> bytes:
+
+def _build_header(
+    service_type: int, sequence: int, data_len: int, is_tc: bool = True
+) -> bytes:
     vtf = (VERSION << 5) | ((1 if is_tc else 0) << 4)
     hdr_no_crc = struct.pack(">BBHH", vtf, service_type, sequence & 0xFFFF, data_len)
     checksum = 0
@@ -53,14 +69,19 @@ def _parse_header(raw: bytes) -> dict:
         # print(f"0x{b:02X}")
         calc ^= b
     if chk != calc:
-        print(f"Header checksum mismatch: raw={raw.hex()} vtf={vtf:02X} svc={svc:02X} seq={seq} dlen={dlen} chk={chk:02X} calc={calc:02X}")
-        raise ValueError(f"Header checksum mismatch: received 0x{chk:02X}, computed 0x{calc:02X}")
+        print(
+            f"Header checksum mismatch: raw={raw.hex()} vtf={vtf:02X} svc={svc:02X} seq={seq} dlen={dlen} chk={chk:02X} calc={calc:02X}"
+        )
+        raise ValueError(
+            f"Header checksum mismatch: received 0x{chk:02X}, computed 0x{calc:02X}"
+        )
     return {"service_type": svc, "sequence": seq, "data_length": dlen}
 
 
 # ---------------------------------------------------------------------------
 # BootloaderSession
 # ---------------------------------------------------------------------------
+
 
 class BootloaderSession:
     """
@@ -109,7 +130,9 @@ class BootloaderSession:
             self._ser.write(data)
             self._ser.flush()
 
-        print(f"Sent packet: header={header.hex()} data={data.hex() if data else '(none)'}")
+        print(
+            f"Sent packet: header={header.hex()} data={data.hex() if data else '(none)'}"
+        )
 
     def send_command(self, command: str, sequence: int = 0) -> None:
         """Send a DEBUG_LOG telecommand (the BSW's 'command input' path)."""
@@ -140,7 +163,7 @@ class BootloaderSession:
             if time.monotonic() > deadline:
                 raise TimeoutError(f"Timed out waiting for {n} bytes (got {len(buf)})")
             time.sleep(0.001)
-        
+
         if self._ser.in_waiting >= n:
             buf = self._ser.read(n)
         return buf
@@ -160,7 +183,9 @@ class BootloaderSession:
             # print("Raw DEBUG_LOG:", " ".join(f"0x{b:02X}" for b in data))
         return meta
 
-    def wait_for_ack(self, expected_sequence: Optional[int] = None, timeout: Optional[float] = None) -> dict:
+    def wait_for_ack(
+        self, expected_sequence: Optional[int] = None, timeout: Optional[float] = None
+    ) -> dict:
         """Wait for an ACK packet; skip any DEBUG_LOG packets in between.
 
         Raises:
@@ -213,9 +238,14 @@ class BootloaderSession:
 
     # ------------------------------------------------------------------ complete upload sequence
 
-    def upload_image(self, image_data: bytes, start_sequence: int = 1,
-                     chunk_size: int = 256, verbose: bool = False,
-                     max_retries: int = 3) -> None:
+    def upload_image(
+        self,
+        image_data: bytes,
+        start_sequence: int = 1,
+        chunk_size: int = 256,
+        verbose: bool = False,
+        max_retries: int = 3,
+    ) -> None:
         """Upload a fully prepared (header + signed) image binary with ACK per chunk.
 
         Mirrors UploaderThread.run() in uploader/main.py: each packet is retried
@@ -249,7 +279,7 @@ class BootloaderSession:
         total_chunks = (total + chunk_size - 1) // chunk_size
         bytes_sent = 0
         for chunk_num, offset in enumerate(range(0, total, chunk_size), start=1):
-            chunk = image_data[offset:offset + chunk_size]
+            chunk = image_data[offset : offset + chunk_size]
             chunk_sent = False
             for attempt in range(max_retries):
                 self.send_data_chunk(chunk, seq)
@@ -261,10 +291,14 @@ class BootloaderSession:
                     if attempt < max_retries - 1:
                         time.sleep(0.3)
             if not chunk_sent:
-                raise TimeoutError(f"Failed to send chunk {chunk_num}/{total_chunks} after {max_retries} retries")
+                raise TimeoutError(
+                    f"Failed to send chunk {chunk_num}/{total_chunks} after {max_retries} retries"
+                )
             bytes_sent += len(chunk)
             if verbose and chunk_num % 10 == 0:
-                print(f"  [upload] {bytes_sent}/{total} bytes (chunk {chunk_num}/{total_chunks})")
+                print(
+                    f"  [upload] {bytes_sent}/{total} bytes (chunk {chunk_num}/{total_chunks})"
+                )
             seq += 1
             time.sleep(0.05)  # inter-chunk delay
 
@@ -290,14 +324,14 @@ class BootloaderSession:
 # ---------------------------------------------------------------------------
 
 _NACK_DESCRIPTIONS = {
-    1:  "Failed to receive START packet header",
-    2:  "Wrong packet type (expected START_UPLOAD)",
-    3:  "START packet data length invalid",
-    4:  "Failed to receive START packet data",
-    6:  "Failed to receive DATA packet header",
-    7:  "Wrong packet type (expected DATA_CHUNK)",
-    8:  "Failed to receive chunk data",
-    9:  "Invalid image or version too low",
+    1: "Failed to receive START packet header",
+    2: "Wrong packet type (expected START_UPLOAD)",
+    3: "START packet data length invalid",
+    4: "Failed to receive START packet data",
+    6: "Failed to receive DATA packet header",
+    7: "Wrong packet type (expected DATA_CHUNK)",
+    8: "Failed to receive chunk data",
+    9: "Invalid image or version too low",
     10: "System not configured for update (option bytes need reconfiguration)",
     11: "System not configured for nominal mode",
     12: "System not configured for image swap",
@@ -308,7 +342,9 @@ class NackReceived(Exception):
     def __init__(self, sequence: int, error_code: int):
         self.sequence = sequence
         self.error_code = error_code
-        self.description = _NACK_DESCRIPTIONS.get(error_code, f"Unknown error {error_code}")
+        self.description = _NACK_DESCRIPTIONS.get(
+            error_code, f"Unknown error {error_code}"
+        )
         super().__init__(
             f"NACK received at seq={sequence}: [{error_code}] {self.description}"
         )

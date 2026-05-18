@@ -35,16 +35,16 @@
 #ifndef INC_BENCHMARK_H_
 #define INC_BENCHMARK_H_
 
-#define ALGO_ECDSA      1
-#define ALGO_RSA_3072   2
-#define ALGO_RSA_4096   3
-#define ALGO_ML_DSA_44  4
-#define ALGO_ML_DSA_65  5
-#define ALGO_LMS        6
+#define ALGO_ECDSA 1
+#define ALGO_RSA_3072 2
+#define ALGO_RSA_4096 3
+#define ALGO_ML_DSA_44 4
+#define ALGO_ML_DSA_65 5
+#define ALGO_LMS 6
 
 // SHOULD be overridden via a -D compiler flag without editing this file.
 #ifndef BENCHMARK_ALGO
-#define BENCHMARK_ALGO  ALGO_ECDSA
+#define BENCHMARK_ALGO ALGO_ECDSA
 #endif
 
 // Compile-time guard against invalid values.
@@ -54,11 +54,11 @@
 
 // Number of verify() calls to average over.
 #ifndef BENCHMARK_ITERATIONS
-#define BENCHMARK_ITERATIONS  3
+#define BENCHMARK_ITERATIONS 3
 #endif
 
 /**
- * Load the BOOT image from BOOT_FLASH_ADDRESS into RAM, zero its signature
+ * Load the MAIN image from SLOT_A_FLASH_ADDRESS into RAM, zero its signature
  * field, then verify the signature BENCHMARK_ITERATIONS times using the
  * algorithm selected by BENCHMARK_ALGO.  Timing and pass/fail results are
  * printed over UART (printf).

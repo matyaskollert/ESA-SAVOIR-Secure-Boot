@@ -1,5 +1,5 @@
 """
-image_factory.py – Build test firmware images for E2E tests.
+image_factory.py - Build test firmware images for E2E tests.
 
 Uses the same logic as uploader/binary_processor.py so the images are
 identical to what the GUI tool would produce.  The private key used here
@@ -34,22 +34,22 @@ _UPLOADER_DIR = Path(__file__).resolve().parents[2] / "uploader"
 if str(_UPLOADER_DIR) not in sys.path:
     sys.path.insert(0, str(_UPLOADER_DIR))
 
-from signature_ecdsa import ECDSASignature   # noqa: E402
-from signature_mldsa import MLDSASignature   # noqa: E402
-
+from signature_ecdsa import ECDSASignature  # noqa: E402
+from signature_mldsa import MLDSASignature  # noqa: E402
 
 # ---------------------------------------------------------------------------
-# Constants – mirror binary_processor.py exactly
+# Constants - mirror binary_processor.py exactly
 # ---------------------------------------------------------------------------
-HEADER_PARTITION_SIZE = 5 * 1024   # 5 120 bytes total
-SIGNATURE_SIZE        = 4096       # bytes reserved for the signature
-HEADER_FIXED_SIZE     = 12         # crc(4) + magic(2) + version(2) + size(4)
-IMAGE_HDR_MAGIC       = 0xABCD
+HEADER_PARTITION_SIZE = 5 * 1024  # 5 120 bytes total
+SIGNATURE_SIZE = 4096  # bytes reserved for the signature
+HEADER_FIXED_SIZE = 12  # crc(4) + magic(2) + version(2) + size(4)
+IMAGE_HDR_MAGIC = 0xABCD
 
 
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 class ImageFactory:
     """Builds signed firmware images for E2E tests.
@@ -100,23 +100,23 @@ class ImageFactory:
                            synthetic payload is used.
 
         Returns:
-            bytes – complete image (header partition + image data).
+            bytes - complete image (header partition + image data).
         """
         if image_payload is None:
             image_payload = _minimal_arm_payload(self._min_size)
 
         return _build_image(image_payload, version, self._algo)
-    
+
     @staticmethod
     def _crc32_mpeg2(data: bytes) -> int:
         """CRC32/MPEG-2 with byte-reversed 32-bit words."""
         crc = 0xFFFFFFFF
         for i in range(0, len(data), 4):
-            word_bytes = data[i:i + 4]
+            word_bytes = data[i : i + 4]
             if len(word_bytes) < 4:
-                word_bytes = word_bytes + b'\x00' * (4 - len(word_bytes))
+                word_bytes = word_bytes + b"\x00" * (4 - len(word_bytes))
             word_bytes = word_bytes[::-1]
-            word = int.from_bytes(word_bytes, 'big')
+            word = int.from_bytes(word_bytes, "big")
             for bit in range(32):
                 if (crc ^ (word << bit)) & 0x80000000:
                     crc = (crc << 1) ^ _CRC32_MPEG2_POLY
@@ -152,13 +152,13 @@ class ImageFactory:
     def bump_version(image: bytes, new_version: int) -> bytes:
         """Return a copy of *image* with the version field replaced.
 
-        WARNING: this invalidates the CRC and signature – useful to test the
+        WARNING: this invalidates the CRC and signature - useful to test the
         version-check path where the firmware reads the version before verifying.
         """
-        crc    = image[:4]
-        magic  = image[4:6]
-        _ver   = image[6:8]           # discard
-        rest   = image[8:]
+        crc = image[:4]
+        magic = image[4:6]
+        _ver = image[6:8]  # discard
+        rest = image[8:]
         return crc + magic + struct.pack("<H", new_version) + rest
 
 
@@ -166,34 +166,35 @@ class ImageFactory:
 # Low-level image builder (mirrors binary_processor.process_binary())
 # ---------------------------------------------------------------------------
 
+
 def _build_image(image_data: bytes, version: int, algo) -> bytes:
     image_size = len(image_data)
 
     # Data signed: header-without-CRC (magic+version+size+zeroed-sig+pad) + image
-    sign_data  = struct.pack("<HH", IMAGE_HDR_MAGIC, version)
-    sign_data += struct.pack("<I",  image_size)
-    sign_data += b'\x00' * (HEADER_PARTITION_SIZE - HEADER_FIXED_SIZE)
+    sign_data = struct.pack("<HH", IMAGE_HDR_MAGIC, version)
+    sign_data += struct.pack("<I", image_size)
+    sign_data += b"\x00" * (HEADER_PARTITION_SIZE - HEADER_FIXED_SIZE)
     sign_data += image_data
 
     raw_sig = algo.sign(sign_data)
     if len(raw_sig) > SIGNATURE_SIZE:
         raise ValueError(f"Signature {len(raw_sig)} B exceeds field {SIGNATURE_SIZE} B")
-    signature = raw_sig + b'\x00' * (SIGNATURE_SIZE - len(raw_sig))
+    signature = raw_sig + b"\x00" * (SIGNATURE_SIZE - len(raw_sig))
 
     # Header without CRC
-    temp_hdr  = struct.pack("<HH", IMAGE_HDR_MAGIC, version)
-    temp_hdr += struct.pack("<I",  image_size)
+    temp_hdr = struct.pack("<HH", IMAGE_HDR_MAGIC, version)
+    temp_hdr += struct.pack("<I", image_size)
     temp_hdr += signature
-    temp_hdr += b'\x00' * (HEADER_PARTITION_SIZE - HEADER_FIXED_SIZE - SIGNATURE_SIZE)
+    temp_hdr += b"\x00" * (HEADER_PARTITION_SIZE - HEADER_FIXED_SIZE - SIGNATURE_SIZE)
 
     # crc = binascii.crc32(temp_hdr + image_data) & 0xFFFFFFFF
     crc = ImageFactory._crc32_mpeg2(temp_hdr + image_data)
 
-    final_hdr  = struct.pack("<I",  crc)
+    final_hdr = struct.pack("<I", crc)
     final_hdr += struct.pack("<HH", IMAGE_HDR_MAGIC, version)
-    final_hdr += struct.pack("<I",  image_size)
+    final_hdr += struct.pack("<I", image_size)
     final_hdr += signature
-    final_hdr += b'\x00' * (HEADER_PARTITION_SIZE - HEADER_FIXED_SIZE - SIGNATURE_SIZE)
+    final_hdr += b"\x00" * (HEADER_PARTITION_SIZE - HEADER_FIXED_SIZE - SIGNATURE_SIZE)
 
     return final_hdr + image_data
 
@@ -207,9 +208,9 @@ def _minimal_arm_payload(size: int) -> bytes:
     The rest is filled with 0x5A repeated.
     """
     payload = bytearray(size)
-    struct.pack_into("<II", payload, 0,
-                     0x20018000,          # initial MSP
-                     0x00000009)          # fake reset handler (thumb)
+    struct.pack_into(
+        "<II", payload, 0, 0x20018000, 0x00000009  # initial MSP
+    )  # fake reset handler (thumb)
     for i in range(8, size):
         payload[i] = 0x5A
     return bytes(payload)
@@ -218,6 +219,7 @@ def _minimal_arm_payload(size: int) -> bytes:
 # ---------------------------------------------------------------------------
 # Convenience: build an image without instantiating ImageFactory
 # ---------------------------------------------------------------------------
+
 
 def build_minimal_image(
     private_key_path: str,

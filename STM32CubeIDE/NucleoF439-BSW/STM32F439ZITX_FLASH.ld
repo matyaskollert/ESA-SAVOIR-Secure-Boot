@@ -62,6 +62,17 @@ SECTIONS
     . = ALIGN(4);
   } >FLASH
 
+  /*
+   * BSW ROM API table — fixed at 0x08000200 (after the ISR vector table).
+   * The STM32F439 vector table occupies at most 0x1AC bytes (107 entries * 4),
+   * so 0x08000200 is safely past it.  Any post-boot application can call BSW
+   * services by dereferencing this address via bsw_rom_api.h.
+   */
+  .rom_api 0x08000200 :
+  {
+    KEEP(*(.rom_api))
+  } >FLASH
+
   /* The program code and other data into "FLASH" Rom type memory */
   .text :
   {
