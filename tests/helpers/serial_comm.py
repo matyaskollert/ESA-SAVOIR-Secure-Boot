@@ -1,8 +1,21 @@
 """
-serial_comm.py - ECSS serial I/O for E2E tests.
+serial_comm.py \u2014 ECSS serial I/O layer for the BSW E2E test suite.
 
-Mirrors the protocol in uploader/ecss_packet.py so tests speak the same
-framing as the GUI tool. All I/O is synchronous (the BSW is single-threaded).
+Mirrors the framing logic in uploader/ecss_packet.py so that tests can speak
+the same protocol as the GUI uploader without importing its PySide6 dependency.
+All I/O is synchronous; the BSW is single-threaded and processes one command at
+a time so blocking reads with a timeout are sufficient.
+
+Public API
+----------
+  PacketType        \u2014 service-type enum (subset used by tests)
+  send_command      \u2014 send a single-byte bootloader command packet
+  recv_packet       \u2014 receive and parse one ECSS packet with timeout
+  recv_ack          \u2014 receive and assert a PKT_ACK packet
+  NackReceived      \u2014 exception raised when a NACK is returned by the BSW
+  send_start_upload \u2014 initiate an image upload session
+  send_chunk        \u2014 send one DATA_CHUNK packet
+  send_end_upload   \u2014 terminate an upload session
 """
 
 import struct

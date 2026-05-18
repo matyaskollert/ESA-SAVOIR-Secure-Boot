@@ -21,10 +21,11 @@
 #include "sig_algo.h"
 
 #ifdef __cplusplus
-extern "C" {
+extern "C"
+{
 #endif
 
-extern const sig_algo_t sig_lms;
+	extern const sig_algo_t sig_lms;
 
 #ifdef __cplusplus
 }

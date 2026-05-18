@@ -19,25 +19,24 @@
 #define RX_BUFFER_SIZE 256U
 uint8_t myRXBuffer[RX_BUFFER_SIZE];
 
-#define FLASH_SECTOR_SIZE 128U*1024U/4U
+#define FLASH_SECTOR_SIZE 128U * 1024U / 4U
 
 #define ROLLBACK_WINDOW 1U
 
-
 // ECSS packet protocol implementation
-int16_t receiveUpdateData(UART_HandleTypeDef* uart, bsw_report_t *report)
+int16_t receiveUpdateData(UART_HandleTypeDef* uart, bsw_report_t* report)
 {
 	/* Reaching this function means checkSystemForUpdate() already passed. */
 	report->step_flags |= BSW_UPDATE_FLAG_SYSTEM_OK;
 
 	ECSSPacketHeader header;
-	uint32_t dataLength = 0;
-	uint32_t bytesReceived = 0;
-	void* ramDestination = (void *)BOOT_RAM_ADDRESS;
+	uint32_t dataLength       = 0;
+	uint32_t bytesReceived    = 0;
+	void* ramDestination      = (void*)BOOT_RAM_ADDRESS;
 	uint16_t expectedSequence = 0;
-	
+
 	printf("Waiting for START_UPLOAD packet...\r\n");
-	
+
 	// 1. Receive START_UPLOAD packet
 	if (receivePacketHeader(uart, &header) != 0)
 	{
@@ -47,7 +46,7 @@ int16_t receiveUpdateData(UART_HandleTypeDef* uart, bsw_report_t *report)
 		bsw_report_flush(report);
 		return 1;
 	}
-	
+
 	if (header.service_type != PKT_START_UPLOAD)
 	{
 		printf("Expected START_UPLOAD, got 0x%02X\r\n", header.service_type);
@@ -56,7 +55,7 @@ int16_t receiveUpdateData(UART_HandleTypeDef* uart, bsw_report_t *report)
 		bsw_report_flush(report);
 		return 2;
 	}
-	
+
 	// Receive data length (4 bytes in payload)
 	if (header.data_length != 4)
 	{
@@ -66,7 +65,7 @@ int16_t receiveUpdateData(UART_HandleTypeDef* uart, bsw_report_t *report)
 		bsw_report_flush(report);
 		return 3;
 	}
-	
+
 	if (receivePacketData(uart, myRXBuffer, header.data_length) != 0)
 	{
 		printf("Error receiving START packet data\r\n");
@@ -75,10 +74,10 @@ int16_t receiveUpdateData(UART_HandleTypeDef* uart, bsw_report_t *report)
 		bsw_report_flush(report);
 		return 4;
 	}
-	
-	dataLength = ((uint32_t *)myRXBuffer)[0];
+
+	dataLength = ((uint32_t*)myRXBuffer)[0];
 	printf("Upload Data Length: %lu bytes\r\n", dataLength);
-	
+
 	// Send ACK for START packet
 	if (sendAckPacket(uart, header.sequence_count) != 0)
 	{
@@ -87,12 +86,12 @@ int16_t receiveUpdateData(UART_HandleTypeDef* uart, bsw_report_t *report)
 		bsw_report_flush(report);
 		return 5;
 	}
-	
+
 	expectedSequence = header.sequence_count + 1;
-	
+
 	// 2. Receive DATA_CHUNK packets
 	printf("Receiving data chunks...\r\n");
-	
+
 	while (bytesReceived < dataLength)
 	{
 		// Receive chunk header
@@ -104,14 +103,14 @@ int16_t receiveUpdateData(UART_HandleTypeDef* uart, bsw_report_t *report)
 			bsw_report_flush(report);
 			return 6;
 		}
-		
+
 		// Check if it's END_UPLOAD (upload complete)
 		if (header.service_type == PKT_END_UPLOAD)
 		{
 			printf("Received END_UPLOAD packet\r\n");
 			break;
 		}
-		
+
 		if (header.service_type != PKT_DATA_CHUNK)
 		{
 			printf("Expected DATA_CHUNK, got 0x%02X\r\n", header.service_type);
@@ -120,14 +119,14 @@ int16_t receiveUpdateData(UART_HandleTypeDef* uart, bsw_report_t *report)
 			bsw_report_flush(report);
 			return 7;
 		}
-		
+
 		// Verify sequence
 		if (header.sequence_count != expectedSequence)
 		{
-			printf("Sequence mismatch: expected %u, got %u\r\n",
-			       expectedSequence, header.sequence_count);
+			printf("Sequence mismatch: expected %u, got %u\r\n", expectedSequence,
+			       header.sequence_count);
 		}
-		
+
 		// Receive chunk data
 		if (receivePacketData(uart, myRXBuffer, header.data_length) != 0)
 		{
@@ -137,13 +136,13 @@ int16_t receiveUpdateData(UART_HandleTypeDef* uart, bsw_report_t *report)
 			bsw_report_flush(report);
 			return 8;
 		}
-		
+
 		// First chunk: check image header version
 		if (bytesReceived == 0)
 		{
 			uint32_t lowestAllowedVersion = getLowestAllowedVersion();
 			// Read 2-byte uint16_t values from buffer (little-endian on ARM)
-			uint16_t updateMagic = *(uint16_t*)(&myRXBuffer[4]);
+			uint16_t updateMagic   = *(uint16_t*)(&myRXBuffer[4]);
 			uint16_t updateVersion = *(uint16_t*)(&myRXBuffer[6]);
 			if (updateMagic != IMAGE_MAGIC || updateVersion < lowestAllowedVersion)
 			{
@@ -157,11 +156,11 @@ int16_t receiveUpdateData(UART_HandleTypeDef* uart, bsw_report_t *report)
 			printf("Image validated: magic=0x%04X, version=%u\r\n", updateMagic, updateVersion);
 			report->step_flags |= BSW_UPDATE_FLAG_VERSION_OK;
 		}
-		
+
 		// Copy data to RAM
 		memcpy(ramDestination + bytesReceived, myRXBuffer, header.data_length);
 		bytesReceived += header.data_length;
-		
+
 		// Send ACK for chunk
 		if (sendAckPacket(uart, header.sequence_count) != 0)
 		{
@@ -170,18 +169,18 @@ int16_t receiveUpdateData(UART_HandleTypeDef* uart, bsw_report_t *report)
 			bsw_report_flush(report);
 			return 10;
 		}
-		
+
 		expectedSequence++;
-		
+
 		// Progress indicator
 		if ((bytesReceived % (RX_BUFFER_SIZE * 10)) == 0)
 		{
 			printf("Received: %lu/%lu bytes\r\n", bytesReceived, dataLength);
 		}
 	}
-	
+
 	printf("All data received: %lu bytes\r\n", bytesReceived);
-	
+
 	// 3. Receive END_UPLOAD packet (if not already received)
 	if (header.service_type != PKT_END_UPLOAD)
 	{
@@ -204,9 +203,10 @@ int16_t receiveUpdateData(UART_HandleTypeDef* uart, bsw_report_t *report)
 			printf("Error sending ACK for END\r\n");
 		}
 	}
-	
+
 	// Check CRC in RAM
-	if (imageValidateInRAM(RAM) != 0) {
+	if (imageValidateInRAM(RAM) != 0)
+	{
 		printf("CRC verification failed\r\n");
 		report->outcome = 11;
 		bsw_report_flush(report);
@@ -218,16 +218,16 @@ int16_t receiveUpdateData(UART_HandleTypeDef* uart, bsw_report_t *report)
 	const image_header_t* imageHeader = imageGetHeader(RAM);
 	uint8_t signature[4096];
 	memcpy(signature, imageHeader->signature, 4096);
-	byte* ramImageAddress = (byte *)(BOOT_RAM_ADDRESS + 4);
+	byte* ramImageAddress = (byte*)(BOOT_RAM_ADDRESS + 4);
 	// set digital signature to 0 to verify
-	uint32_t dsHeaderOffset = 12U; // 4b CRC, 2b MAGIC, 2b VERSION, 4b SIZE
+	uint32_t dsHeaderOffset = 12U;  // 4b CRC, 2b MAGIC, 2b VERSION, 4b SIZE
 	memset(ramDestination + dsHeaderOffset, 0, 4096);
 	if (verifySignature(ramImageAddress, dataLength - 4, signature) != 1)
 	{
 		printf("Digital signature validation failed\r\n");
 		report->outcome = 12;
 		bsw_report_flush(report);
-	    return 12;
+		return 12;
 	}
 	report->step_flags |= BSW_UPDATE_FLAG_RAM_SIG_OK;
 	// set digital signature to the correct value for saving
@@ -243,7 +243,7 @@ int16_t receiveUpdateData(UART_HandleTypeDef* uart, bsw_report_t *report)
 	}
 	ImageSlot secondary = getSecondarySlot();
 	if (writeFlashSector(getSlotFlashSector(secondary), getSlotFlashAddress(secondary),
-	                     (uint32_t *)ramDestination, dataLength/4U) != 0)
+	                     (uint32_t*)ramDestination, dataLength / 4U) != 0)
 	{
 		printf("Flash write failed\r\n");
 		HAL_FLASH_Lock();
@@ -263,12 +263,13 @@ int16_t receiveUpdateData(UART_HandleTypeDef* uart, bsw_report_t *report)
 	return 0;
 }
 
-int16_t swapMainWithUpdate(bsw_report_t *report)
+int16_t swapMainWithUpdate(bsw_report_t* report)
 {
 	/* Version check and image validity (CRC + sig) were confirmed by the caller
 	 * (handleSwap) before this function was invoked. checkSystemForImageSwap() also
 	 * already passed. */
-	report->step_flags |= BSW_SWAP_FLAG_SYSTEM_OK | BSW_SWAP_FLAG_VERSION_OK | BSW_SWAP_FLAG_CRC_OK | BSW_SWAP_FLAG_SIG_OK;
+	report->step_flags |= BSW_SWAP_FLAG_SYSTEM_OK | BSW_SWAP_FLAG_VERSION_OK |
+	                      BSW_SWAP_FLAG_CRC_OK | BSW_SWAP_FLAG_SIG_OK;
 
 #ifdef HARDWARE_SWAP
 	printf("Swapping updated image into primary partition\r\n");
@@ -276,8 +277,8 @@ int16_t swapMainWithUpdate(bsw_report_t *report)
 	printf("Updating primary partition flag\r\n");
 #endif
 
-	ImageSlot newImageSlot = getSecondarySlot();
-	ImageSlot oldImageSlot = getPrimarySlot();
+	ImageSlot newImageSlot               = getSecondarySlot();
+	ImageSlot oldImageSlot               = getPrimarySlot();
 	const image_header_t* oldImageHeader = imageGetHeader(oldImageSlot);
 	if (oldImageHeader == NULL)
 		printf("Primary slot image header is NULL — proceeding without old version info\r\n");
@@ -292,7 +293,7 @@ int16_t swapMainWithUpdate(bsw_report_t *report)
 	}
 
 	uint32_t newVersion = (uint32_t)newImageHeader->imageVersion;
-	uint32_t counter = getCounterValue();
+	uint32_t counter    = getCounterValue();
 	printf("Current rollback counter: %lu\r\n", counter);
 
 	uint32_t newCounter;
@@ -324,7 +325,7 @@ int16_t swapMainWithUpdate(bsw_report_t *report)
 	}
 
 #ifdef HARDWARE_SWAP
-	uint32_t newFlag = getPrimaryFlag();
+	uint32_t newFlag                 = getPrimaryFlag();
 	const uint32_t newImageSizeWords = (newImageHeader->imageSize + IMAGE_OFFSET) / 4U;
 	if (HAL_FLASH_Unlock() != HAL_OK)
 	{
@@ -336,7 +337,8 @@ int16_t swapMainWithUpdate(bsw_report_t *report)
 	{
 		/* MAIN → SWAP: back up the current primary image before overwriting it. */
 		const uint32_t oldImageSizeWords = (oldImageHeader->imageSize + IMAGE_OFFSET) / 4U;
-		if (writeFlashSector(SWAP_FLASH_SECTOR, SWAP_FLASH_ADDRESS, (uint32_t *)oldImageHeader, oldImageSizeWords) != 0)
+		if (writeFlashSector(SWAP_FLASH_SECTOR, SWAP_FLASH_ADDRESS, (uint32_t*)oldImageHeader,
+		                     oldImageSizeWords) != 0)
 		{
 			printf("Failed to write old image to swap sector\r\n");
 			HAL_FLASH_Lock();
@@ -351,7 +353,7 @@ int16_t swapMainWithUpdate(bsw_report_t *report)
 	}
 	/* UPDATE → MAIN: write new image into the primary slot. */
 	if (writeFlashSector(getSlotFlashSector(oldImageSlot), getSlotFlashAddress(oldImageSlot),
-	                     (uint32_t *)newImageHeader, newImageSizeWords) != 0)
+	                     (uint32_t*)newImageHeader, newImageSizeWords) != 0)
 	{
 		printf("Failed to write new image to primary slot\r\n");
 		HAL_FLASH_Lock();
@@ -364,7 +366,7 @@ int16_t swapMainWithUpdate(bsw_report_t *report)
 		/* SWAP → UPDATE: move backed-up old image into the secondary slot. */
 		const uint32_t oldImageSizeWords = (oldImageHeader->imageSize + IMAGE_OFFSET) / 4U;
 		if (writeFlashSector(getSlotFlashSector(newImageSlot), getSlotFlashAddress(newImageSlot),
-		                     (uint32_t *)SWAP_FLASH_ADDRESS, oldImageSizeWords) != 0)
+		                     (uint32_t*)SWAP_FLASH_ADDRESS, oldImageSizeWords) != 0)
 		{
 			printf("Failed to write old image from swap sector to secondary slot\r\n");
 			HAL_FLASH_Lock();
@@ -383,9 +385,9 @@ int16_t swapMainWithUpdate(bsw_report_t *report)
 	/* Flip the primary-partition flag: the slot that was secondary becomes
 	 * primary and vice versa.  No data is physically moved. */
 	uint32_t currentFlag = getPrimaryFlag();
-	uint32_t newFlag = (currentFlag == PROTECTED_BSW_STATE_PRIMARY_SLOT_B)
-	                   ? PROTECTED_BSW_STATE_PRIMARY_SLOT_A
-	                   : PROTECTED_BSW_STATE_PRIMARY_SLOT_B;
+	uint32_t newFlag     = (currentFlag == PROTECTED_BSW_STATE_PRIMARY_SLOT_B)
+	                           ? PROTECTED_BSW_STATE_PRIMARY_SLOT_A
+	                           : PROTECTED_BSW_STATE_PRIMARY_SLOT_B;
 #endif
 
 	if (setProtectedBswState(newCounter, newFlag) != 0)
@@ -418,7 +420,8 @@ int16_t setupSystemForImageSwap(void)
 
 	/* Unlock BSW state sector (to write new state) and the current
 	 * primary slot (it becomes secondary after the flag flip). */
-	uint32_t sectorMask = PROTECTED_BSW_STATE_FLASH_OB_SECTOR | getSlotFlashOBSector(getPrimarySlot());
+	uint32_t sectorMask =
+	    PROTECTED_BSW_STATE_FLASH_OB_SECTOR | getSlotFlashOBSector(getPrimarySlot());
 	if (disableSectorWriteProtection(sectorMask) != 0)
 	{
 		printf("Unlocking necessary FLASH sectors failed\r\n");
@@ -432,7 +435,8 @@ int16_t checkSystemForImageSwap(void)
 {
 	/* BSW state sector and the current primary slot must both be unlocked
 	 * before the flag flip and counter update can be performed. */
-	uint32_t sectorMask = PROTECTED_BSW_STATE_FLASH_OB_SECTOR | getSlotFlashOBSector(getPrimarySlot());
+	uint32_t sectorMask =
+	    PROTECTED_BSW_STATE_FLASH_OB_SECTOR | getSlotFlashOBSector(getPrimarySlot());
 	if (checkAllSectorsUnprotected(sectorMask) != 1)
 	{
 		printf("Cannot swap with BSW state sector or primary slot protected\r\n");
@@ -450,7 +454,8 @@ int16_t setupSystemForNominal(void)
 	}
 
 	/* Protect the BSW state sector and the (new) primary slot. */
-	uint32_t sectorMask = PROTECTED_BSW_STATE_FLASH_OB_SECTOR | getSlotFlashOBSector(getPrimarySlot());
+	uint32_t sectorMask =
+	    PROTECTED_BSW_STATE_FLASH_OB_SECTOR | getSlotFlashOBSector(getPrimarySlot());
 	if (enableSectorWriteProtection(sectorMask) != 0)
 	{
 		printf("Locking necessary FLASH sectors failed\r\n");
@@ -463,7 +468,8 @@ int16_t setupSystemForNominal(void)
 int16_t checkSystemForNominal(void)
 {
 	/* Protected BSW state sector and primary slot must be write-protected. */
-	uint32_t sectorMask = PROTECTED_BSW_STATE_FLASH_OB_SECTOR | getSlotFlashOBSector(getPrimarySlot());
+	uint32_t sectorMask =
+	    PROTECTED_BSW_STATE_FLASH_OB_SECTOR | getSlotFlashOBSector(getPrimarySlot());
 	if (checkSectorWriteProtection(sectorMask) != 0)
 	{
 		printf("Cannot boot with primary slot or protected BSW state sector unprotected\r\n");
@@ -480,7 +486,8 @@ int16_t setupSystemForUpdate(void)
 int16_t checkSystemForUpdate(void)
 {
 	/* Protected BSW state sector and primary slot must be protected. */
-	uint32_t sectorMask = PROTECTED_BSW_STATE_FLASH_OB_SECTOR | getSlotFlashOBSector(getPrimarySlot());
+	uint32_t sectorMask =
+	    PROTECTED_BSW_STATE_FLASH_OB_SECTOR | getSlotFlashOBSector(getPrimarySlot());
 	if (checkSectorWriteProtection(sectorMask) != 0)
 	{
 		printf("Cannot update with primary slot or protected BSW state sector unprotected\r\n");
@@ -499,7 +506,8 @@ int16_t checkSystemForUpdate(void)
 int16_t checkUpdateValidity(void)
 {
 	ImageSlot secondary = getSecondarySlot();
-	if (imageValidate(secondary) != 0) {
+	if (imageValidate(secondary) != 0)
+	{
 		printf("Update image CRC verification failed\r\n");
 		return 1;
 	}
@@ -514,54 +522,59 @@ int16_t checkUpdateValidity(void)
 
 int16_t checkUpdateVersion(void)
 {
-	uint32_t lowestAllowedVersion = getLowestAllowedVersion();
-	ImageSlot secondary = getSecondarySlot();
+	uint32_t lowestAllowedVersion         = getLowestAllowedVersion();
+	ImageSlot secondary                   = getSecondarySlot();
 	const image_header_t* secondaryHeader = imageGetHeader(secondary);
 	if (secondaryHeader == NULL)
 		return 1;
 	uint32_t secondaryVersion = (uint32_t)secondaryHeader->imageVersion;
 	if (lowestAllowedVersion > secondaryVersion)
 	{
-		printf("Secondary image version %lu is below floor %lu\r\n", secondaryVersion, lowestAllowedVersion);
+		printf("Secondary image version %lu is below floor %lu\r\n", secondaryVersion,
+		       lowestAllowedVersion);
 		return 1;
 	}
-	printf("Secondary image version %lu is valid (floor: %lu)\r\n", secondaryVersion, lowestAllowedVersion);
+	printf("Secondary image version %lu is valid (floor: %lu)\r\n", secondaryVersion,
+	       lowestAllowedVersion);
 	return 0;
 }
 
 uint32_t getLowestAllowedVersion(void)
 {
 	uint32_t counterValue = getCounterValue();
-	if (ROLLBACK_WINDOW >= counterValue) {
+	if (ROLLBACK_WINDOW >= counterValue)
+	{
 		return 0;
 	}
 	uint32_t lowestAllowedVersion = counterValue - ROLLBACK_WINDOW;
 	return lowestAllowedVersion;
 }
 
-uint32_t getCounterValue(void) {
+uint32_t getCounterValue(void)
+{
 	return PROTECTED_BSW_STATE->rollback_counter;
 }
 
 int16_t checkRollbackCondition(void)
 {
-    ImageSlot primary   = getPrimarySlot();
-    ImageSlot secondary = getSecondarySlot();
-    const image_header_t* primaryImage   = imageGetHeader(primary);
-    const image_header_t* secondaryImage = imageGetHeader(secondary);
-    uint32_t primaryVersion   = (uint32_t)primaryImage->imageVersion;
-    uint32_t secondaryVersion = (uint32_t)secondaryImage->imageVersion;
-    uint32_t lowestAllowed    = getLowestAllowedVersion();
+	ImageSlot primary                    = getPrimarySlot();
+	ImageSlot secondary                  = getSecondarySlot();
+	const image_header_t* primaryImage   = imageGetHeader(primary);
+	const image_header_t* secondaryImage = imageGetHeader(secondary);
+	uint32_t primaryVersion              = (uint32_t)primaryImage->imageVersion;
+	uint32_t secondaryVersion            = (uint32_t)secondaryImage->imageVersion;
+	uint32_t lowestAllowed               = getLowestAllowedVersion();
 
-    if (primaryVersion > secondaryVersion && secondaryVersion >= lowestAllowed)
-    {
-        printf("Rollback condition met: primary v%lu > secondary v%lu, secondary v%lu >= floor v%lu\r\n",
-               primaryVersion, secondaryVersion, secondaryVersion, lowestAllowed);
-        return 0;
-    }
-    printf("Rollback not possible: primary v%lu, secondary v%lu, floor v%lu\r\n",
-           primaryVersion, secondaryVersion, lowestAllowed);
-    return 1;
+	if (primaryVersion > secondaryVersion && secondaryVersion >= lowestAllowed)
+	{
+		printf("Rollback condition met: primary v%lu > secondary v%lu, secondary v%lu >= floor "
+		       "v%lu\r\n",
+		       primaryVersion, secondaryVersion, secondaryVersion, lowestAllowed);
+		return 0;
+	}
+	printf("Rollback not possible: primary v%lu, secondary v%lu, floor v%lu\r\n", primaryVersion,
+	       secondaryVersion, lowestAllowed);
+	return 1;
 }
 
 int16_t setProtectedBswState(uint32_t rollback_counter, uint32_t primary_slot)
@@ -573,12 +586,16 @@ int16_t setProtectedBswState(uint32_t rollback_counter, uint32_t primary_slot)
 		HAL_FLASH_Lock();
 		return 1;
 	}
-	if (writeFlashWord(PROTECTED_BSW_STATE_FLASH_ADDRESS + offsetof(protected_bsw_state_t, rollback_counter), rollback_counter) != 0)
+	if (writeFlashWord(PROTECTED_BSW_STATE_FLASH_ADDRESS +
+	                       offsetof(protected_bsw_state_t, rollback_counter),
+	                   rollback_counter) != 0)
 	{
 		HAL_FLASH_Lock();
 		return 1;
 	}
-	if (writeFlashWord(PROTECTED_BSW_STATE_FLASH_ADDRESS + offsetof(protected_bsw_state_t, primary_slot), primary_slot) != 0)
+	if (writeFlashWord(PROTECTED_BSW_STATE_FLASH_ADDRESS +
+	                       offsetof(protected_bsw_state_t, primary_slot),
+	                   primary_slot) != 0)
 	{
 		HAL_FLASH_Lock();
 		return 1;

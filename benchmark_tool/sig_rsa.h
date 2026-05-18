@@ -18,21 +18,22 @@
 #include "sig_algo.h"
 
 #ifdef __cplusplus
-extern "C" {
+extern "C"
+{
 #endif
 
-typedef enum {
-    RSA_3072 = 3072,
-    RSA_4096 = 4096,
-} rsa_bits_t;
+	typedef enum
+	{
+		RSA_3072 = 3072,
+		RSA_4096 = 4096,
+	} rsa_bits_t;
 
-/*
+	/*
  * Return a sig_algo_t descriptor for the requested RSA key size.
  * The returned pointer is valid for the lifetime of the process.
  * Returns NULL for an unsupported key size.
  */
-const sig_algo_t* sig_rsa_get(rsa_bits_t bits);
-
+	const sig_algo_t* sig_rsa_get(rsa_bits_t bits);
 
 #ifdef __cplusplus
 }

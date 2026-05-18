@@ -14,11 +14,12 @@
 #include "sig_algo.h"
 
 #ifdef __cplusplus
-extern "C" {
+extern "C"
+{
 #endif
 
-// Descriptor — pass to the generic benchmark runner.
-extern const sig_algo_t sig_ecdsa;
+	// Descriptor — pass to the generic benchmark runner.
+	extern const sig_algo_t sig_ecdsa;
 
 #ifdef __cplusplus
 }

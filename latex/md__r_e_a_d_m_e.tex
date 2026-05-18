@@ -1,0 +1,31 @@
+\chapter{Secure Boot Proof of Concept repository }
+\hypertarget{md__r_e_a_d_m_e}{}\label{md__r_e_a_d_m_e}\index{Secure Boot Proof of Concept repository@{Secure Boot Proof of Concept repository}}
+\label{md__r_e_a_d_m_e_autotoc_md18}%
+\Hypertarget{md__r_e_a_d_m_e_autotoc_md18}%
+\hypertarget{md__r_e_a_d_m_e_autotoc_md19}{}\doxysection{\texorpdfstring{Installation}{Installation}}\label{md__r_e_a_d_m_e_autotoc_md19}
+
+\begin{DoxyItemize}
+\item Copy this gitlab repository
+\item Upload the whole {\ttfamily STM32\+Cube\+IDE} directory as projects into STM32\+Cube\+IDE
+\end{DoxyItemize}\hypertarget{md__r_e_a_d_m_e_autotoc_md20}{}\doxysection{\texorpdfstring{Build}{Build}}\label{md__r_e_a_d_m_e_autotoc_md20}
+
+\begin{DoxyItemize}
+\item Connect STM32\+F401\+CD using the external ST-\/\+Link
+\item Run BSW (right click and run)
+\item Run ASW (right click and run)
+\end{DoxyItemize}\hypertarget{md__r_e_a_d_m_e_autotoc_md21}{}\doxysection{\texorpdfstring{Build with CRC}{Build with CRC}}\label{md__r_e_a_d_m_e_autotoc_md21}
+
+\begin{DoxyItemize}
+\item Connect STM32\+F401\+CD using the external ST-\/\+Link
+\item Run BSW (right click and run)
+\item Build ASW (right click and build)
+\item Locate {\ttfamily .bin} file in the Debug directory
+\item Run {\ttfamily py crc.\+py X} where X is the location of the {\ttfamily .bin} file
+\item Upload updated image to the device using STM32\+Cube\+Programmer with the base address taken from {\ttfamily FLASH} in the ASW {\ttfamily FLASH\+\_\+\+RAM} linker script
+\end{DoxyItemize}\hypertarget{md__r_e_a_d_m_e_autotoc_md22}{}\doxysection{\texorpdfstring{Run}{Run}}\label{md__r_e_a_d_m_e_autotoc_md22}
+
+\begin{DoxyItemize}
+\item Connect the internal USB-\/C port to your PC
+\item Open a Serial Monitor (baud rate 9600) to receive status updates
+\item You can use the NRST button to restart the BSW/\+\+ASW without disconnecting from the PC 
+\end{DoxyItemize}

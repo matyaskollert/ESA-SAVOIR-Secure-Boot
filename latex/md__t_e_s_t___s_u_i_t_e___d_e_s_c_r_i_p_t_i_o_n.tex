@@ -1,0 +1,279 @@
+\chapter{BSW Test Suite Description }
+\hypertarget{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n}{}\label{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n}\index{BSW Test Suite Description@{BSW Test Suite Description}}
+\label{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md23}%
+\Hypertarget{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md23}%
+
+
+This document describes the hardware-\/in-\/the-\/loop (HIL) test suite for the Boot Software (BSW) bootloader running on the STM32\+F439\+ZI (Nucleo-\/\+F439\+ZI board). Tests are implemented in Python using pytest and communicate with the board over UART (ECSS packet protocol) and SWD (STM32\+Cube\+Programmer CLI for flash/\+option-\/byte access).
+
+\DoxyHorRuler{0}
+\hypertarget{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md25}{}\doxysection{\texorpdfstring{Hardware and Flash Layout}{Hardware and Flash Layout}}\label{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md25}
+The MCU uses STM32 dual-\/bank Flash. The relevant sectors are:\+
+
+
+\begin{DoxyTable}{4}{}{}{1}
+\SetCell{c,bg=\tableheadbgcolor,font=\bfseries}Region  &\SetCell{c,bg=\tableheadbgcolor,font=\bfseries}Address  &\SetCell{c,bg=\tableheadbgcolor,font=\bfseries}Sector  &\SetCell{c,bg=\tableheadbgcolor,font=\bfseries}Role  \\
+SLOT\+\_\+A (MAIN)  &0x08020000  &5  &Primary application image slot  \\
+SLOT\+\_\+B (UPDATE)  &0x08040000  &6  &Secondary /\+ update image slot  \\
+SWAP  &0x08060000  &7  &Temporary buffer for hardware image swap  \\
+COMM  &0x08080000  &8  &Communication status word between BSW/\+\+ASW  \\
+PROTECTED\+\_\+\+BSW\+\_\+\+STATE  &0x080\+A0000  &9  &Rollback counter + primary slot flag  \\
+REPORT  &0x080\+C0000  &10  &Circular buffer of up to 5 BSW event reports  \\
+\end{DoxyTable}
+
+
+Write protection (OB\+\_\+\+WRP) is applied at the sector level and is reconfigured by the BSW as part of lifecycle management.
+
+\DoxyHorRuler{0}
+\hypertarget{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md27}{}\doxysection{\texorpdfstring{BSW Report Structure}{BSW Report Structure}}\label{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md27}
+After each significant boot event, the BSW writes a {\ttfamily bsw\+\_\+report\+\_\+t} record (20 bytes) to the REPORT flash sector. Each report contains:\+
+
+
+\begin{DoxyItemize}
+\item {\bfseries{magic}} (4 bytes):\+ 0x\+BEEF0042 — marks a valid entry
+\item {\bfseries{type}} (1 byte):\+ 0x01 = NOMINAL, 0x02 = UPDATE, 0x03 = SWAP
+\item {\bfseries{outcome}} (1 byte):\+ 0 = success, non-\/zero = failure code
+\item {\bfseries{primary\+\_\+slot}} (1 byte):\+ 0 = SLOT\+\_\+A, 1 = SLOT\+\_\+B (at time of report)
+\item {\bfseries{rollback\+\_\+counter}} (4 bytes)
+\item {\bfseries{primary\+\_\+version}} /\+ {\bfseries{secondary\+\_\+version}} (2 bytes each)
+\item {\bfseries{step\+\_\+flags}} (4 bytes):\+ bitmask of completed steps within the operation
+\end{DoxyItemize}
+
+The test suite erases the REPORT sector before each test and verifies the report content after the BSW has run.
+
+\DoxyHorRuler{0}
+\hypertarget{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md29}{}\doxysection{\texorpdfstring{Outcome Codes}{Outcome Codes}}\label{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md29}
+\hypertarget{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md30}{}\doxysubsection{\texorpdfstring{NOMINAL boot (type = 0x01)}{NOMINAL boot (type = 0x01)}}\label{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md30}
+
+\begin{DoxyTable}{3}{}{}{1}
+\SetCell{c,bg=\tableheadbgcolor,font=\bfseries}Outcome  &\SetCell{c,bg=\tableheadbgcolor,font=\bfseries}Meaning  &\SetCell{c,bg=\tableheadbgcolor,font=\bfseries}Written in  \\
+0  &Success — image loaded and started  &boot.\+c  \\
+1  &set\+Bootloader\+Status() failed  &boot.\+c  \\
+2  &Flash CRC verification failed  &boot.\+c  \\
+3  &Digital signature verification failed  &boot.\+c  \\
+4  &RAM CRC verification failed  &boot.\+c  \\
+5  &check\+System\+For\+Nominal() failed (WRP violation)  &main\+\_\+loop.\+c  \\
+\end{DoxyTable}
+\hypertarget{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md31}{}\doxysubsection{\texorpdfstring{UPDATE (type = 0x02)}{UPDATE (type = 0x02)}}\label{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md31}
+
+\begin{DoxyTable}{3}{}{}{1}
+\SetCell{c,bg=\tableheadbgcolor,font=\bfseries}Outcome  &\SetCell{c,bg=\tableheadbgcolor,font=\bfseries}Meaning  &\SetCell{c,bg=\tableheadbgcolor,font=\bfseries}Written in  \\
+0  &Success — image written to flash  &receive\+Update\+Data()  \\
+1–14  &Protocol/\+\+CRC/\+signature/\+flash errors during upload  &receive\+Update\+Data()  \\
+15  &check\+System\+For\+Update() failed (WRP violation)  &main\+\_\+loop.\+c  \\
+\end{DoxyTable}
+\hypertarget{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md32}{}\doxysubsection{\texorpdfstring{SWAP (type = 0x03)}{SWAP (type = 0x03)}}\label{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md32}
+
+\begin{DoxyTable}{3}{}{}{1}
+\SetCell{c,bg=\tableheadbgcolor,font=\bfseries}Outcome  &\SetCell{c,bg=\tableheadbgcolor,font=\bfseries}Meaning  &\SetCell{c,bg=\tableheadbgcolor,font=\bfseries}Written in  \\
+0  &Success — primary/\+secondary slot switched  &swap\+Main\+With\+Update()  \\
+1  &old\+Image\+Header NULL (primary slot erased)  &swap\+Main\+With\+Update()  \\
+2  &new\+Image\+Header NULL (secondary slot erased)  &swap\+Main\+With\+Update()  \\
+3  &Rollback counter logic error  &swap\+Main\+With\+Update()  \\
+4  &HAL\+\_\+\+FLASH\+\_\+\+Unlock/\+\+Lock failed (hardware swap only)  &swap\+Main\+With\+Update()  \\
+5  &Flash sector write failed (hardware swap only)  &swap\+Main\+With\+Update()  \\
+6  &set\+Protected\+Bsw\+State() failed  &swap\+Main\+With\+Update()  \\
+7  &check\+System\+For\+Image\+Swap() failed (WRP violation)  &main\+\_\+loop.\+c  \\
+8  &check\+Update\+Version() failed (version below floor or NULL header)  &main\+\_\+loop.\+c  \\
+9  &check\+Update\+Validity() failed at CRC  &main\+\_\+loop.\+c  \\
+10  &check\+Update\+Validity() failed at signature  &main\+\_\+loop.\+c  \\
+\end{DoxyTable}
+
+
+\DoxyHorRuler{0}
+\hypertarget{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md34}{}\doxysection{\texorpdfstring{Test Files}{Test Files}}\label{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md34}
+\hypertarget{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md35}{}\doxysubsection{\texorpdfstring{{\ttfamily test\+\_\+boot.\+py} — Nominal Boot Path (command \textquotesingle{}1\textquotesingle{})}{{\ttfamily test\+\_\+boot.\+py} — Nominal Boot Path (command \textquotesingle{}1\textquotesingle{})}}\label{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md35}
+Tests the BSW boot sequence invoked by sending command byte {\ttfamily \textquotesingle{}1\textquotesingle{}} over UART.\hypertarget{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md36}{}\doxysubsubsection{\texorpdfstring{Test\+Boot\+Valid\+Image}{Test\+Boot\+Valid\+Image}}\label{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md36}
+
+\begin{DoxyItemize}
+\item {\bfseries{test\+\_\+boot\+\_\+successful}}:\+ Happy path. A valid signed image is present in SLOT\+\_\+A. The BSW ACKs the boot command, performs Flash CRC validation, digital signature verification, and RAM CRC validation in sequence, then hands control to the application. The debug log must contain all three validation success messages and {\ttfamily "{}App STARTED"{}}. The NOMINAL report (outcome=0, all step flags set) must be present in flash.
+\end{DoxyItemize}\hypertarget{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md37}{}\doxysubsubsection{\texorpdfstring{Test\+Boot\+No\+Image}{Test\+Boot\+No\+Image}}\label{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md37}
+
+\begin{DoxyItemize}
+\item {\bfseries{test\+\_\+debug\+\_\+log\+\_\+reports\+\_\+missing\+\_\+header}}:\+ SLOT\+\_\+A is erased (no image header). The BSW must log {\ttfamily "{}No valid header found"{}}. The report must show outcome=2 (CRC failure) with only SYSTEM\+\_\+\+OK and STATUS\+\_\+\+SET flags set.
+\end{DoxyItemize}\hypertarget{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md38}{}\doxysubsubsection{\texorpdfstring{Test\+Boot\+Corrupt\+CRC}{Test\+Boot\+Corrupt\+CRC}}\label{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md38}
+
+\begin{DoxyItemize}
+\item {\bfseries{test\+\_\+debug\+\_\+log\+\_\+reports\+\_\+crc\+\_\+mismatch}}:\+ A valid image is written to SLOT\+\_\+A with its CRC field deliberately corrupted (filled with 0x\+DEADBEEF). The BSW must log {\ttfamily "{}CRC mismatch in FLASH"{}} and {\ttfamily "{}0xdeadbeef"{}}. The report must show outcome=2 with only SYSTEM\+\_\+\+OK and STATUS\+\_\+\+SET flags set.
+\end{DoxyItemize}\hypertarget{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md39}{}\doxysubsubsection{\texorpdfstring{Test\+Boot\+Unprotected\+Main\+Sector}{Test\+Boot\+Unprotected\+Main\+Sector}}\label{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md39}
+
+\begin{DoxyItemize}
+\item {\bfseries{test\+\_\+nack\+\_\+when\+\_\+boot\+\_\+sector\+\_\+unprotected}}:\+ The write protection on SLOT\+\_\+A (sector 5) is temporarily removed. The BSW must refuse to boot (NACK 11) because {\ttfamily check\+System\+For\+Nominal()} fails. The report must show outcome=5, step\+\_\+flags=0.
+\end{DoxyItemize}\hypertarget{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md40}{}\doxysubsubsection{\texorpdfstring{Test\+Boot\+Unprotected\+BSWState\+Sector}{Test\+Boot\+Unprotected\+BSWState\+Sector}}\label{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md40}
+
+\begin{DoxyItemize}
+\item {\bfseries{test\+\_\+nack\+\_\+and\+\_\+sectors\+\_\+reprotected}}:\+ The write protection on the PROTECTED\+\_\+\+BSW\+\_\+\+STATE sector (sector 9) is temporarily removed while SLOT\+\_\+A remains protected. The BSW must NACK 11. After the OB\+\_\+\+Launch reset triggered by {\ttfamily setup\+System\+For\+Nominal()}, both sectors must be re-\/protected. The report must show outcome=5, step\+\_\+flags=0.
+\end{DoxyItemize}\hypertarget{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md41}{}\doxysubsubsection{\texorpdfstring{Test\+Boot\+Both\+Sectors\+Unprotected}{Test\+Boot\+Both\+Sectors\+Unprotected}}\label{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md41}
+
+\begin{DoxyItemize}
+\item {\bfseries{test\+\_\+nack\+\_\+wrp\+\_\+error}}:\+ Both SLOT\+\_\+A and PROTECTED\+\_\+\+BSW\+\_\+\+STATE are unprotected. The BSW must NACK 11, re-\/protect both sectors after reset, and write a report with outcome=5, step\+\_\+flags=0.
+\end{DoxyItemize}\hypertarget{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md42}{}\doxysubsubsection{\texorpdfstring{Test\+Boot\+Bad\+Magic}{Test\+Boot\+Bad\+Magic}}\label{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md42}
+
+\begin{DoxyItemize}
+\item {\bfseries{test\+\_\+debug\+\_\+log\+\_\+reports\+\_\+no\+\_\+valid\+\_\+header}}:\+ An image with a corrupted magic field (0x0000 instead of 0x\+ABCD) is flashed. {\ttfamily image\+Get\+Header()} returns NULL, causing {\ttfamily image\+Validate()} to fail. The BSW must log {\ttfamily "{}No valid header found"{}}. Report:\+ outcome=2, SYSTEM\+\_\+\+OK\texorpdfstring{$\vert$}{|}\+STATUS\+\_\+\+SET set.
+\end{DoxyItemize}\hypertarget{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md43}{}\doxysubsubsection{\texorpdfstring{Test\+Boot\+Invalid\+Signature}{Test\+Boot\+Invalid\+Signature}}\label{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md43}
+
+\begin{DoxyItemize}
+\item {\bfseries{test\+\_\+debug\+\_\+log\+\_\+reports\+\_\+signature\+\_\+failure}}:\+ An image with a tampered digital signature (but valid CRC, since the CRC is recomputed after corrupting the signature) is flashed. The BSW passes the Flash CRC check but fails at digital signature verification. The BSW must log {\ttfamily "{}Digital signature validation failed"{}}. Report:\+ outcome=3, SYSTEM\+\_\+\+OK\texorpdfstring{$\vert$}{|}\+STATUS\+\_\+\+SET\texorpdfstring{$\vert$}{|}\+CRC\+\_\+\+OK set.
+\end{DoxyItemize}\hypertarget{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md44}{}\doxysubsubsection{\texorpdfstring{Test\+Boot\+Nominal\+Auto\+Fix}{Test\+Boot\+Nominal\+Auto\+Fix}}\label{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md44}
+
+\begin{DoxyItemize}
+\item {\bfseries{test\+\_\+autofix\+\_\+reprotects\+\_\+and\+\_\+next\+\_\+boot\+\_\+succeeds}}:\+ The SLOT\+\_\+A sector is unprotected to trigger NACK 11 and the auto-\/fix reset. After the reset, both sectors must be re-\/protected and a subsequent boot command must succeed (ACK received).
+\end{DoxyItemize}
+
+\DoxyHorRuler{0}
+\hypertarget{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md46}{}\doxysubsection{\texorpdfstring{{\ttfamily test\+\_\+update.\+py} — Firmware Update Path (command \textquotesingle{}2\textquotesingle{})}{{\ttfamily test\+\_\+update.\+py} — Firmware Update Path (command \textquotesingle{}2\textquotesingle{})}}\label{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md46}
+Tests the firmware upload sequence:\+ command {\ttfamily \textquotesingle{}2\textquotesingle{}} → START\+\_\+\+UPLOAD /\+ DATA\+\_\+\+CHUNK /\+ END\+\_\+\+UPLOAD exchange → image written to SLOT\+\_\+B → system reset into SWAP state.\hypertarget{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md47}{}\doxysubsubsection{\texorpdfstring{Test\+Update\+Happy\+Path}{Test\+Update\+Happy\+Path}}\label{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md47}
+
+\begin{DoxyItemize}
+\item {\bfseries{test\+\_\+upload\+\_\+completes\+\_\+and\+\_\+update\+\_\+slot\+\_\+correct}}:\+ A valid version-\/2 image is uploaded. The BSW must ACK, log {\ttfamily "{}Writing to flash"{}} and {\ttfamily "{}Flash write complete"{}}, and SLOT\+\_\+B must contain the exact uploaded bytes with the correct magic (0x\+ABCD) and version (2). The UPDATE report (outcome=0, all step flags set) must be in flash.
+\end{DoxyItemize}\hypertarget{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md48}{}\doxysubsubsection{\texorpdfstring{Test\+Update\+Version\+Too\+Low}{Test\+Update\+Version\+Too\+Low}}\label{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md48}
+
+\begin{DoxyItemize}
+\item {\bfseries{test\+\_\+nack\+\_\+on\+\_\+version\+\_\+below\+\_\+floor}}:\+ With the rollback counter at 5 (floor=4), a version-\/3 image is uploaded. The BSW must NACK 9 on the first DATA\+\_\+\+CHUNK (where it reads the image version). Report:\+ outcome=9, only SYSTEM\+\_\+\+OK flag set.
+\item {\bfseries{test\+\_\+version\+\_\+at\+\_\+floor\+\_\+is\+\_\+accepted}}:\+ A version-\/4 image (exactly at the floor) must be accepted without NACK. Report:\+ outcome=0, all UPDATE step flags set.
+\end{DoxyItemize}\hypertarget{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md49}{}\doxysubsubsection{\texorpdfstring{Test\+Update\+Unprotected\+Main\+Sector}{Test\+Update\+Unprotected\+Main\+Sector}}\label{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md49}
+
+\begin{DoxyItemize}
+\item {\bfseries{test\+\_\+nack\+\_\+when\+\_\+main\+\_\+sector\+\_\+unprotected}}:\+ SLOT\+\_\+A (sector 5) is unprotected before sending command \textquotesingle{}2\textquotesingle{}. {\ttfamily check\+System\+For\+Update()} detects the violation and the BSW must NACK 10. Report:\+ outcome=15, step\+\_\+flags=0.
+\end{DoxyItemize}\hypertarget{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md50}{}\doxysubsubsection{\texorpdfstring{Test\+Update\+Unprotected\+BSWState\+Sector}{Test\+Update\+Unprotected\+BSWState\+Sector}}\label{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md50}
+
+\begin{DoxyItemize}
+\item {\bfseries{test\+\_\+nack\+\_\+and\+\_\+sectors\+\_\+reprotected}}:\+ The PROTECTED\+\_\+\+BSW\+\_\+\+STATE sector is unprotected. The BSW must NACK 10, then {\ttfamily setup\+System\+For\+Update()} (which calls {\ttfamily setup\+System\+For\+Nominal()}) re-\/protects SLOT\+\_\+A and PROTECTED\+\_\+\+BSW\+\_\+\+STATE. Report:\+ outcome=15, step\+\_\+flags=0.
+\end{DoxyItemize}\hypertarget{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md51}{}\doxysubsubsection{\texorpdfstring{Test\+Update\+Sector\+Protected\+During\+Update}{Test\+Update\+Sector\+Protected\+During\+Update}}\label{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md51}
+
+\begin{DoxyItemize}
+\item {\bfseries{test\+\_\+nack\+\_\+and\+\_\+log\+\_\+mentions\+\_\+update\+\_\+protected}}:\+ SLOT\+\_\+B (the upload target) is write-\/protected in addition to the normally-\/protected sectors. {\ttfamily check\+System\+For\+Update()} detects that the secondary slot is protected (cannot write to it) and NACKs 10. Report:\+ outcome=15, step\+\_\+flags=0.
+\end{DoxyItemize}\hypertarget{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md52}{}\doxysubsubsection{\texorpdfstring{Test\+Update\+State\+After\+Success}{Test\+Update\+State\+After\+Success}}\label{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md52}
+
+\begin{DoxyItemize}
+\item {\bfseries{test\+\_\+system\+\_\+state\+\_\+after\+\_\+successful\+\_\+upload}}:\+ After a successful version-\/2 upload, the BSW calls {\ttfamily setup\+System\+For\+Image\+Swap()} which sets COMM=0x\+CC (SWAP), unlocks SLOT\+\_\+A and PROTECTED\+\_\+\+BSW\+\_\+\+STATE, and resets. The test verifies COMM status, write-\/protection state, and SLOT\+\_\+B version header after the OB\+\_\+\+Launch reset completes. The UPDATE report must show outcome=0 with all flags set.
+\end{DoxyItemize}\hypertarget{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md53}{}\doxysubsubsection{\texorpdfstring{Test\+Rollback\+Prevention}{Test\+Rollback\+Prevention}}\label{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md53}
+
+\begin{DoxyItemize}
+\item {\bfseries{test\+\_\+nack9\+\_\+and\+\_\+counter\+\_\+unchanged\+\_\+after\+\_\+rejection}}:\+ With counter=10 (floor=9), uploading version 8 must be NACKed with error code 9. The rollback counter must remain 10.
+\item {\bfseries{test\+\_\+version\+\_\+at\+\_\+floor\+\_\+is\+\_\+accepted}}:\+ Version 9 (at the floor) must be accepted.
+\end{DoxyItemize}\hypertarget{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md54}{}\doxysubsubsection{\texorpdfstring{Test\+Rollback\+Counter\+Boundary}{Test\+Rollback\+Counter\+Boundary}}\label{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md54}
+
+\begin{DoxyItemize}
+\item {\bfseries{test\+\_\+version\+\_\+1\+\_\+accepted\+\_\+when\+\_\+counter\+\_\+is\+\_\+0}}:\+ Counter=0 → floor=0; version 1 must be accepted.
+\item {\bfseries{test\+\_\+version\+\_\+1\+\_\+accepted\+\_\+when\+\_\+counter\+\_\+equals\+\_\+window}}:\+ Counter=1 (= ROLLBACK\+\_\+\+WINDOW=1) → floor=0; version 1 must be accepted.
+\item {\bfseries{test\+\_\+version\+\_\+below\+\_\+floor\+\_\+rejected\+\_\+when\+\_\+counter\+\_\+gt\+\_\+window}}:\+ Counter=3 → floor=2; version 1 must be rejected with NACK 9.
+\end{DoxyItemize}
+
+\DoxyHorRuler{0}
+\hypertarget{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md56}{}\doxysubsection{\texorpdfstring{{\ttfamily test\+\_\+swap.\+py} — Image Swap Path (command \textquotesingle{}3\textquotesingle{})}{{\ttfamily test\+\_\+swap.\+py} — Image Swap Path (command \textquotesingle{}3\textquotesingle{})}}\label{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md56}
+Tests the image swap sequence invoked by sending command {\ttfamily \textquotesingle{}3\textquotesingle{}}. The swap checks system integrity (WRP state), validates the update image (version, CRC, signature), executes the slot switch, updates the rollback counter, and re-\/applies write protection.\hypertarget{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md57}{}\doxysubsubsection{\texorpdfstring{Test\+Swap\+Happy\+Path}{Test\+Swap\+Happy\+Path}}\label{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md57}
+
+\begin{DoxyItemize}
+\item {\bfseries{test\+\_\+swap\+\_\+performs\+\_\+correctly}}:\+ Full happy path. SLOT\+\_\+A=v1 (primary), SLOT\+\_\+B=v2 (secondary), counter=1, COMM=0x\+CC, sectors unlocked as if after a successful upload. The BSW must ACK, perform the slot switch, advance the counter to 2, re-\/protect the new primary slot and PROTECTED\+\_\+\+BSW\+\_\+\+STATE, and leave the old primary (now secondary) unprotected. The SWAP report must show outcome=0 with all step flags set, and {\ttfamily primary\+\_\+slot} must record SLOT\+\_\+A (the slot that was primary before the swap).
+\end{DoxyItemize}\hypertarget{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md58}{}\doxysubsubsection{\texorpdfstring{Test\+Swap\+Main\+Sector\+Still\+Protected}{Test\+Swap\+Main\+Sector\+Still\+Protected}}\label{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md58}
+
+\begin{DoxyItemize}
+\item {\bfseries{test\+\_\+nack\+\_\+when\+\_\+main\+\_\+sector\+\_\+still\+\_\+protected}}:\+ COMM=0x\+CC but the primary slot (SLOT\+\_\+A) is still write-\/protected. {\ttfamily check\+System\+For\+Image\+Swap()} fails → NACK 12 → system reset for re-\/configuration. The first report in flash must have outcome=7.
+\end{DoxyItemize}\hypertarget{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md59}{}\doxysubsubsection{\texorpdfstring{Test\+Swap\+BSWState\+Sector\+Still\+Protected}{Test\+Swap\+BSWState\+Sector\+Still\+Protected}}\label{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md59}
+
+\begin{DoxyItemize}
+\item {\bfseries{test\+\_\+nack\+\_\+when\+\_\+bsw\+\_\+state\+\_\+sector\+\_\+still\+\_\+protected}}:\+ COMM=0x\+CC but PROTECTED\+\_\+\+BSW\+\_\+\+STATE is still write-\/protected. Same behaviour as above:\+ NACK 12, first report outcome=7.
+\end{DoxyItemize}\hypertarget{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md60}{}\doxysubsubsection{\texorpdfstring{Test\+Swap\+Both\+Sectors\+Still\+Protected}{Test\+Swap\+Both\+Sectors\+Still\+Protected}}\label{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md60}
+
+\begin{DoxyItemize}
+\item {\bfseries{test\+\_\+nack\+\_\+when\+\_\+both\+\_\+sectors\+\_\+still\+\_\+protected}}:\+ COMM=0x\+CC but both sectors remain protected. NACK 12 must be issued.
+\end{DoxyItemize}\hypertarget{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md61}{}\doxysubsubsection{\texorpdfstring{Test\+Swap\+Bad\+Update\+Slot}{Test\+Swap\+Bad\+Update\+Slot}}\label{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md61}
+Four sub-\/cases all starting from a valid swap-\/ready state but with a degraded SLOT\+\_\+B:\+
+
+
+\begin{DoxyItemize}
+\item {\bfseries{test\+\_\+nack\+\_\+when\+\_\+update\+\_\+slot\+\_\+empty}}:\+ SLOT\+\_\+B is erased. {\ttfamily check\+Update\+Version()} gets a NULL header and fails → NACK. Report:\+ outcome=8, only SYSTEM\+\_\+\+OK set.
+\item {\bfseries{test\+\_\+nack\+\_\+when\+\_\+update\+\_\+has\+\_\+bad\+\_\+magic}}:\+ SLOT\+\_\+B has a corrupted magic field (0x0000). {\ttfamily image\+Get\+Header()} returns NULL → same path as empty slot. Report:\+ outcome=8, only SYSTEM\+\_\+\+OK set.
+\item {\bfseries{test\+\_\+nack\+\_\+when\+\_\+update\+\_\+has\+\_\+corrupt\+\_\+crc}}:\+ SLOT\+\_\+B has a valid magic/\+version but corrupted CRC. {\ttfamily check\+Update\+Validity()} fails at {\ttfamily image\+Validate()} → NACK. Report:\+ outcome=9, SYSTEM\+\_\+\+OK\texorpdfstring{$\vert$}{|}\+VERSION\+\_\+\+OK set.
+\item {\bfseries{test\+\_\+nack\+\_\+when\+\_\+update\+\_\+has\+\_\+invalid\+\_\+signature}}:\+ SLOT\+\_\+B has valid CRC (recomputed after corrupting the signature) but a tampered signature. {\ttfamily check\+Update\+Validity()} fails at {\ttfamily image\+Load()} → NACK. Report:\+ outcome=10, SYSTEM\+\_\+\+OK\texorpdfstring{$\vert$}{|}\+VERSION\+\_\+\+OK\texorpdfstring{$\vert$}{|}\+CRC\+\_\+\+OK set.
+\end{DoxyItemize}\hypertarget{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md62}{}\doxysubsubsection{\texorpdfstring{Test\+Swap\+Version\+Rejection\+Recovery}{Test\+Swap\+Version\+Rejection\+Recovery}}\label{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md62}
+
+\begin{DoxyItemize}
+\item {\bfseries{test\+\_\+nack\+\_\+9\+\_\+on\+\_\+version\+\_\+below\+\_\+floor}}:\+ Counter=5 (floor=4), SLOT\+\_\+B=v3 (below floor). {\ttfamily check\+Update\+Version()} rejects → NACK 9. Report:\+ outcome=8 (version check failure written before the NACK), SYSTEM\+\_\+\+OK only.
+\end{DoxyItemize}\hypertarget{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md63}{}\doxysubsubsection{\texorpdfstring{Test\+Swap\+Rollback\+Counter\+Edges}{Test\+Swap\+Rollback\+Counter\+Edges}}\label{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md63}
+
+\begin{DoxyItemize}
+\item {\bfseries{test\+\_\+counter\+\_\+not\+\_\+incremented\+\_\+when\+\_\+already\+\_\+current}}:\+ If the rollback counter is pre-\/set to 2 (equal to the new primary\textquotesingle{}s version 2), the counter must remain 2 after the swap. Report:\+ outcome=0, all flags set.
+\item {\bfseries{test\+\_\+counter\+\_\+updated\+\_\+when\+\_\+new\+\_\+boot\+\_\+is\+\_\+higher}}:\+ With counter=1 and new primary version=2, the counter must advance to 2 after the swap. Report:\+ outcome=0, all flags set.
+\end{DoxyItemize}\hypertarget{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md64}{}\doxysubsubsection{\texorpdfstring{Test\+Swap\+Rollback\+Enforcement}{Test\+Swap\+Rollback\+Enforcement}}\label{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md64}
+
+\begin{DoxyItemize}
+\item {\bfseries{test\+\_\+nack9\+\_\+and\+\_\+state\+\_\+unchanged\+\_\+after\+\_\+rejection}}:\+ Counter=10 (floor=9), SLOT\+\_\+B=v8. The swap command must be NACKed (error code 9). SLOT\+\_\+A version and rollback counter must remain unchanged. Report:\+ outcome=8, SYSTEM\+\_\+\+OK only.
+\end{DoxyItemize}\hypertarget{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md65}{}\doxysubsubsection{\texorpdfstring{Test\+Swap\+Primary\+Slot\+Erased}{Test\+Swap\+Primary\+Slot\+Erased}}\label{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md65}
+
+\begin{DoxyItemize}
+\item {\bfseries{test\+\_\+swap\+\_\+succeeds\+\_\+when\+\_\+primary\+\_\+header\+\_\+null}}:\+ SLOT\+\_\+A (primary) is erased — no valid image header. SLOT\+\_\+B=v2 (valid). The pre-\/swap checks ({\ttfamily check\+Update\+Version}, {\ttfamily check\+Update\+Validity}) only inspect SLOT\+\_\+B and pass, so the BSW ACKs the swap command. Inside {\ttfamily swap\+Main\+With\+Update()}, {\ttfamily image\+Get\+Header(primary\+Slot)} returns NULL. The BSW logs a warning ({\ttfamily "{}Primary slot image header is NULL"{}}) and continues:\+ the MAIN→\+SWAP backup step is skipped and only the UPDATE→\+MAIN write is performed. The swap must complete successfully (outcome=0), the primary slot must contain v2, and the rollback counter must advance to 2. All success step flags must be set.
+\end{DoxyItemize}
+
+\DoxyHorRuler{0}
+\hypertarget{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md67}{}\doxysubsection{\texorpdfstring{{\ttfamily test\+\_\+lifecycle.\+py} — Multi-\/\+Step Lifecycle Scenarios}{{\ttfamily test\+\_\+lifecycle.\+py} — Multi-\/\+Step Lifecycle Scenarios}}\label{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md67}
+Tests that span multiple boot cycles, combining upload, swap, and boot operations.\hypertarget{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md68}{}\doxysubsubsection{\texorpdfstring{Test\+Full\+Update\+Cycle}{Test\+Full\+Update\+Cycle}}\label{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md68}
+
+\begin{DoxyItemize}
+\item {\bfseries{test\+\_\+full\+\_\+cycle}}:\+ Complete v1 → v2 upgrade. Upload v2 to SLOT\+\_\+B (autonomous mode), then perform the swap. After the swap:\+
+\begin{DoxyItemize}
+\item Primary slot holds v2, secondary holds v1.
+\item Rollback counter is 2.
+\item New primary slot and PROTECTED\+\_\+\+BSW\+\_\+\+STATE are write-\/protected.
+\item COMM status is NOMINAL (0x\+AA).
+\item A subsequent autonomous boot must log {\ttfamily "{}CRC validation in RAM successful"{}}.
+\item Two reports must be in flash:\+ one UPDATE (outcome=0) and one SWAP (outcome=0).
+\end{DoxyItemize}
+\end{DoxyItemize}\hypertarget{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md69}{}\doxysubsubsection{\texorpdfstring{Test\+Consecutive\+Swaps}{Test\+Consecutive\+Swaps}}\label{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md69}
+
+\begin{DoxyItemize}
+\item {\bfseries{test\+\_\+two\+\_\+consecutive\+\_\+upgrades}}:\+ Two full upload+swap cycles:\+ v1→v2, then v2→v3. After both cycles, the primary slot must hold v3 and the rollback counter must be 3. Four reports must be in flash (UPDATE1, SWAP1, UPDATE2, SWAP2). The latest report must be a successful SWAP.
+\end{DoxyItemize}\hypertarget{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md70}{}\doxysubsubsection{\texorpdfstring{Test\+Rollback\+With\+Window}{Test\+Rollback\+With\+Window}}\label{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md70}
+
+\begin{DoxyItemize}
+\item {\bfseries{test\+\_\+v1\+\_\+rollback\+\_\+accepted\+\_\+and\+\_\+boot\+\_\+reverts}}:\+ After a v1→v2 upgrade (counter=2, floor=1), upload v1 (at the floor). The upload must succeed. After the swap, primary slot must hold v1. The latest report must be a successful SWAP.
+\item {\bfseries{test\+\_\+version\+\_\+below\+\_\+floor\+\_\+rejected\+\_\+after\+\_\+upgrade}}:\+ After two upgrades (v1→v2→v3, counter=3, floor=2), attempting to upload v1 must be NACKed (error code 9). The latest report must be an UPDATE with outcome=9.
+\end{DoxyItemize}\hypertarget{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md71}{}\doxysubsubsection{\texorpdfstring{Test\+Automatic\+Rollback\+Both\+Fail}{Test\+Automatic\+Rollback\+Both\+Fail}}\label{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md71}
+
+\begin{DoxyItemize}
+\item {\bfseries{test\+\_\+both\+\_\+boots\+\_\+fail\+\_\+leaves\+\_\+standby}}:\+ SLOT\+\_\+A=v2, SLOT\+\_\+B=v1, counter=2. A simulated boot failure (COMM set to BOOT\+\_\+\+ATTEMPTED) causes the BSW to detect the failure on the next power-\/on and trigger a rollback swap of v1 into the primary slot. A second simulated boot failure (v1 also fails) leaves no valid rollback candidate. The BSW must log {\ttfamily "{}Rollback not applicable"{}} and enter standby.
+\end{DoxyItemize}\hypertarget{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md72}{}\doxysubsubsection{\texorpdfstring{Test\+Automatic\+Rollback\+Second\+Succeeds}{Test\+Automatic\+Rollback\+Second\+Succeeds}}\label{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md72}
+
+\begin{DoxyItemize}
+\item {\bfseries{test\+\_\+rollback\+\_\+swap\+\_\+then\+\_\+second\+\_\+boot\+\_\+succeeds\+\_\+and\+\_\+confirms\+\_\+nominal}}:\+ SLOT\+\_\+A=v2 (synthetic, won\textquotesingle{}t produce {\ttfamily "{}App STARTED"{}}), SLOT\+\_\+B=real bootable ASW at v1, counter=2. After the first boot failure, the BSW swaps v1 into the primary slot. The next boot successfully runs the real ASW and the log must contain {\ttfamily "{}App STARTED"{}}.
+\end{DoxyItemize}
+
+\DoxyHorRuler{0}
+\hypertarget{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md74}{}\doxysubsection{\texorpdfstring{{\ttfamily test\+\_\+protocol.\+py} — ECSS Packet Protocol Robustness}{{\ttfamily test\+\_\+protocol.\+py} — ECSS Packet Protocol Robustness}}\label{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md74}
+Tests that verify the BSW handles malformed, unexpected, or out-\/of-\/order packet sequences gracefully, without hanging, crashing, or corrupting the MAIN slot.\hypertarget{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md75}{}\doxysubsubsection{\texorpdfstring{Test\+Unknown\+Command}{Test\+Unknown\+Command}}\label{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md75}
+
+\begin{DoxyItemize}
+\item {\bfseries{test\+\_\+unknown\+\_\+command\+\_\+does\+\_\+not\+\_\+hang}}:\+ Sending an unrecognised command byte ({\ttfamily \textquotesingle{}X\textquotesingle{}}) must not block the BSW indefinitely.
+\item {\bfseries{test\+\_\+unknown\+\_\+command\+\_\+does\+\_\+not\+\_\+corrupt\+\_\+boot\+\_\+slot}}:\+ After an unknown command, the first 32 bytes of SLOT\+\_\+A must be identical to the pre-\/test snapshot.
+\end{DoxyItemize}\hypertarget{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md76}{}\doxysubsubsection{\texorpdfstring{Test\+Command\+With\+Empty\+Data}{Test\+Command\+With\+Empty\+Data}}\label{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md76}
+
+\begin{DoxyItemize}
+\item {\bfseries{test\+\_\+zero\+\_\+length\+\_\+command\+\_\+does\+\_\+not\+\_\+hang}}:\+ A command packet with {\ttfamily data\+\_\+length = 0} (no payload) must not cause a crash or infinite loop.
+\end{DoxyItemize}\hypertarget{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md77}{}\doxysubsubsection{\texorpdfstring{Test\+Upload\+Start\+Errors}{Test\+Upload\+Start\+Errors}}\label{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md77}
+
+\begin{DoxyItemize}
+\item {\bfseries{test\+\_\+nack\+\_\+3\+\_\+when\+\_\+start\+\_\+data\+\_\+length\+\_\+wrong}}:\+ A START\+\_\+\+UPLOAD packet with 8 bytes of payload instead of the required 4 must produce NACK error code 3.
+\item {\bfseries{test\+\_\+nack\+\_\+2\+\_\+when\+\_\+wrong\+\_\+service\+\_\+type\+\_\+at\+\_\+start}}:\+ Sending a DATA\+\_\+\+CHUNK packet where a START\+\_\+\+UPLOAD is expected must produce NACK error code 2.
+\end{DoxyItemize}\hypertarget{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md78}{}\doxysubsubsection{\texorpdfstring{Test\+Upload\+Chunk\+Errors}{Test\+Upload\+Chunk\+Errors}}\label{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md78}
+
+\begin{DoxyItemize}
+\item {\bfseries{test\+\_\+nack\+\_\+7\+\_\+when\+\_\+wrong\+\_\+service\+\_\+type\+\_\+in\+\_\+chunk\+\_\+phase}}:\+ After a valid START\+\_\+\+UPLOAD exchange, sending another START\+\_\+\+UPLOAD where a DATA\+\_\+\+CHUNK is expected must produce NACK error code 7.
+\end{DoxyItemize}\hypertarget{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md79}{}\doxysubsubsection{\texorpdfstring{Test\+Upload\+End\+Before\+All\+Data}{Test\+Upload\+End\+Before\+All\+Data}}\label{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md79}
+
+\begin{DoxyItemize}
+\item {\bfseries{test\+\_\+end\+\_\+before\+\_\+all\+\_\+data\+\_\+acks\+\_\+and\+\_\+does\+\_\+not\+\_\+corrupt\+\_\+boot}}:\+ Sending END\+\_\+\+UPLOAD before all declared bytes have been transferred must be ACKed (the BSW exits the chunk loop early). The SLOT\+\_\+A flash content must remain unchanged.
+\end{DoxyItemize}
+
+\DoxyHorRuler{0}
+\hypertarget{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md81}{}\doxysection{\texorpdfstring{Key Invariants Verified Across All Tests}{Key Invariants Verified Across All Tests}}\label{md__t_e_s_t___s_u_i_t_e___d_e_s_c_r_i_p_t_i_o_n_autotoc_md81}
+
+\begin{DoxyEnumerate}
+\item {\bfseries{Write-\/protection integrity}}:\+ The BSW must never boot, update, or swap when required flash sectors are in an unexpected protection state. It must always restore the correct protection state before resetting.
+\item {\bfseries{Rollback counter monotonicity}}:\+ The counter must never decrease. Upgrades to higher versions advance it; rollbacks within the allowed window do not decrease it.
+\item {\bfseries{COMM status word consistency}}:\+ COMM transitions (NOMINAL ↔ SWAP ↔ BOOT\+\_\+\+ATTEMPTED) must match the expected lifecycle state after each operation.
+\item {\bfseries{Flash content integrity}}:\+ No operation must silently corrupt the primary image slot.
+\item {\bfseries{Report accuracy}}:\+ Every significant operation (boot, update, swap) must write a BSW report to flash that accurately reflects which steps completed and the specific failure cause if applicable.
+\item {\bfseries{No hangs}}:\+ The BSW must always respond (ACK, NACK, or log) within defined timeouts, even when presented with malformed input. 
+\end{DoxyEnumerate}

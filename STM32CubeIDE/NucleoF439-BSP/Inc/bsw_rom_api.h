@@ -30,10 +30,10 @@
 #define BSP_INC_BSW_ROM_API_H_
 
 #include <stdint.h>
-#include <wolfssl/wolfcrypt/types.h>   /* byte, word32 */
+#include <wolfssl/wolfcrypt/types.h> /* byte, word32 */
 
 /** Absolute Flash address where the BSW ROM API table lives. */
-#define BSW_ROM_API_ADDRESS  0x08000200U
+#define BSW_ROM_API_ADDRESS 0x08000200U
 
 /**
  * BSW ROM API table.
@@ -45,8 +45,9 @@
  * Unused slots are reserved as NULL for future expansion without
  * breaking binary compatibility.
  */
-typedef struct {
-    /**
+typedef struct
+{
+	/**
      * Verify a digital signature (ECDSA-P256 / ML-DSA-65 / Hybrid).
      * Compile-time scheme is fixed by BSW's build flags — the same
      * scheme is used for all verification calls through this API.
@@ -56,20 +57,19 @@ typedef struct {
      * @param signature   Raw signature bytes (4096-byte field).
      * @return 1 on success, 0 on failure.
      */
-    int16_t (*verifySignature)(const byte *buffer, uint32_t bufferSize,
-                               const byte *signature);
+	int16_t (*verifySignature)(const byte* buffer, uint32_t bufferSize, const byte* signature);
 
-    /**
+	/**
      * Compute the SHA-256 digest of @p buffer and print it.
      *
      * @param buffer      Data to hash.
      * @param bufferSize  Length of @p buffer in bytes.
      * @return Pointer to 32-byte digest buffer, or NULL on error.
      */
-    byte *(*hash)(const byte *buffer, uint32_t bufferSize);
+	byte* (*hash)(const byte* buffer, uint32_t bufferSize);
 
-    /** Reserved for future entries — must be NULL. */
-    void *reserved[6];
+	/** Reserved for future entries — must be NULL. */
+	void* reserved[6];
 } bsw_rom_api_t;
 
 /**
@@ -78,6 +78,6 @@ typedef struct {
  * Example:
  *   int16_t ok = BSW_ROM_API->verifySignature(buf, len, sig);
  */
-#define BSW_ROM_API  ((const bsw_rom_api_t *)(BSW_ROM_API_ADDRESS))
+#define BSW_ROM_API ((const bsw_rom_api_t*)(BSW_ROM_API_ADDRESS))
 
 #endif /* BSP_INC_BSW_ROM_API_H_ */

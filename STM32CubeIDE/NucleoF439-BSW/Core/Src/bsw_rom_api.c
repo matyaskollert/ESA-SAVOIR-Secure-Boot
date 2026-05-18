@@ -25,10 +25,8 @@
  * KEEP() in the linker script prevents the linker from discarding it as
  * "unused" even though no BSW code calls it through the table.
  */
-const bsw_rom_api_t g_bsw_rom_api
-    __attribute__((section(".rom_api"), used)) =
-{
+const bsw_rom_api_t g_bsw_rom_api __attribute__((section(".rom_api"), used)) = {
     .verifySignature = verifySignature,
     .hash            = hash,
-    .reserved        = { NULL, NULL, NULL, NULL, NULL, NULL },
+    .reserved        = {NULL, NULL, NULL, NULL, NULL, NULL},
 };

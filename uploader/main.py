@@ -1,6 +1,23 @@
 """
-STM32F4 Binary Uploader Application
-A simple GUI application for uploading binary files to STM32F4 boards via UART.
+main.py — STM32F439 BSW uploader GUI (PySide6).
+
+Provides a graphical interface for interacting with the BSW bootloader over a
+serial (UART) connection using the ECSS packet protocol.
+
+Capabilities
+------------
+- Upload a signed firmware image to the secondary flash slot (UPDATE command).
+- Trigger an image swap, making the uploaded image the primary (SWAP command).
+- Boot the primary image (NOMINAL command).
+- Query and display stored BSW boot-event reports (REPORT command).
+- Display live debug log output streamed from the BSW over UART.
+
+The binary is signed before upload using either ECDSA-P256 or ML-DSA-65
+(selected by the user in the GUI). The private key must correspond to the
+public key compiled into the target BSW firmware (crypto.c).
+
+Dependencies: PySide6, pyserial, cryptography, wolfcrypt (for ML-DSA).
+See uploader/requirements.txt.
 """
 
 import re

@@ -11,8 +11,7 @@
 #include "update.h"
 #include "bsw_report.h"
 
-
-int16_t boot(bsw_report_t *report)
+int16_t boot(bsw_report_t* report)
 {
 	/* Reaching this function means checkSystemForNominal() already passed. */
 	report->step_flags |= BSW_NOMINAL_FLAG_SYSTEM_OK;
@@ -58,7 +57,3 @@ int16_t boot(bsw_report_t *report)
 	imageStart();
 	return 0; /* unreachable; imageStart() is noreturn */
 }
-
-
-
-

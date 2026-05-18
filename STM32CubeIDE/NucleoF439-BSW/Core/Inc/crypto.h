@@ -22,13 +22,13 @@
 #define INC_CRYPTO_H_
 
 #if defined(HYBRID) || !defined(POST_QUANTUM)
-    #include <wolfssl/wolfcrypt/sha256.h>
+#include <wolfssl/wolfcrypt/sha256.h>
 #endif /* HYBRID || !POST_QUANTUM */
 
-#if defined(POST_QUANTUM) || defined(HYBRID) 
-    #include <wolfssl/wolfcrypt/dilithium.h>
-    #define ML_DSA_65_PUB_KEY_SIZE   DILITHIUM_LEVEL3_PUB_KEY_SIZE   /* 1952 bytes */
-#endif /* POST_QUANTUM */
+#if defined(POST_QUANTUM) || defined(HYBRID)
+#include <wolfssl/wolfcrypt/dilithium.h>
+#define ML_DSA_65_PUB_KEY_SIZE DILITHIUM_LEVEL3_PUB_KEY_SIZE /* 1952 bytes */
+#endif                                                       /* POST_QUANTUM */
 
 /**
  * Compute the SHA-256 digest of @p buffer.

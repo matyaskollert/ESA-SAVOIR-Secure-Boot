@@ -1,10 +1,16 @@
 /*
  * flash.c
  *
+ * Flash erase / write primitives and bootloader-status / slot-selection
+ * helpers for the STM32F439.
+ *
+ * Low-level erase and write operations delegate to the STM32 HAL.
+ * Functions that modify Option Bytes (write protection) are in
+ * option_bytes.c (BSW only); this file only manages data sectors.
+ *
  *  Created on: Jan 19, 2026
  *      Author: Matyas
  */
-
 
 #include "flash.h"
 #include <stdio.h>
@@ -31,8 +37,7 @@ int16_t eraseFlashSector(uint32_t sector)
 
 int16_t writeFlashWord(uint32_t address, uint32_t value)
 {
-	if (HAL_FLASH_Program(FLASH_TYPEPROGRAM_WORD,
-			address, value) != HAL_OK)
+	if (HAL_FLASH_Program(FLASH_TYPEPROGRAM_WORD, address, value) != HAL_OK)
 	{
 		printf("Flash program failed\r\n");
 		// return 1 whatever happens with lockFlash, ignore output
@@ -46,14 +51,13 @@ int16_t writeFlashBlock(uint32_t address, uint32_t* buffer, uint32_t bufferSize)
 {
 	for (uint32_t i = 0; i < bufferSize; i++)
 	{
-		if (writeFlashWord(address + 4*i, buffer[i]) != 0)
+		if (writeFlashWord(address + 4 * i, buffer[i]) != 0)
 		{
 			return 1;
 		}
 	}
 	return 0;
 }
-
 
 int16_t writeFlashSector(uint32_t sector, uint32_t address, uint32_t* buffer, uint32_t bufferSize)
 {
@@ -66,7 +70,7 @@ int16_t writeFlashSector(uint32_t sector, uint32_t address, uint32_t* buffer, ui
 
 	for (uint32_t i = 0; i < bufferSize; i++)
 	{
-		if (writeFlashWord(address + 4*i, buffer[i]) != 0)
+		if (writeFlashWord(address + 4 * i, buffer[i]) != 0)
 		{
 			return 1;
 		}
@@ -75,8 +79,9 @@ int16_t writeFlashSector(uint32_t sector, uint32_t address, uint32_t* buffer, ui
 	return 0;
 }
 
-BootloaderStatus getBootloaderStatus(void) {
-	return (BootloaderStatus)*((uint32_t*)COMM_FLASH_ADDRESS);
+BootloaderStatus getBootloaderStatus(void)
+{
+	return (BootloaderStatus) * ((uint32_t*)COMM_FLASH_ADDRESS);
 }
 
 int16_t setBootloaderStatus(BootloaderStatus newStatus)
@@ -129,5 +134,3 @@ ImageSlot getSecondarySlot(void)
 {
 	return (getPrimaryFlag() == PROTECTED_BSW_STATE_PRIMARY_SLOT_B) ? SLOT_A : SLOT_B;
 }
-
-

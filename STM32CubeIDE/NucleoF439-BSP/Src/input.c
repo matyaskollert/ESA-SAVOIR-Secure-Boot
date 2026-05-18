@@ -1,6 +1,17 @@
 /*
  * input.c
  *
+ * UART receive/transmit layer — DMA ring-buffer reception and ECSS packet I/O.
+ *
+ * A single static DMA-backed circular buffer (rxBuffer) captures all incoming
+ * bytes via HAL_UARTEx_ReceiveToIdle_DMA.  The rx_read() helper drains the
+ * buffer with a configurable timeout; it falls back to polled
+ * HAL_UART_Receive() when DMA has not been initialised (e.g. in the ASW).
+ *
+ * Only one UART instance may use the DMA path at a time.  The handle
+ * registered by uart_rx_init() is stored in a module-level pointer and
+ * validated on every call.
+ *
  *  Created on: Feb 2, 2026
  *      Author: Matyas
  */
@@ -9,48 +20,48 @@
 #include <stdio.h>
 #include <string.h>
 
-#define UART_RX_DMA_BUF_SIZE  512U
+#define UART_RX_DMA_BUF_SIZE 512U
 
 static uint8_t rxBuffer[UART_RX_DMA_BUF_SIZE];
-static uint8_t dmaReady = 0;
-static uint32_t indx = 0;
-static uint32_t write_indx = 0;
+static uint8_t dmaReady         = 0;
+static uint32_t indx            = 0;
+static uint32_t write_indx      = 0;
 static UART_HandleTypeDef* uart = NULL;
 
 void uart_rx_init(UART_HandleTypeDef* uuart)
 {
-	uart = uuart;
-	indx = 0;
+	uart     = uuart;
+	indx     = 0;
 	dmaReady = 1;
 	HAL_UARTEx_ReceiveToIdle_DMA(uart, rxBuffer, UART_RX_DMA_BUF_SIZE);
 	// HAL_UART_Receive_DMA(uart, rxBuffer, UART_RX_DMA_BUF_SIZE);
 	// printf("UART RX DMA initialized with buffer size %u\r\n", UART_RX_DMA_BUF_SIZE);
 }
 
-void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t size)
+void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef* huart, uint16_t size)
 {
 	write_indx = size % UART_RX_DMA_BUF_SIZE;
 }
 
 static uint32_t bytes_available(void)
 {
-    if (write_indx >= indx)
-        return write_indx - indx;
-    else
-        return UART_RX_DMA_BUF_SIZE - indx + write_indx;
+	if (write_indx >= indx)
+		return write_indx - indx;
+	else
+		return UART_RX_DMA_BUF_SIZE - indx + write_indx;
 }
 
-
-static int16_t rx_read(UART_HandleTypeDef* uuart,
-                       uint8_t* dst, uint16_t len, uint32_t timeout_ms)
+static int16_t rx_read(UART_HandleTypeDef* uuart, uint8_t* dst, uint16_t len, uint32_t timeout_ms)
 {
 	if (!dmaReady || uart != uuart)
 	{
 		// printf("DMA not ready or wrong UART instance, falling back to polling\r\n");
 		/* Polling fallback - used by ASW which has no DMA configured */
 		HAL_StatusTypeDef ret = HAL_UART_Receive(uart, dst, len, timeout_ms);
-		if (ret == HAL_TIMEOUT) return -1;
-		if (ret != HAL_OK)      return  1;
+		if (ret == HAL_TIMEOUT)
+			return -1;
+		if (ret != HAL_OK)
+			return 1;
 		return 0;
 	}
 
@@ -85,7 +96,7 @@ int16_t receiveData(UART_HandleTypeDef* uart, uint8_t* receiveBuffer, uint32_t b
 
 int16_t sendAck(UART_HandleTypeDef* uart)
 {
-	uint8_t ack = 0x06;  // ACK byte (legacy)
+	uint8_t ack           = 0x06;  // ACK byte (legacy)
 	HAL_StatusTypeDef ret = HAL_UART_Transmit(uart, &ack, 1, 1000);
 	if (ret != HAL_OK)
 	{
@@ -115,7 +126,8 @@ int16_t receivePacketHeader(UART_HandleTypeDef* uart, ECSSPacketHeader* header)
 	return 0;
 }
 
-int16_t receivePacketHeaderWithTimeout(UART_HandleTypeDef* uart, ECSSPacketHeader* header, uint32_t timeout_ms)
+int16_t receivePacketHeaderWithTimeout(UART_HandleTypeDef* uart, ECSSPacketHeader* header,
+                                       uint32_t timeout_ms)
 {
 	uint8_t buffer[ECSS_HEADER_SIZE];
 	int16_t ret = rx_read(uart, buffer, ECSS_HEADER_SIZE, timeout_ms);
@@ -205,7 +217,8 @@ int16_t sendDebugPacket(UART_HandleTypeDef* uart, const char* message, uint16_t 
 	return sendPacket(uart, &header, (const uint8_t*)message);
 }
 
-int16_t sendReportDataPacket(UART_HandleTypeDef* uart, uint16_t sequence, const uint8_t* data, uint16_t length)
+int16_t sendReportDataPacket(UART_HandleTypeDef* uart, uint16_t sequence, const uint8_t* data,
+                             uint16_t length)
 {
 	ECSSPacketHeader header;
 	ecss_create_header(&header, PKT_REPORT_DATA, sequence, length, 0);

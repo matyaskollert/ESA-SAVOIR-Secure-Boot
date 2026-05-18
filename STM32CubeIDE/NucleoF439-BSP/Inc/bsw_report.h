@@ -13,7 +13,7 @@
 #define INC_BSW_REPORT_H_
 
 #include <stdint.h>
-#include "flash.h"   /* ImageSlot, REPORT_FLASH_ADDRESS, REPORT_FLASH_SECTOR */
+#include "flash.h" /* ImageSlot, REPORT_FLASH_ADDRESS, REPORT_FLASH_SECTOR */
 
 /* =========================================================================
  * Flash circular buffer layout
@@ -23,17 +23,18 @@
  * occupied the sector is erased and writing restarts from slot 0, effectively
  * overwriting the oldest entry first.
  * ========================================================================= */
-#define BSW_REPORT_MAGIC        0xBEEF0042U              /* Marks a valid entry  */
-#define BSW_REPORT_MAX_COUNT    5U                        /* Max stored reports   */
-#define BSW_REPORT_SLOT_SIZE    (sizeof(bsw_report_t))       /* Size of one report   */
+#define BSW_REPORT_MAGIC 0xBEEF0042U                /* Marks a valid entry  */
+#define BSW_REPORT_MAX_COUNT 5U                     /* Max stored reports   */
+#define BSW_REPORT_SLOT_SIZE (sizeof(bsw_report_t)) /* Size of one report   */
 
 /* =========================================================================
  * Report type
  * ========================================================================= */
-typedef enum {
-    BSW_REPORT_TYPE_NOMINAL = 0x01,  /* Normal boot sequence                  */
-    BSW_REPORT_TYPE_UPDATE  = 0x02,  /* Image upload and store to flash        */
-    BSW_REPORT_TYPE_SWAP    = 0x03,  /* Slot swap / primary-flag flip          */
+typedef enum
+{
+	BSW_REPORT_TYPE_NOMINAL = 0x01, /* Normal boot sequence                  */
+	BSW_REPORT_TYPE_UPDATE  = 0x02, /* Image upload and store to flash        */
+	BSW_REPORT_TYPE_SWAP    = 0x03, /* Slot swap / primary-flag flip          */
 } bsw_report_type_t;
 
 /* =========================================================================
@@ -45,26 +46,35 @@ typedef enum {
 
 /* -- NOMINAL boot (type == BSW_REPORT_TYPE_NOMINAL) ---------------------- */
 /* Steps are ordered; a flag is SET only when the corresponding check PASSES. */
-#define BSW_NOMINAL_FLAG_STATUS_SET  (1U << 0)  /* BOOT_ATTEMPTED status written to flash                  */
-#define BSW_NOMINAL_FLAG_CRC_OK      (1U << 1)  /* Primary-slot CRC (imageValidate) passed                 */
-#define BSW_NOMINAL_FLAG_SIG_OK      (1U << 2)  /* Primary-slot digital signature (imageVerify) passed     */
-#define BSW_NOMINAL_FLAG_RAM_CRC_OK  (1U << 3)  /* RAM copy CRC (imageValidateInRAM) passed                */
-#define BSW_NOMINAL_FLAG_SYSTEM_OK   (1U << 4)  /* checkSystemForNominal() passed (sectors protected)      */
+#define BSW_NOMINAL_FLAG_STATUS_SET                                                                \
+	(1U << 0) /* BOOT_ATTEMPTED status written to flash                  */
+#define BSW_NOMINAL_FLAG_CRC_OK                                                                    \
+	(1U << 1) /* Primary-slot CRC (imageValidate) passed                 */
+#define BSW_NOMINAL_FLAG_SIG_OK                                                                    \
+	(1U << 2) /* Primary-slot digital signature (imageVerify) passed     */
+#define BSW_NOMINAL_FLAG_RAM_CRC_OK                                                                \
+	(1U << 3) /* RAM copy CRC (imageValidateInRAM) passed                */
+#define BSW_NOMINAL_FLAG_SYSTEM_OK                                                                 \
+	(1U << 4) /* checkSystemForNominal() passed (sectors protected)      */
 
 /* -- UPDATE sequence (type == BSW_REPORT_TYPE_UPDATE) -------------------- */
-#define BSW_UPDATE_FLAG_VERSION_OK   (1U << 0)  /* Received version >= rollback floor */
-#define BSW_UPDATE_FLAG_RAM_CRC_OK   (1U << 1)  /* Received image CRC passed          */
-#define BSW_UPDATE_FLAG_RAM_SIG_OK   (1U << 2)  /* Received image signature valid     */
-#define BSW_UPDATE_FLAG_FLASH_OK     (1U << 3)  /* Image written to secondary slot    */
-#define BSW_UPDATE_FLAG_SYSTEM_OK    (1U << 4)  /* checkSystemForUpdate() passed      */
+#define BSW_UPDATE_FLAG_VERSION_OK (1U << 0) /* Received version >= rollback floor */
+#define BSW_UPDATE_FLAG_RAM_CRC_OK (1U << 1) /* Received image CRC passed          */
+#define BSW_UPDATE_FLAG_RAM_SIG_OK (1U << 2) /* Received image signature valid     */
+#define BSW_UPDATE_FLAG_FLASH_OK (1U << 3)   /* Image written to secondary slot    */
+#define BSW_UPDATE_FLAG_SYSTEM_OK (1U << 4)  /* checkSystemForUpdate() passed      */
 
 /* -- SWAP sequence (type == BSW_REPORT_TYPE_SWAP) ------------------------ */
-#define BSW_SWAP_FLAG_VERSION_OK     (1U << 0)  /* Secondary version >= floor                             */
-#define BSW_SWAP_FLAG_CRC_OK         (1U << 1)  /* Secondary-slot CRC passed                              */
-#define BSW_SWAP_FLAG_SIG_OK         (1U << 2)  /* Secondary-slot signature verified                      */
-#define BSW_SWAP_FLAG_COUNTER_OK     (1U << 3)  /* Rollback counter written                               */
-#define BSW_SWAP_FLAG_SLOT_FLIPPED   (1U << 4)  /* Primary-slot flag updated                              */
-#define BSW_SWAP_FLAG_SYSTEM_OK      (1U << 5)  /* checkSystemForImageSwap() passed (sectors unlocked)    */
+#define BSW_SWAP_FLAG_VERSION_OK                                                                   \
+	(1U << 0)                          /* Secondary version >= floor                             */
+#define BSW_SWAP_FLAG_CRC_OK (1U << 1) /* Secondary-slot CRC passed                              */
+#define BSW_SWAP_FLAG_SIG_OK (1U << 2) /* Secondary-slot signature verified                      */
+#define BSW_SWAP_FLAG_COUNTER_OK                                                                   \
+	(1U << 3) /* Rollback counter written                               */
+#define BSW_SWAP_FLAG_SLOT_FLIPPED                                                                 \
+	(1U << 4) /* Primary-slot flag updated                              */
+#define BSW_SWAP_FLAG_SYSTEM_OK                                                                    \
+	(1U << 5) /* checkSystemForImageSwap() passed (sectors unlocked)    */
 
 /* =========================================================================
  * Outcome codes
@@ -142,22 +152,23 @@ typedef enum {
  *   offset 14  uint16_t  secondary_version
  *   offset 16  uint32_t  step_flags
  * ========================================================================= */
-typedef struct __attribute__((packed)) {
-    uint32_t magic;              /* BSW_REPORT_MAGIC; erased flash reads 0xFFFFFFFF  */
-    uint8_t  type;               /* bsw_report_type_t                                */
-    uint8_t  outcome;            /* 0 = success; otherwise the step number that failed
+typedef struct __attribute__((packed))
+{
+	uint32_t magic;             /* BSW_REPORT_MAGIC; erased flash reads 0xFFFFFFFF  */
+	uint8_t type;               /* bsw_report_type_t                                */
+	uint8_t outcome;            /* 0 = success; otherwise the step number that failed
                                   * (matches the step order implied by the flag bits) */
-    uint8_t  primary_slot;       /* ImageSlot at the time of the report              */
-    uint8_t  pad;                /* Reserved, written as 0                           */
-    uint32_t rollback_counter;   /* Rollback counter at the time of the report       */
-    uint16_t primary_version;    /* imageVersion of the primary-slot image           */
-    uint16_t secondary_version;  /* imageVersion of the secondary-slot image         */
-    uint32_t step_flags;         /* Passed-step bits; interpretation is type-specific */
-} bsw_report_t;                  /* sizeof == 20 bytes                               */
+	uint8_t primary_slot;       /* ImageSlot at the time of the report              */
+	uint8_t pad;                /* Reserved, written as 0                           */
+	uint32_t rollback_counter;  /* Rollback counter at the time of the report       */
+	uint16_t primary_version;   /* imageVersion of the primary-slot image           */
+	uint16_t secondary_version; /* imageVersion of the secondary-slot image         */
+	uint32_t step_flags;        /* Passed-step bits; interpretation is type-specific */
+} bsw_report_t;                 /* sizeof == 20 bytes                               */
 
 /* Read-only pointer to the n-th report slot in flash (0-based). */
-#define BSW_REPORT_SLOT(n) \
-    ((const bsw_report_t *)(REPORT_FLASH_ADDRESS + (uint32_t)(n) * BSW_REPORT_SLOT_SIZE))
+#define BSW_REPORT_SLOT(n)                                                                         \
+	((const bsw_report_t*)(REPORT_FLASH_ADDRESS + (uint32_t)(n) * BSW_REPORT_SLOT_SIZE))
 
 /* =========================================================================
  * API (implemented in NucleoF439-BSP/Src/bsw_report.c)
@@ -175,7 +186,7 @@ void bsw_report_load(void);
  * Fills all fields with safe defaults and captures the current primary slot,
  * secondary slot versions, and rollback counter from flash.
  */
-void bsw_report_init(bsw_report_t *r, bsw_report_type_t type);
+void bsw_report_init(bsw_report_t* r, bsw_report_type_t type);
 
 /**
  * Persist the in-RAM report to the next free flash slot.
@@ -184,7 +195,7 @@ void bsw_report_init(bsw_report_t *r, bsw_report_type_t type);
  *
  * @return  0 on success, non-zero on flash error.
  */
-int16_t bsw_report_flush(const bsw_report_t *r);
+int16_t bsw_report_flush(const bsw_report_t* r);
 
 /**
  * Return a read-only pointer to a report from the in-RAM array ordered by age.
