@@ -1,0 +1,170 @@
+\chapter{PoC Scope and Hardware Selection}
+\label{chapter:hw}
+
+\section{From specification to proof of concept}
+\label{section:hw-scope}
+
+The design specification in \autoref{chapter:design} draws on two sources: the existing SAVOIR-GS-002 Flight Computer Initialisation Sequence, which defines the baseline behaviour expected of any space-grade bootloader and the new SEC requirements introduced in this work, which add the security guarantees that SAVOIR FCIS currently lacks. Together these form a complete picture of what a secure spacecraft bootloader should do. The purpose of the proof of concept is not to implement this picture in full, but to demonstrate that the security-critical subset is feasible on representative hardware.
+
+The PoC requirements derived below therefore reflect two deliberate choices. First, all seven SEC requirements are carried forward without exception. These are the core contributions of this work and a PoC that omitted any of them would fail to validate the central claim that secure boot can be integrated into a space-grade bootloader without compromising the essential behaviour. Second, a subset of SAVOIR-GS-002 requirements is kept~--- specifically those without which the resulting system would not be recognisable as a space bootloader at all. Requirements covering the nominal boot sequence, standby mode, memory architecture and boot reporting fall into this category. Requirements covering multi-processor operation, monitor mode, fast boot paths and other non-essential bootloader functionality were put out of scope as they do not affect the desired security properties and would add substantial complexity without advancing the research objectives.
+
+The PoC requirements derived from SAVOIR-GS-002 are listed in \autoref{table:flow-down}. The security requirements driving this PoC are specified formally in \autoref{appendix:savoir-secure-boot} as \textbf{SEC.01}--\textbf{SEC.07}. All seven requirements are carried forward into the PoC without exception.
+
+\begin{table}[H]
+\centering
+\begin{tabular}{|l|p{6.5cm}|p{5.5cm}|}
+\hline
+\textbf{PoC Req. ID} & \textbf{Derived PoC Requirement} & \textbf{Source Requirements} \\
+\hline
+\multicolumn{3}{|l|}{\textit{Group 1 - Functional Requirements (SAVOIR-derived)}} \\
+\hline
+POC-FUNC-INIT &
+The BSW shall execute upon system reset, initialise and self-test the hardware, reset volatile memory to a known state after tests and set the processor in a known configuration before proceeding to the Nominal Sequence. &
+BEF.10 BIN.215 BIN.220 BIN.240 BIN.250 BTE.270 BTE.280 BTE.290 BAA.340 \\
+\hline
+POC-FUNC-NOMINAL &
+The BSW shall execute the full nominal sequence: select the active ASW image based on ground-configurable data, test its integrity before and after copying it to working memory and transfer execution to it. &
+BEF.20 BEF.25 BEF.27 BTE.300 BTE.310 BTE.330 \\
+\hline
+POC-FUNC-STANDBY &
+The BSW shall implement Standby mode, triggered by ground-controlled conditions checked within the Nominal Sequence, supporting memory inspection and ASW image updates from ground. The Standby function shall be entered regardless of self-test results and shall access only resources local to the processor module. &
+BEF.05 BEF.70 BEF.75 BEF.80 BEF.90 BEF.95 BEF.97 \\
+\hline
+POC-FUNC-REPORT &
+The BSW shall record the result of each test step progressively in a Boot Report, stored in predefined areas of working memory and protected non-volatile storage and accessible to both the ASW and Ground. &
+BAA.370 BAA.390 BMM.130 BMM.140 \\
+\hline
+\multicolumn{3}{|l|}{\textit{Group 2 - Memory Architecture Requirements (SAVOIR-derived)}} \\
+\hline
+POC-MEM-LAYOUT &
+The BSW code and read-only initialisation data shall be stored in Boot Memory. All remaining BSW code, integrity test logic and Standby functions shall be stored in designated flash regions. The BSW shall not depend on the actual parameter values of any ASW image and all memory regions used by the BSW shall be predefined. &
+BMM.100 BMM.110 BMM.120 BMM.170 \\
+\hline
+\multicolumn{3}{|l|}{\textit{Group 3 - Design and Performance Constraints}} \\
+\hline
+POC-IMPL-DESIGN &
+The BSW shall execute sequentially without dependency on an operating system or run-time environment and shall use the minimum processor resources necessary to fulfil its requirements. &
+IMP.460 IMP.470 \\
+\hline
+POC-PERF-WCET &
+The BSW worst-case execution time shall be measured and recorded for each supported signature algorithm, providing a basis for evaluating compatibility with mission reconfiguration time budgets. &
+BPF.450 \\
+\hline
+\end{tabular}
+\caption{Secure Boot PoC Requirement Flow-Down and Traceability}
+\label{table:flow-down}
+\end{table}
+
+\section{Hardware requirements for space-grade secure boot}
+\label{section:hw-reqs}
+
+With the PoC requirements established, the next question is which of them impose constraints on the hardware platform itself. Several requirements are purely software concerns — SEC.05 (post-quantum support) and SEC.07 (failure reporting) and POC-FUNC-REPORT (boot reporting) — and can be satisfied regardless of the underlying platform. The remaining requirements place specific demands on hardware that must be met before any software can address them; these are examined below.
+
+\subsection{Immutable storage for RoT and public key}
+
+The most fundamental hardware constraint comes from SEC.01 and SEC.02. Immutable storage for both the BSW and the public key requires a platform that exposes write-protection or one-time-programmable memory at the sector level and enforces this protection in hardware rather than purely in software. A platform that only offers software-controlled write protection would allow a sufficiently privileged adversary to disable that protection before overwriting the protected region, defeating the purpose entirely.
+
+\subsection{Flash and RAM capacity}
+
+POC-FUNC-NOMINAL and POC-MEM-LAYOUT together require the flash to accommodate at least the following independent regions: the BSW itself, a primary ASW image (the \emph{MAIN} partition, holding the currently active image) and sufficient additional storage to receive an updated image (the \emph{UPDATE} partition). Each image region must be large enough to hold a complete signed image including its header. The RAM must be large enough to hold the ASW image in working memory during the copy and execution steps of the Nominal Sequence. The exact partitioning strategy~--- including whether image exchange is performed by physical copying, logical slot designation, or a combination of both~--- is an implementation choice deferred to \autoref{chapter:implementation}.
+
+\subsection{Protected non-volatile storage for security-critical state}
+
+SEC.06 requires a monotonic counter that persists across resets and can only be incremented, never decremented, by software. Dedicated hardware OTP cells might seem a natural fit, but OTP memory is one-time writable by definition: it cannot be updated repeatedly as the counter advances across firmware versions during the mission, making it unsuitable for this purpose. The practical solution is a write-protected flash sector managed exclusively by the BSW. The BSW temporarily lifts write protection only when an authenticated update warrants a counter increment, then immediately re-applies it before transferring control. Crucially, the protection must be enforced at the hardware level so that a compromised ASW cannot circumvent the mechanism by disabling it in software.
+
+\subsection{Communication channel with ground and the ASW}
+
+POC-FUNC-STANDBY requires a communication interface through which ground can issue load, dump and check commands during the Standby mode. The same interface is used to receive the telecommand that determines the mode entered after reset. Additionally, SEC.06 and POC-FUNC-NOMINAL require a shared area of unprotected non-volatile storage through which the ASW can signal its operational status back to the BSW across a system reset. This region, referred to as the COMM partition throughout this work, must be readable and writable by both the BSW and the ASW, but must not be relied upon for security-critical decisions without independent verification.
+
+\subsection{Cryptographic acceleration - value and trade-offs}
+
+POC-PERF-WCET requires that the worst-case boot time be measured and evaluated against mission reconfiguration budgets. Digital signature verification is a significant contributor to boot latency, although the computational cost depends on the chosen signature scheme. Hardware cryptographic acceleration can reduce this latency when the underlying cryptographic primitives are supported by dedicated hardware. Since such accelerators typically target only a subset of primitives, some signature schemes benefit more than others, while unsupported schemes continue to rely on software execution. The resulting trade-off between hardware-accelerated and software-only cryptographic implementations is evaluated empirically in the performance benchmarks of \autoref{chapter:eval}.
+
+
+\section{Space-grade hardware overview}
+\label{section:hw-spacegrade}
+
+The hardware constraints identified in \autoref{section:hw-reqs} narrow the candidate platform space considerably, but they do not determine a specific choice. A secondary concern is representativeness: a PoC validated on hardware with no connection to real spacecraft would carry less weight as evidence. This section surveys the processor architectures that have actually been used in space-grade onboard computers, both to confirm the relevance of the selected PoC platform and to identify the natural migration path from the PoC to a flight-ready implementation.
+
+\subsection{LEON/SPARC - ESA heritage processors}
+\label{subsection:hw-spacegrade-leon}
+
+ESA has been developing its own processor line since the 1990s. The LEON family is based on the SPARC V8 architecture and has been the dominant choice for ESA missions requiring radiation-hardened processing. Starting from LEON2-FT, the processors include single-event upset fault tolerance. The current generation, manufactured by Frontgrade Gaisler, includes the GR712RC (dual-core LEON3FT), the GR740 (quad-core LEON4FT) and the upcoming GR765 \cite{frontgrade_leon_processors}. These processors are the reference platform for ESA's SAVOIR framework and the target environment for production BSW implementations such as GRBOOT \cite{GRBOOT}.
+
+Despite their heritage and relevance, LEON-based platforms present a significant obstacle for this work. The associated toolchains, BSPs and reference BSW implementations are proprietary and not publicly available. Developing an open-source PoC bootloader from scratch on a LEON platform without access to this material was deemed infeasible. For this reason, LEON-based hardware is considered the intended long-term validation target but is excluded from the PoC platform selection.
+
+\subsection{ARM Cortex-M in space - adoption and rationale}
+\label{subsection:hw-spacegrade-armM}
+
+Alongside the traditional LEON ecosystem, ARM Cortex-M processors have seen growing adoption in space applications, particularly in CubeSats and small satellite missions where cost and development speed are prioritised. Several studies and mission reports confirm the use of STM32-based microcontrollers in space flight software \cite{space_odyssey_2023, cubesat_fsw_design, cubesat_fsw_development, cubesat_flight_software}, establishing the architecture as a possible choice for onboard computers in space.
+
+Several manufacturers produce ARM Cortex-M devices relevant to this work. Microchip offers the SAMRH71, a radiation-hardened Cortex-M7 processor, alongside the commercial SAMV71 sharing the same core \cite{microchip_rad_tolerant}. Vorago offers the VA41630, a radiation-tolerant Cortex-M4 targeting LEO missions, with a next-generation dual-core Cortex-M55 device (the VA5 family) announced in both rad-tolerant and rad-hardened variants \cite{vorago_va4_satellites}. Frontgrade Gaisler, primarily known for the LEON/SPARC line, also produces the UT32M0R500, a radiation-hardened Cortex-M0+ microcontroller \cite{frontgrade_arm_microcontrollers}. STM32 microcontrollers, while not space-qualified themselves, have been used directly in space flight software \cite{space_odyssey_2023, cubesat_fsw_design, cubesat_fsw_development, cubesat_flight_software} and form the commercial baseline.
+
+The practical significance of this lineup is that the radiation-hardened devices from Microchip, Vorago and Frontgrade share the same ARM Cortex-M instruction set architecture as the STM32 family. A BSW implementation developed and validated on a commercial STM32 is therefore portable at the architectural level to the SAMRH71 or VA41630, with differences limited to peripheral register layouts rather than boot logic. The STM32 family is therefore both a flight-proven platform in its own right and a natural proxy for radiation-protected hardware.
+
+
+\section{Platform selection for the PoC}
+\label{section:hw-selection}
+
+With the hardware requirements from \autoref{section:hw-reqs} and the space-grade processor landscape from \autoref{section:hw-spacegrade} established, the platform selection becomes a matter of finding the candidate that satisfies all hard requirements while maximising accessibility and representativeness. The underlying principle is to use the most widely available hardware within the ARM Cortex-M ecosystem, avoiding cutting-edge peripherals or non-standard toolchains that would complicate reproduction and may not yet have a track record in space. This directly addresses one of the thesis research sub-questions: what is the minimal level of hardware support necessary for implementing Secure Boot in space-grade systems? If the required primitives are already present in broadly accessible off-the-shelf processors, the path to radiation-hardened variants becomes a porting exercise rather than a fundamental redesign.
+
+\subsection{Candidate board comparison}
+\label{subsection:hw-selection-candidates}
+
+Table \ref{tab:mcu_comparison} presents the hardware platforms considered for this PoC. The evaluation applied the hardware requirements established in \autoref{section:hw-reqs} as the primary filter, but accessibility was also an important consideration. Availability, cost, community support and ease-of-use were also factored in.
+
+\textbf{Raspberry Pi 5}: Included as a common, accessible and widely available candidate, but the BCM2712  processor lacks the publicly available low-level documentation necessary to implement a custom first-stage bootloader, making it incompatible with the SAVOIR requirement that the BSW be the first code to execute after reset.
+
+\textbf{Raspberry Pi Pico 2}: Similarly accessible and low-cost, with the additional benefit of extensive low-level documentation, but the RP2350's internal boot ROM executes unconditionally before any user code, preventing a custom first-stage bootloader from  being implemented in compliance with SAVOIR.
+
+\textbf{GR712RC and PEB1}: Relevant as the reference LEON platform, but excluded for the reasons described in \autoref{subsection:hw-spacegrade-leon}~--- limited documentation availability and acquisition difficulties make it unsuitable for an open-source PoC.
+
+\textbf{SAMV71/SAMRH71}: Both boards are strong candidates on technical grounds. They offer flash boot capability, a hardware TRNG, SHA acceleration and (on the SAMV71) AES support. The SAMRH71 is particularly notable as the main radiation-hardened Cortex-M candidate. However, their higher unit cost, more limited availability and smaller open-source community compared to the STM32 ecosystem make them less practical for this PoC. Their architectural proximity to the STM32F4 means the trade-off in representativeness is minimal.
+
+\textbf{STM32F4 platforms}: The STM32F4 family combines the accessibility of the Raspberry Pi boards with the architectural relevance of the other platforms. It is among the most widely used ARM Cortex-M4 families in embedded development, with extensive open-source tooling, broad community documentation and confirmed use in space flight software \cite{space_odyssey_2023, cubesat_fsw_design, cubesat_fsw_development, cubesat_flight_software}. Two candidates from this family were considered: the NUCLEO-F401RE and the NUCLEO-F439ZI. Both share the same Cortex-M4 core and boot architecture, but differ significantly in their cryptographic hardware support.
+
+\begin{table}[htbp]
+\centering
+\caption{Microcontroller Board Comparison for Embedded System Selection}
+\label{tab:mcu_comparison}
+\begin{tabularx}{\textwidth}{|p{2.3cm}|X|X|X|X|X|X|X|}
+\hline
+\textbf{Board} & \textbf{HW} & \textbf{Core} & \textbf{Boot} & \textbf{RAM} & \textbf{Flash} & \textbf{Secure Boot HW} \\
+\hline
+Raspberry Pi 5 & BCM2712 & ARM Cortex A76 & N/A & 16GB & N/A & - \\
+\hline
+Raspberry Pi Pico 2 & RP2350 & ARM Cortex M33 & ROM & 520kB & 4MB & MPU, Boot RAM, TrustZone \\
+\hline
+SAM V71 XPLAINED & SAMV70/71 & ARM Cortex M7 & ROM, Flash & 384kB & 2MB & MPU, TRNG, AES, SHA \\
+\hline
+SAMRH71F20-EK & SAMRH71 & ARM Cortex M7 & Flash, Ext PROM & 284kB + 32MB & 128kB & MPU, TRNG, SHA \\
+\hline
+NUCLEO-F401RE & STM32F401 & ARM Cortex M4 & Flash, ROM, SRAM & 96kB & 512kB & MPU \\
+\hline
+\textbf{NUCLEO-F439ZI} & \textbf{STM32F439} & \textbf{ARM Cortex M4} & \textbf{Flash, ROM, SRAM} & \textbf{256kB} & \textbf{2MB} & \textbf{MPU, AES, DES, SHA, HMAC, TRNG} \\
+\hline
+GR712RC & LEON3FT & SPARC V8 & ROM & N/A & N/A & - \\
+\hline
+PEB1 & VA41630 & ARM Cortex M4 & N/A & 64 + 256kB & 256kB & - \\
+\hline
+UT32M0R500-EVB & UT32 M0R500 & ARM Cortex M0+ & ROM/Flash & 96kB & 64MB & MPU \\
+\hline
+\end{tabularx}
+\end{table}
+
+\subsection{Selection rationale - NUCLEO-F439ZI}
+\label{subsection:hw-selection-nucleo}
+
+The NUCLEO-F439ZI was selected as the PoC platform on the basis of its STM32F439ZI microcontroller, which satisfies all hardware requirements derived in \autoref{section:hw-reqs} while offering the accessibility and tooling that makes a single-developer research prototype practical.
+
+\paragraph{Memory capacity and layout.} The STM32F439ZI provides 2 MB of dual-bank Flash and 256 kB of SRAM, which is sufficient to host all required partitions simultaneously. The Flash is organised into two banks of 1 MB each. Within each bank, the first four sectors are 16 kB, the fifth is 64 kB and the remaining seven are 128 kB. This granular layout maps cleanly onto the partitioning required by POC-MEM-LAYOUT. The MAIN and UPDATE image regions can each be allocated to one or more 128 kB sectors, providing ample space for complete signed images. A small sector is reserved for the rollback counter. The BSW and all security-critical data structures remain in clearly separated, independently protectable regions. The 256 kB SRAM (comprising a 64 kB CCM bank and three further banks of 112 kB, 16 kB and 64 kB) must hold both the BSW itself and the ASW image simultaneously during the Nominal Sequence copy step, as required by POC-FUNC-NOMINAL. The maximum supported ASW image size is therefore 256 kB minus the RAM consumed by the BSW stack, heap and static data; the exact BSW RAM footprint is measured and reported in \autoref{chapter:eval}.
+
+\paragraph{Hardware Root of Trust via option bytes.} The STM32F439ZI Flash controller exposes a dedicated set of \emph{option bytes} that configure sector-level write protection, readout protection and debug access. These settings are interpreted and enforced by the Flash controller at boot time, entirely in hardware and cannot be circumvented by software executing at any privilege level. The \texttt{nWRP} bits allow individual sectors to be marked write-protected, causing any erase or program attempt targeting those sectors to generate a protection error. This mechanism provides the hardware-enforced immutable storage required by SEC.01 and SEC.02: the BSW partition and the public key are placed in write-protected sectors, simulating the ROM that SAVOIR requires, while the BSW itself can verify and restore the protection configuration before proceeding, as it is the first piece of software that is executed after reset (POC-FUNC-INIT).
+
+The same mechanism satisfies SEC.06: the monotonic counter is stored in a dedicated write-protected sector managed exclusively by the BSW. Because write protection is enforced in hardware, the ASW cannot decrement or overwrite the counter; any such attempt is blocked by the Flash controller. If the ASW attempted to lift the write-protection it would need to trigger a system reset, at which point the BSW would re-verify and restore the protection configuration before proceeding.
+
+\paragraph{Cryptographic hardware acceleration.} The STM32F439ZI integrates a hardware cryptographic accelerator providing AES, DES/3DES, SHA-1, SHA-224 and SHA-256 in hardware, alongside a hardware True Random Number Generator. The SHA-256 accelerator is directly relevant to the PoC: classical signature schemes such as ECDSA use SHA-256 as their internal hash function, and offloading this operation to hardware measurably reduces verification latency for those schemes. The dedicated hardware CRC unit additionally accelerates the Ethernet CRC calculation used in ASW integrity checks as requires by SAVOIR. The relative contribution of hardware acceleration to overall boot latency is quantified empirically in \autoref{chapter:eval}.
+
+\paragraph{Communication interfaces.} The device provides four USART/UART peripherals (up to 11.25 MBit/s), two CAN 2.0B controllers, a 10/100 Ethernet MAC with dedicated DMA and USB OTG. This breadth of interfaces satisfies POC-FUNC-STANDBY without constraining the communication channel to a single protocol.
+
+\paragraph{Development environment and tooling.} The NUCLEO-F439ZI board integrates an ST-LINK/V2-1 debug probe, eliminating the need for external debug hardware and supporting single-step debugging directly in STM32CubeIDE. The STM32 ecosystem provides ST's HAL and LL driver libraries, STM32CubeMX for peripheral initialisation code generation, and STM32CubeProgrammer for Flash programming and option byte configuration. The combination of comprehensive reference documentation, a large open-source community, confirmed use in space flight software \cite{space_odyssey_2023, cubesat_fsw_design, cubesat_fsw_development, cubesat_flight_software}, and an integrated debug probe that enables rapid iteration and single-step fault diagnosis makes the STM32F4 family the most practical platform for this PoC.

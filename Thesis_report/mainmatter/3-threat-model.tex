@@ -1,0 +1,45 @@
+\chapter{Threat Model}
+\label{chapter:threatModel}
+
+\section{Threat modelling methodology (ENISA lifecycle approach)}
+\label{section:threatModel-methodology}
+
+The threat model in this work follows a lifecycle-based approach for space as defined by ENISA \cite{enisa_2025}, while focusing on threats that are directly relevant to the design and evaluation of a bootloader implementing secure boot. Rather than analysing each lifecycle phase individually, the model concentrates on two attacker scenarios that pose the greatest risk to the integrity of the boot process.
+
+The ENISA Space Threat Landscape report \cite{enisa_2025} defines a comprehensive threat taxonomy for commercial satellite systems, covering threat categories from nefarious activity and physical attacks to legacy infrastructure risks. Of these, two threat categories are directly relevant to the bootloader: \emph{Firmware corruption}~--- the overwriting or corrupting of firmware memory to render the system inoperable or to inject malicious functionality~--- and \emph{Sabotage through hardware/software}, which covers the connection of unauthorised hardware or software (such as a USB storage device) to implant malicious code during the assembly, integration, or transport phase. The ENISA taxonomy also identifies \emph{Malicious code/software/activity: Malicious injection}, explicitly listing ``injection of malicious software (e.g.~rootkits, bootkits, backdoors) into space operations control systems'' and ``on-orbit software updates, upgrades, patches, or direct memory writes'' as concrete attack vectors. The two attacker scenarios below map directly onto these ENISA threat categories, grounding the threat model in a well-established, space-sector-specific framework.
+
+\section{Attacker scenarios}
+\label{section:threatModel-scenarios}
+
+\subsection{Physical access prior to launch}
+\label{subsection:threatModel-scenarios-physical}
+
+The first scenario considers an attacker who gains physical access to the system after it has left the manufacturing facility but before launch. This period typically includes assembly, integration and pre-launch testing, during which development or intermediate software versions may be present and hardware debug interfaces may be accessible.
+
+An attacker with physical access may attempt to replace or modify bootloader code, inject unauthorised firmware images, alter boot configuration parameters, or extract cryptographic material used for image authentication. If successful, such modifications could allow the execution of malicious software that persists after launch. The ENISA Space Threat Landscape \cite{enisa_2025} identifies this concretely in its risk assessment: Scenario~2 describes an attacker gaining physical access to a satellite's assembly line or transport container and implanting malicious code via an IO interface (e.g.~a USB port), exploiting inadequate hardening procedures after assembly. ENISA notes that once in orbit such malware can execute remote exploits against the on-board controller and software, causing resource exhaustion and ultimately seizure of control~--- and that the ground team may be unable to identify the root cause before it is too late. Given that hardware access is no longer possible once the system is in orbit, preventing the execution of unauthorised code introduced during this phase is a primary security objective of the secure bootloader.
+
+\subsection{Remote access after launch}
+\label{subsection:threatModel-scenarios-remote}
+
+The second scenario considers a remote attacker who gains privileged access to the system after it has left the ground, during in-orbit testing or operational phases. In this scenario, the attacker cannot physically modify the hardware but may attempt to upload modified firmware images, exploit software vulnerabilities, or abuse update and recovery mechanisms to gain control of the system.
+
+From the perspective of the secure bootloader, the main threat is the execution of unauthorised or modified firmware delivered through remote interfaces. The ENISA taxonomy \cite{enisa_2025} captures this under \emph{Malicious code/software/activity: Malicious injection}, noting that malicious code ``could also be injected into software updates, affecting for example on-orbit software updates, upgrades, patches, or direct memory writes''. The ENISA report further calls out \emph{Seizure of control: Satellite bus}~--- adversaries exploiting existing vulnerabilities to execute malicious commands or lock out legitimate operators~--- as a high-impact consequence of successful remote attacks. Digital signature verification during the boot process is therefore assumed to be a critical control, ensuring that only authenticated and integrity-protected images can be executed, even if an attacker gains access to communication channels or higher-level software components.
+
+\bigskip
+
+By focusing on these two attacker scenarios, the threat model emphasises the role of secure boot as a foundational trust mechanism. In particular, it addresses the risk of persistent compromise introduced through physical access prior to launch and the risk of unauthorised firmware execution resulting from remote attacks after launch, both of which are central to the security guarantees provided by a signature-based boot process.
+
+\section{Scope of protection}
+\label{section:threatModel-scope}
+
+Secure boot severs the link between \emph{gaining access} and \emph{gaining persistent control}. The real-world scenario motivating this work is one in which an attacker~--- whether through a pre-launch physical intrusion or a post-launch software exploit or telecommand abuse~--- manages to deliver a modified firmware image to the system. Without secure boot, that image would execute on the next reboot, giving the attacker persistent code execution that survives power cycles and is invisible to the ground team. With secure boot in place, the Boot SW rejects any image that does not carry a valid signature from the holder of the private signing key. The system returns to a clean, verified state after every reboot, and persistent malicious code execution is impossible without access to the private key. This is the central security guarantee this work aims to provide.
+
+It is equally important to be precise about what this guarantee does not cover, since overstating the protection offered by secure boot would give a false sense of security. The following limitations are explicit non-goals of this threat model and the design that follows from it.
+
+\textbf{Availability.} Secure boot prevents malicious code execution~--- it cannot recover missing or corrupted images. An attacker with privileged access at the application level or via authenticated telecommands can corrupt or erase flash partitions, issue destructive PUS memory-write commands, or exhaust system resources. If no valid, signature-verified image remains, the system becomes unbootable regardless of the integrity of the Boot SW itself. Protecting against such availability attacks requires complementary controls at the command-handling and ground-segment layers, which are out of scope for this work.
+
+\textbf{Private key compromise.} The entire security guarantee is conditional on the private signing key remaining secret. If the signing infrastructure is breached and the key is extracted or misused, an attacker can produce validly-signed malicious images that pass all Boot SW verification checks. This work assumes the key management and signing process are secured by out-of-band means~--- hardware security modules, access controls, and audit procedures~--- but does not specify or evaluate those mechanisms.
+
+\textbf{Runtime attacks after successful boot.} The trust guarantee established by secure boot ends at the moment execution is transferred to the Application Software. Memory corruption exploits, logic vulnerabilities, or privilege escalation in the running ASW are entirely beyond the boot-time trust boundary. Mitigating such attacks requires runtime protection mechanisms~--- memory protection units, watchdog supervision, anomaly detection~--- which are orthogonal to the boot process and out of scope here.
+
+\textbf{Communication channel attacks.} Secure boot does not protect the channel through which firmware images or telecommands are delivered. An attacker who can jam, spoof, or replay the RF uplink may prevent valid software updates from reaching the system, force repeated reboots, or corrupt in-transit image data. Channel confidentiality, integrity, and availability are the responsibility of a separate communications security layer and are not addressed by this work.

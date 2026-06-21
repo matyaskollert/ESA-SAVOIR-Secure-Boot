@@ -1,0 +1,109 @@
+\chapter{wolfSSL Benchmark Configuration}
+\label{appendix:wolfssl-config}
+
+The benchmarks reported in \autoref{subsection:eval-benchmarks-setup} were produced using wolfSSL~5.8.2 on the STM32F439ZI (NUCLEO-F439ZI) with the configuration header below.
+The file is the STM32CubeIDE-generated \texttt{wolfSSL.I-CUBE-wolfSSL\_conf.h}, modified to add the benchmark algorithm selection block at the bottom.
+All measurements were taken at a core clock of 168\,MHz with ART accelerator and instruction cache enabled.
+
+The key compile-time choices that directly affect the benchmark results are:
+
+\begin{itemize}
+    \item \textbf{Math library}: \texttt{WOLF\_CONF\_MATH = 6} selects the portable \texttt{sp\_int.c} multi-precision library with \texttt{WOLFSSL\_SP\_SMALL} to reduce flash usage at the cost of some speed.
+    \item \textbf{ECC}: signing and key export are disabled (\texttt{NO\_ECC\_SIGN}, \texttt{NO\_ECC\_KEY\_EXPORT}, \texttt{NO\_ECC\_DHE}) since only verification is needed.
+    \item \textbf{RSA}: only the public-key / verify path is compiled (\texttt{WOLFSSL\_RSA\_PUBLIC\_ONLY}, \texttt{WOLFSSL\_RSA\_VERIFY\_INLINE}).
+    \item \textbf{ML-DSA}: enabled via \texttt{HAVE\_DILITHIUM} / \texttt{WOLFSSL\_WC\_DILITHIUM} with \texttt{WOLFSSL\_DILITHIUM\_VERIFY\_ONLY} and \texttt{WOLFSSL\_DILITHIUM\_VERIFY\_SMALL\_MEM}; the level-87 parameter set is excluded (\texttt{WOLFSSL\_NO\_ML\_DSA\_87}). SHAKE-128/256 and SHA-3 are enabled only for ML-DSA builds.
+    \item \textbf{LMS}: enabled via \texttt{WOLFSSL\_HAVE\_LMS} / \texttt{WOLFSSL\_WC\_LMS} with \texttt{WOLFSSL\_LMS\_VERIFY\_ONLY}. The flag \texttt{WC\_LMS\_FULL\_HASH} routes SHA-2 through the STM32 HASH peripheral; when commented out, software SHA-2 is used instead.
+    \item \textbf{Hardware SHA-2}: the \texttt{STM32F439xx} target automatically undefines \texttt{NO\_STM32\_HASH}, enabling hardware-accelerated SHA-2 for ECDSA, RSA and LMS. ML-DSA uses SHAKE-256 which has no hardware support on this device.
+\end{itemize}
+
+\begin{lstlisting}[language=C, caption={wolfSSL configuration header used for digital signature benchmarks}, label={lst:wolfssl-config}, basicstyle=\ttfamily\footnotesize, breaklines=true, frame=single]
+/* wolfSSL.I-CUBE-wolfSSL_conf.h — benchmark configuration
+ * wolfSSL 5.8.2 / STM32F439ZI @ 168 MHz
+ */
+
+/*---------- Core library mode ----------*/
+#define WOLF_CONF_WOLFCRYPT_ONLY  1  /* crypto-only, no TLS stack */
+#define WOLF_CONF_MATH            6  /* sp_int.c (portable, small) */
+#define WOLF_CONF_RTOS            1  /* bare-metal / single-threaded */
+#define WOLF_CONF_RNG             0  /* RNG not needed for verify */
+
+/*---------- Classical algorithms ----------*/
+#define WOLF_CONF_RSA   1
+#define WOLF_CONF_ECC   1
+#define WOLF_CONF_DH    0
+
+/*---------- Hash algorithms ----------*/
+#define WOLF_CONF_SHA2_256  1  /* required by all schemes */
+#define WOLF_CONF_SHA3      0  /* enabled per-build for ML-DSA */
+#define WOLF_CONF_MD5       0
+#define WOLF_CONF_SHA1      0
+#define WOLF_CONF_SHA2_384  0
+#define WOLF_CONF_SHA2_512  0
+
+/*---------- Unused features disabled ----------*/
+#define WOLF_CONF_AESGCM        0
+#define WOLF_CONF_AESCBC        0
+#define WOLF_CONF_CHAPOLY       0
+#define WOLF_CONF_EDCURVE25519  0
+#define WOLF_CONF_PSK           0
+#define WOLF_CONF_PWDBASED      0
+#define WOLF_CONF_KYBER         0
+#define WOLF_CONF_ARMASM        0
+#define WOLF_CONF_RESUMPTION    0
+
+/* ----- Platform (STM32F439xx auto-enables HW SHA-2) ----- */
+/* #define NO_STM32_HASH  -- removed by platform block */
+
+/* ----- RSA: verify-only path ----- */
+#define WOLFSSL_RSA_PUBLIC_ONLY
+#define WOLFSSL_RSA_VERIFY_INLINE
+#define WC_RSA_PSS
+#define WC_RSA_BLINDING
+
+/* ----- ECC: verify-only path ----- */
+#define NO_ECC_SIGN
+#define NO_ECC_DHE
+#define NO_ECC_KEY_EXPORT
+#define ECC_USER_CURVES       /* P-256 only */
+#define ECC_SHAMIR
+#define ECC_TIMING_RESISTANT
+#define WOLFSSL_SP_MATH_ALL
+#define SP_WORD_SIZE 32
+
+/* =====================================================================
+ * Per-algorithm build flags (set BENCHMARK_ALGO at compile time)
+ * ===================================================================== */
+
+/* Algorithm IDs (keep in sync with benchmark.h) */
+#define ALGO_ECDSA      1
+#define ALGO_RSA_3072   3
+#define ALGO_RSA_4096   3  /* same flag, different key passed at runtime */
+#define ALGO_ML_DSA_44  4
+#define ALGO_ML_DSA_65  5
+#define ALGO_LMS        6
+
+/* ----- ML-DSA (BENCHMARK_ALGO == 4 or 5) ----- */
+#if defined(BENCHMARK_ALGO) && \
+    (BENCHMARK_ALGO == ALGO_ML_DSA_44 || BENCHMARK_ALGO == ALGO_ML_DSA_65)
+    #define WOLFSSL_SHA3
+    #define WOLFSSL_SHAKE128
+    #define WOLFSSL_SHAKE256
+    #define HAVE_DILITHIUM
+    #define WOLFSSL_WC_DILITHIUM
+    #define WOLFSSL_DILITHIUM_ASSIGN_KEY
+    #define WOLFSSL_NO_ML_DSA_87         /* exclude level-87 to save flash */
+    #define WOLFSSL_DILITHIUM_VERIFY_ONLY
+    #define WOLFSSL_DILITHIUM_VERIFY_SMALL_MEM
+#endif
+
+/* ----- LMS (BENCHMARK_ALGO == 6) ----- */
+#if defined(BENCHMARK_ALGO) && BENCHMARK_ALGO == ALGO_LMS
+    #define WOLFSSL_EXPERIMENTAL_SETTINGS
+    #define WOLFSSL_HAVE_LMS
+    #define WOLFSSL_LMS_VERIFY_ONLY
+    #define WOLFSSL_WC_LMS
+    /* Route SHA-2 through the STM32 HASH peripheral.
+     * Comment out to use software SHA-2 (SW SHA column). */
+    #define WC_LMS_FULL_HASH
+#endif
+\end{lstlisting}

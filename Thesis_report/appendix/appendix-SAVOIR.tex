@@ -1,0 +1,163 @@
+\chapter{SAVOIR-GS-002S Secure Boot Generic Specification}
+\label{appendix:savoir-secure-boot}
+
+All SAVOIR-GS-002 \cite{SAVOIR} requirements remain in force. Requirements carrying the suffix \textbf{S} (e.g.\ BEF.22S) modify a specific existing SAVOIR requirement; all remaining requirements are purely additive. \\\\
+
+\headrule
+
+\section*{SAVOIR.BOOTSW.BEF.22S}
+
+\textbf{Fast Boot Path — Digital Signature Verification is Non-Skippable}
+
+Notwithstanding SAVOIR.BOOTSW.BEF.22, the Boot SW shall not include digital signature verification of ASW images (as required by SAVOIR.BOOTSW.SEC.03) in the subset of Nominal Sequence steps that may be omitted during the Fast Boot Path sequence.
+
+\vspace{6pt}
+
+\begin{tabularx}{\textwidth}{@{}lX@{}}
+\textit{Note:} & All other permitted omissions under BEF.22 remain unchanged. \\[6pt]
+\textit{OptionInfo:} & OBC; PLM \\[6pt]
+\textit{Rationale:} & Allowing signature verification to be skipped would create a well-defined bypass path for the Secure Boot chain, invalidating the authenticity guarantees of SEC.03--SEC.04. \\[6pt]
+\textit{Verification Method:} & T \\[6pt]
+\end{tabularx}
+
+\headrule
+
+\section*{SAVOIR.BOOTSW.SEC.01}
+
+\textbf{Root of Trust for Secure Boot}
+
+The Boot SW shall rely on a hardware-enforced Root of Trust to establish the authenticity and integrity of the Secure Boot process.
+
+\vspace{6pt}
+
+\begin{tabularx}{\textwidth}{@{}lX@{}}
+\textit{Note:} & The Root of Trust is typically implemented using immutable memory or hardware security primitives. \\[6pt]
+\textit{OptionInfo:} & OBC; PLM \\[6pt]
+\textit{Assumption:} & Presence of boot memory with immutable regions \\[6pt]
+\textit{Rationale:} & A trusted starting point is required to prevent compromise of the Secure Boot chain. \\[6pt]
+\textit{Verification Method:} & ROD; I \\[6pt]
+\end{tabularx}
+
+\headrule
+
+\section*{SAVOIR.BOOTSW.SEC.02}
+
+\textbf{Public Key Storage in Immutable Memory}
+
+The Boot SW shall use one or more (hashed) public keys stored in immutable memory to verify the digital signatures of ASW images.
+
+\vspace{6pt}
+
+\begin{tabularx}{\textwidth}{@{}lX@{}}
+\textit{Note:} & Public keys stored in immutable memory cannot be altered by software updates. This key might be the root key of the Chain of Trust, with additional keys being used for software verification. A hash of a public key can be used to verify a key which is not immutable. \\[6pt]
+\textit{OptionInfo:} & OBC; PLM \\[6pt]
+\textit{Assumption:} & Boot memory provides immutable storage \\[6pt]
+\textit{Rationale:} & Prevents unauthorized modification of trusted verification material. \\[6pt]
+\textit{Verification Method:} & ROD; I \\[6pt]
+\end{tabularx}
+
+\headrule
+
+\section*{SAVOIR.BOOTSW.SEC.03}
+
+\textbf{ASW Digital Signature Verification}
+
+The Boot SW shall perform a digital signature verification on all sections of the selected ASW image prior to execution.
+
+\vspace{6pt}
+
+\begin{tabularx}{\textwidth}{@{}lX@{}}
+\textit{Note:} & Sections may include code, data, configuration, and metadata. \\[6pt]
+\textit{OptionInfo:} & OBC; PLM \\[6pt]
+\textit{Assumption:} & ASW image includes cryptographic signature \\[6pt]
+\textit{Rationale:} & Ensures authenticity and integrity of the ASW before execution. \\[6pt]
+\textit{Verification Method:} & T \\[6pt]
+\end{tabularx}
+
+\headrule
+
+\section*{SAVOIR.BOOTSW.SEC.04}
+
+\textbf{Rejection of Unauthenticated ASW Images}
+
+The Boot SW shall reject and prevent execution of any ASW image that fails digital signature verification.
+
+\vspace{6pt}
+
+\begin{tabularx}{\textwidth}{@{}lX@{}}
+\textit{Note:} & Failure includes invalid signature, unknown key, or revoked key usage. \\[6pt]
+\textit{OptionInfo:} & OBC; PLM \\[6pt]
+\textit{Assumption:} & Secure Boot verification is enabled \\[6pt]
+\textit{Rationale:} & Prevents execution of tampered or unauthorized software. \\[6pt]
+\textit{Verification Method:} & T \\[6pt]
+\end{tabularx}
+
+\headrule
+
+\section*{SAVOIR.BOOTSW.SEC.05}
+
+\textbf{Protection against classical and post-quantum adversaries}
+
+The Boot SW shall support the use of a digital signature algorithm that provides resistance against both classical and quantum computational attacks.
+
+\vspace{6pt}
+
+\begin{tabularx}{\textwidth}{@{}lX@{}}
+\textit{Note:} & Algorithm selection is mission-configurable. Hybridization is recommended, but a single algorithm may be used provided it offers resistance against both threat classes. \\[6pt]
+\textit{OptionInfo:} & OBC; PLM \\[6pt]
+\textit{Assumption:} & Availability of suitable cryptographic implementations \\[6pt]
+\textit{Rationale:} & Mitigates long-term cryptographic risks for extended mission durations. \\[6pt]
+\textit{Verification Method:} & ROD; T \\[6pt]
+\end{tabularx}
+
+\headrule
+
+\section*{SAVOIR.BOOTSW.SEC.06}
+
+\textbf{Numeric Version Rollback Protection}
+
+The Boot SW shall permit execution only of ASW images whose version identifier lies within a predefined allowed rollback window.  
+If the highest successfully executed version identifier is $N$ and the permitted rollback window size is $X$, then only versions in the inclusive range:
+
+\[
+[N,\; N - X]
+\]
+
+shall be accepted for execution.
+
+\vspace{6pt}
+
+\begin{itemize}
+\item For a rollback window of size $X=1$, the Boot SW shall therefore accept only versions $N$ and $N-1$.
+\item Version identifiers are strictly positive integers.
+\end{itemize}
+
+\vspace{6pt}
+
+\begin{tabularx}{\textwidth}{@{}lX@{}}
+\textit{Note:} & ASW version identifiers are positive integers. Version tracking data shall be stored in protected non-volatile memory. \\[6pt]
+\textit{OptionInfo:} & OBC; PLM \\[6pt]
+\textit{Assumption:} & Protected resource retaining data across resets. \\[6pt]
+\textit{Rationale:} & A configurable rollback window allows controlled recovery from recent software updates while preventing execution of outdated or potentially insecure versions. Limiting rollback to $X$ consecutive versions mitigates unauthorized or unintended downgrades while permitting recovery within an operationally safe margin. \\[6pt]
+\textit{Verification Method:} & T \\[6pt]
+\end{tabularx}
+
+\headrule
+
+\section*{SAVOIR.BOOTSW.SEC.07}
+
+\textbf{Secure Boot Failure Reporting}
+
+The Boot SW shall report Secure Boot failures and their causes through telemetry or Boot Report mechanisms.
+
+\vspace{6pt}
+
+\begin{tabularx}{\textwidth}{@{}lX@{}}
+\textit{Note:} & Failure causes include signature failure, key revocation, or version violation. \\[6pt]
+\textit{OptionInfo:} & OBC; PLM \\[6pt]
+\textit{Assumption:} & Boot Report or telemetry capability \\[6pt]
+\textit{Rationale:} & Enables ground-based diagnosis and corrective actions. \\[6pt]
+\textit{Verification Method:} & T; I \\[6pt]
+\end{tabularx}
+
+\headrule

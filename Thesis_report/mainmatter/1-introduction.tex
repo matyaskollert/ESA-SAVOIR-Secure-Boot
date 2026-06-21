@@ -1,0 +1,66 @@
+\chapter{Introduction}
+\label{chapter:intro}
+
+\section{Context - rise of COTS in space and the cybersecurity gap}
+\label{section:intro-context}
+
+From the beginning of human civilisation, the desire to understand the cosmos has been shaped not only by curiosity but also by technological limitations. Ancient philosophers such as Plato and Aristotle developed models of the universe based on observation and reasoning, constrained by the absence of precise instruments and experimental methods. For centuries, humanity's exploration of space remained theoretical, bounded by the tools and materials available at the time.
+
+Even with the advent of modern science, early space exploration efforts were defined by severe technological constraints. The first spacecraft, such as Sputnik 1, were built using highly specialised, purpose-built components, often developed under strict governmental control. Systems were relatively simple by today's standards, with limited computational capabilities and minimal reliance on complex software. This inherent simplicity, combined with physical isolation and restricted access to hardware, resulted in a comparatively small attack surface.
+
+In contrast, modern spacecraft development has undergone a fundamental transformation. Space missions increasingly rely on commercial off-the-shelf (COTS) components to reduce development costs and time to launch \cite{ESA_2020}. This results in a lower barrier to entry and a larger number of satellites being deployed for a wide range of applications. Organisations such as NASA and ESA, alongside private companies like SpaceX, now routinely integrate widely available processors, operating systems, and development frameworks into spacecraft architectures.
+
+Despite being beneficial in many ways, this trend also introduces new cybersecurity risks \cite{Moutafis_2025, space_odyssey_2023, orbital_shield_2024}. Unlike the bespoke systems of earlier missions, modern spacecraft increasingly rely on hardware and software components that are widely documented, commercially distributed and, in some cases, publicly accessible. This accessibility significantly lowers the barrier for adversaries to analyse, replicate and potentially exploit system architecture.
+
+While there have been security advancements such as the SDLS network protocol \cite{SDLS_Protocol_2010} and frameworks designed to better protect spacecraft systems \cite{Moutafis_2025, ESA_SPACE_SHIELD_2023}, other security measures remain less mature than their terrestrial counterparts \cite{space_odyssey_2023, space_vacuum_cyber, call_to_action}, as reliability and fault tolerance have traditionally been prioritised. As discussed in \cite{space_vacuum_cyber}, this disparity is driven by a range of technical and operational constraints. However, it also highlights the growing importance of spacecraft as potential single points of failure within critical infrastructure systems. Recognising this, ESA has identified cybersecurity as a strategic cross-cutting priority across all mission types~\cite{ESA_Tech_Strategy_2023, ESA_Cyber_TEC}, encompassing areas from secure protocol standardisation to cryptography and security-by-design reference architectures. The establishment of a dedicated Cyber Security Operations Centre at ESOC in 2025 further underscores this institutional commitment~\cite{ESA_CSOC_2025}.
+
+In this context, ensuring the integrity of onboard software has become a critical requirement. Secure Boot mechanisms, which establish a hardware-rooted chain of trust during system initialisation, provide a means to prevent the execution of unauthorised or malicious code. While widely adopted in terrestrial computing, their integration into spacecraft systems presents unique challenges due to constraints such as limited computational, space, and power resources.
+
+\section{Problem statement - why bootloaders are the critical attack surface}
+\label{section:intro-statement}
+
+A bootloader is a small but critical software component responsible for initialising hardware and loading the operating system or main application software during startup \cite{nasa_2024, obc_cubesats_2024}. It acts as the first link in the software chain, bridging the gap between hardware and higher-level software. In embedded and spacecraft systems, bootloaders often handle additional tasks such as selecting firmware images, supporting remote updates, and providing recovery mechanisms in case of corruption \cite{cubesat_fsw_design, beningo_2015, SAVOIR}.
+
+As the bootloader executes before any other software, it holds a position of high trust. If an adversary manages to deliver malicious software to the system, the bootloader is the last line of defence that could prevent it from executing. A Secure Boot process mitigates this risk by cryptographically verifying each software component before execution, ensuring that only authenticated and untampered code is loaded. 
+
+While Secure Boot is widely adopted in terrestrial systems \cite{Secure_Boot_Fuzz_2025}, it has yet to see broad application in space missions. This is mainly due to stringent reliability requirements, limited resources (computational, space, and power) and the high cost of qualifying new technology for space. It leaves a critical gap in protection against unauthorised code execution once a system has been compromised. There are recorded satellite attacks where the hackers managed to gain command-and-control (C2) access to the system \cite{us_china_security_review}. The ENISA Space Threat Landscape report \cite{enisa_2025} identifies \emph{firmware corruption} and \emph{malicious code injection} as key cyber threats to satellite on-board systems. It notes that implanted malware can exploit software misconfiguration to manipulate the on-board controller, cause resource exhaustion, and ultimately lead to seizure of control, with the mission control centre potentially unable to identify the root cause until it is too late. Secure Boot could prevent adversaries from having persistent access to the satellite; therefore, investigating how it can be adapted for spacecraft offers an opportunity to significantly enhance the trustworthiness of space-borne systems, ensuring the integrity of the boot chain along with the final application software.
+
+\section{Research questions}
+\label{section:intro-rq}
+
+The identified research gap motivates the central question of this thesis. It is formulated to address a practical design trade-off: how to strengthen protection against unauthorised code execution while preserving the reliability, performance and resource efficiency required by mission-critical spacecraft platforms.
+
+\begin{quote}
+How can Secure Boot be incorporated into space mission bootloaders in a way that enhances security without compromising the strict reliability and performance constraints of space systems?
+\end{quote}
+
+This overarching question can be divided into the following sub-questions:
+
+\begin{itemize}
+    \item How can Secure Boot be adapted using a secure-by-design approach compatible with space mission requirements?
+    \item What is the minimal level of hardware support necessary for implementing Secure Boot in space-grade systems, given the high cost and limited flexibility of such hardware?
+    \item Which existing terrestrial Secure Boot standards and frameworks can be applied to space environments?
+    \item To what extent should post-quantum cryptographic algorithms be considered and do they necessitate dedicated hardware support?
+\end{itemize}
+
+\section{Scope and contributions}
+\label{section:intro-scope}
+
+This thesis makes the following contributions:
+
+\begin{itemize}
+    \item \textbf{Threat model.} A lifecycle-based threat model for spacecraft bootloaders was developed, grounded in the ENISA Space Threat Landscape taxonomy \cite{enisa_2025} and focused on two primary attacker scenarios: physical access prior to launch and remote firmware injection after launch.
+
+    \item \textbf{Secure Boot specification (SAVOIR-GS-002S extension).} A formal set of Secure Boot requirements was produced in the style and language of SAVOIR \cite{SAVOIR}, designed to extend the existing SAVOIR-GS-002 Flight Computer Initialisation Sequence without replacing it. The specification covers a hardware Root of Trust, digital signature verification, classical and post-quantum support, rollback protection, and failure reporting.
+
+    \item \textbf{Hardware trade-off analysis.} The hardware requirements for implementing the specification were analysed and a representative COTS microcontroller (STM32F439ZI) was selected for the proof of concept, demonstrating that the minimal hardware primitives needed~--- write-protected flash sectors and an optional hardware hash accelerator~--- are already present in widely available embedded processors.
+
+    \item \textbf{Proof-of-concept implementation.} A working secure bootloader was implemented in C on the STM32F439ZI, realising all SEC requirements from the specification. The implementation includes A/B image partitioning, monotonic rollback protection via hardware-protected non-volatile storage, option-byte-enforced write protection, PUS-compatible boot reporting and an algorithm-agnostic cryptographic verification interface.
+
+    \item \textbf{Performance benchmarks.} Signature verification latency and memory footprint were measured on the target hardware for four schemes~--- ECDSA, RSA, ML-DSA, and LMS~--- under both hardware-accelerated and software-only SHA, providing concrete data points for mission designers evaluating classical and post-quantum algorithm choices.
+\end{itemize}
+
+\section{Report structure}
+\label{section:intro-structure}
+
+Following this introduction, \autoref{chapter:bg} presents background on bootloaders, secure boot, space standards and post-quantum cryptography. \autoref{chapter:threatModel} then defines the threat model, including the two attacker scenarios considered in this work. \autoref{chapter:design} formulates the secure-by-design requirements and architectural decisions that extend existing ESA standards. \autoref{chapter:hw} analyses the minimal hardware requirements needed to realise the design and motivates the platform selected for the proof of concept. \autoref{chapter:implementation} describes the implementation of this design on the selected hardware. \autoref{chapter:eval} evaluates the proof of concept in terms of security properties and resource overhead. \autoref{chapter:related} discusses related work in secure bootloader development. Finally, \autoref{chapter:conclusion} summarises the contributions and outlines directions for future work.

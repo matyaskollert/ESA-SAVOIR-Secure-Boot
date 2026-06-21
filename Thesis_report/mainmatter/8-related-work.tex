@@ -1,0 +1,54 @@
+\chapter{Related Work}
+\label{chapter:related}
+
+The secure boot implementations described in this chapter have influenced the design decisions made in this work. None of them can be adopted directly for space use: their underlying bootloaders target different processor architectures (x86, ARM Cortex-A), rely on hardware peripherals and memory configurations that differ significantly from radiation-tolerant space-grade platforms, and operate under resource and reliability constraints that are incompatible with those described in \autoref{section:bg-space}. However, the secure boot mechanisms layered on top of those bootloaders~--- signature verification schemes, chain-of-trust models, rollback protection strategies and update protocols~--- are architecture-independent concepts that transfer well. Where an implementation is more sophisticated than what is required for the baseline missions targeted by this work, it is noted as a direction for future work in \autoref{chapter:conclusion}.
+
+\section{Secure boot in terrestrial systems}
+\label{section:related-existing}
+
+\subsection{Android Verified Boot}
+\label{subsection:related-existing-android}
+
+Android provides one of the most thoroughly documented open-source examples of a secure bootloader for a constrained, Linux-based system \cite{android_bootloader_2026}. Its boot flow combines hardware trust establishment, partition integrity verification and A/B slot selection into a single coherent sequence, mirroring the chain-of-trust model discussed in \autoref{subsection:bg-secureboot-root}. Verified Boot uses a hash tree for partitions that are too large to verify entirely before execution, allowing on-the-fly block-level integrity checking. Rollback protection is enforced by binding security keys to the OS version and security patch level, so that downgrading to a vulnerable firmware version does not grant access to keys generated under the newer version \cite{android_bootloader_2026}.
+
+The A/B update mechanism \cite{android_ota_updating_2026} with its automatic slot fallback is a practical realisation of the reliability requirements discussed in \autoref{subsection:bg-bootloader-ABandOTA}. The underlying bootloader and its TEE dependencies are not applicable to space-grade hardware, but the concepts of hardware-anchored trust, partition-level integrity verification and version-bound rollback protection directly inform the design of this work.
+
+\subsection{UEFI Secure Boot}
+\label{subsection:related-existing-uefi}
+
+On consumer computers, the Unified Extensible Firmware Interface (UEFI) \cite{UEFI} has been the standard firmware interface since 2006. It is responsible for initialising hardware, loading device drivers and providing a uniform interface for subsequent boot stages, after which it hands off to a second-stage bootloader such as GRUB or the Windows Boot Manager via a shim layer.
+
+UEFI Secure Boot establishes a hierarchical key infrastructure: a Platform Key (PK) stored by the OEM in tamper-resistant non-volatile storage acts as the trust anchor, from which Key Exchange Keys (KEK) can be derived to authorise operating system and driver signatures \cite{UEFI_Secure_Boot_Microsoft}. Keys that are later revoked are placed in a Forbidden Signature Database. Microsoft requires firmware to be signed with at least RSA-2048 and SHA-256 \cite{OEM_Secure_Boot_Microsoft}, which is below the key-length recommendations for space systems discussed in \autoref{subsection:bg-space-cryptoReccs}.
+
+The hierarchical key model and the use of a signature database are interesting concepts for missions that involve multiple software providers or frequent third-party updates. However, the full UEFI infrastructure is overly complex for the single-vendor, resource-constrained scenarios targeted by this work; a simpler single-key model is preferred here. As discussed in \autoref{subsection:conclusion-futureWork-publicInfra}, a UEFI-like key hierarchy could be explored as future work for more complex missions.
+
+\subsection{wolfBoot}
+\label{subsection:related-existing-wolfBoot}
+
+wolfBoot \cite{wolfBoot} is an open-source secure boot bootloader for embedded devices developed by WolfSSL. It supports digital signature verification, rollback protection and OTA updates across a wide range of microcontroller targets. Software images follow the RFC~9019 \cite{rfc9019} manifest model, with a header containing version metadata used to enforce rollback protection before an update is applied. Updates are managed through a three-partition scheme (BOOT, UPDATE and SWAP) that preserves the previous image as a fallback, consistent with the A/B concepts discussed in \autoref{subsection:bg-bootloader-ABandOTA}.
+
+The secure boot concepts in wolfBoot~--- manifest-based image metadata, version-enforced rollback protection and signature verification using a well-audited cryptographic library~--- are directly relevant to this work. Its broad platform support, however, comes at the cost of considerable complexity and code size, which increases the attack surface and resource usage in ways that are incompatible with space constraints. A leaner, purpose-built approach is therefore taken here, with wolfBoot's more advanced features noted as candidates for future work.
+
+\section{Security in space systems}
+\label{section:related-space}
+
+\subsection{GRBOOT}
+\label{subsection:related-space-grboot}
+
+GRBOOT \cite{GRBOOT} is a space-compliant Boot Software product developed by Gaisler, the manufacturer of the LEON processor family. It originates from the GR712RC Boot Software designed specifically for the ESA JUICE mission instruments, where it was successfully deployed in eight LEON3FT-based instrument boards. That heritage product has since been generalised into a reusable bootloader supporting multiple hardware platforms.
+
+GRBOOT implements the ESA SAVOIR Flight Computer Initialisation Sequence (SAVOIR-GS-002) and is developed in accordance with ECSS-E-ST-40C and ECSS-Q-ST-80C at software criticality category B. It currently targets the GR740, GR712RC and UT700 processor families, with ports available for the GR-CPCI-GR740, GR712RC development boards, and the UT700-LEAP. Boot memory options include parallel PROM, flash and similar non-volatile memories; application images can be loaded from memory-mapped storage (PROM, flash, MRAM, etc.) or from SPI flash.
+
+Notable features include multi-processor support (SMP and AMP configurations), hardware system self-tests covering the CPU, L1/L2 caches, ROM and external memories, and a Boot Report that records self-test results and is made available to the loaded application. Application images use an ELF-like format with support for in-flight patching and optional compression, and integrity is checked before execution with failover on failure. The design cleanly separates Boot Memory from Application Storage Memory so that updating the application does not require updating the bootloader.
+
+An optional SpaceWire/PUS Standby extension (available under a separate GRBOOT-STANDBY licence) adds a remote terminal over SpaceWire, PUS services in accordance with ECSS-E-ST-70-41C, remote uploading and patching of applications, and memory and register diagnostics. The product ships with fully automated test suites including unit tests that execute both on target hardware and in the TSIM3 LEON simulator, with code coverage captured in simulation.
+
+\subsection{N7 Space Boot Software}
+\label{subsection:related-space-n7space}
+
+The N7 Space Boot Software \cite{N7-Space-BSW} targets ARM Cortex-M and RISC-V microcontrollers — specifically the SAMV71Q21(RT), SAMRH71F20 and SAMRH707F18 — that are commonly used in smaller spacecraft and instrument electronics. Like GRBOOT, it is developed in compliance with ECSS-E-ST-40C and ECSS-Q-ST-80C and implements the SAVOIR Flight Computer Initialisation Sequence, and it has been produced during ESA contracts. It is pre-qualified for ECSS software criticality category B.
+
+The communication interface uses a model-based PUS-C TC/TM stack with the data model defined in ASN.1 and generated by the ESA asn1scc compiler. TC/TM links are available over UART and SpaceWire, with the possibility of extending to CAN and Ethernet. PUS-C services 1, 3, 5, 6, 9, 17 and 20 are supported. Self-test features cover bootloader image integrity, SRAM and SDRAM memory tests, and selected communication interfaces, with results delivered through a boot report and event telemetry. In-flight configurable application software image selection is supported through a Configuration Vector that controls image header locations, cache enable/disable, and self-test bypass. A demonstration version, with limited image size and disabled permanent reconfiguration, is available for evaluation on supported development boards.
+
+\paragraph{Positioning relative to this work.}
+Both GRBOOT and the N7 Space BSW are proprietary products and no internal source analysis was possible. From publicly available information, neither implements digital signature verification as part of the boot sequence. Application image integrity is checked, but the check is CRC- or hash-based and provides no authenticity guarantee against a deliberate adversary who controls the update channel. This is precisely the gap that SAVOIR-GS-002S and the PoC described in this thesis aim to address. The SAVOIR-GS-002S specification is formulated as an additive extension to SAVOIR-GS-002, meaning that a product such as GRBOOT or the N7 Space BSW could adopt the SEC requirements without replacing any of its existing functional requirements.

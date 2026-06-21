@@ -1,0 +1,212 @@
+\chapter{Evaluation}
+\label{chapter:eval}
+
+\section{Evaluation methodology}
+\label{section:eval-methodology}
+
+The evaluation of the PoC is structured around two complementary concerns: security correctness and resource overhead. For security correctness, the primary method is end-to-end automated testing that drives the BSW through all operationally significant scenarios and verifies the observable outcome against the expected behaviour. For resource overhead, performance benchmarks and static memory analysis provide concrete data for mission designers.
+
+Verification methods mandated by ECSS and SAVOIR — review panels, controlled inspection against qualification documentation, test execution against a qualification model under a traceable test plan — were not applied, as they govern large-team engineering processes that are out of scope for a single-developer research prototype. The approach taken here is therefore intentionally lighter-weight: automated behavioural tests and manual code review serve as the primary evidence of correctness. This is acknowledged as a limitation in \autoref{section:eval-limitations}.
+
+The security analysis in \autoref{section:eval-securityAnalysis} verifies the state machine against the flow diagrams and maps each automated test to the corresponding PoC requirement. The performance evaluation in \autoref{section:eval-benchmarks} reports signature verification latency for four schemes under hardware-accelerated and software-only SHA configurations, as well as the static memory footprint of each scheme.
+
+
+\section{Security analysis}
+\label{section:eval-securityAnalysis}
+
+In order to verify the correctness of the PoC, the flow diagrams from Figures \ref{fig:bsw-flowchart-startup}-\ref{fig:bsw-flowchart-rollback} were used as the primary reference. All states and transitions were enumerated, and the expected behaviour of each was documented before any code was written. The BSW was then implemented to follow the diagram as closely as possible.
+
+\subsection{Coverage of attacker scenarios from threat model}
+\label{section:eval-securityAnalysis-scenarios}
+
+With the flow diagram verified, an end-to-end automated test suite was developed to confirm that the implemented BSW behaves correctly across all operationally significant scenarios. The test suite is implemented in Python using pytest and communicates with the board over two independent channels: UART for ECSS-compatible telecommand and telemetry packets, and SWD via the STM32CubeProgrammer CLI for direct flash and option-byte access. The dual-channel approach is essential: it allows the tests to configure preconditions (flash content, write-protection state, COMM status word) that the BSW itself would never set, and to inspect post-conditions through a trusted path that does not rely on the BSW reporting correctly about itself.
+
+Before each test, the board is brought into a fully known state. The relevant flash sectors are erased or programmed with prepared images, the option bytes are set to the required write-protection configuration, and the COMM status word is written directly to flash. The BSW is then triggered by sending the appropriate commands over UART. After the BSW has responded (ACK, NACK, or timeout), the test reads the REPORT flash sector, the COMM word, the option-byte state, and other data/configurations from flash directly over SWD to verify the outcome.
+
+The test suite is organised into five modules. \texttt{test\_boot.py} covers the nominal boot path: it verifies that a valid signed image boots successfully, and that corrupted images (missing header, bad CRC, invalid signature, bad magic) are rejected with the correct outcome codes in the BSW report. It also verifies that write-protection violations are detected before any image check is attempted, and that the BSW automatically re-applies the correct protection state before resetting. \texttt{test\_update.py} covers the firmware upload path: it verifies the happy path, version-floor rejection (with and without boundary conditions), and all WRP violation scenarios for the upload target slot. \texttt{test\_swap.py} tests the image swap command in isolation, including correct counter advancement, rejection of corrupt or missing update slots, and all five WRP error cases. \texttt{test\_lifecycle.py} combines multiple operations into end-to-end upgrade cycles, including two consecutive upgrades (v1→v2→v3), rollback within the allowed window, and automatic rollback triggered by simulated boot failures. \texttt{test\_protocol.py} verifies robustness against malformed or out-of-order ECSS packets, ensuring the BSW never hangs and never silently corrupts the primary image slot.
+
+A key invariant verified across all tests is that the BSW report written to flash after each operation accurately reflects which steps completed and, in failure cases, the exact failure cause. 
+
+\subsection{Requirement verification (per SEC-* requirements)}
+\label{subsection:eval-securityAnalysis-reqVerification}
+
+The SAVOIR-GS-002S specification (listed in full in \autoref{appendix:savoir-secure-boot}) assigns a formal verification method to each requirement: Review of Design (ROD), Inspection (I), or Test (T). The PoC requirements derived in \autoref{chapter:hw} carry the same categories implicitly. It is important to note that these verification methods are not followed in the rigorous manner that a space-qualified project would. In a production setting, ROD would involve a formal review panel, inspections would be conducted against controlled design documentation, and tests would be executed against a qualification model under a traceable test plan. In this work, verification is carried out informally through end-to-end automated tests and code review, which is weaker than what the SAVOIR standards would require in practice. \autoref{tab:req-verification-sec} and \autoref{tab:req-verification-func} summarise how each requirement is addressed in the PoC under this lighter-weight approach.
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{|l|p{5cm}|p{5cm}|}
+\hline
+\textbf{Req.} & \textbf{Description} & \textbf{Evidence in PoC} \\
+\hline
+\multicolumn{3}{|l|}{\textit{Group 1 — Security requirements (SAVOIR-GS-002S)}} \\
+\hline
+SEC.01 & Hardware Root of Trust & BSW resides in write-protected sector; option-byte WRP verified at each boot by \texttt{performSelfTests()} \\
+\hline
+SEC.02 & Public Key in Immutable Memory & ECDSA-P256 public key stored in write-protected flash alongside the BSW \\
+\hline
+SEC.03 & ASW Digital Signature Verification & \texttt{TestBootValidImage}, \texttt{TestBootInvalidSignature}, \texttt{TestSwapBadUpdateSlot} \\
+\hline
+SEC.04 & Rejection of Unauthenticated ASW & \texttt{TestBootInvalidSignature}, \texttt{TestBootNoImage}, \texttt{TestBootBadMagic}, \texttt{TestBootCorruptCRC} \\
+\hline
+SEC.05 & Classical + Post-quantum Support & ECDSA-P256 (classical) and ML-DSA available at build time along with a hybrid option \\
+\hline
+SEC.06 & Rollback Protection (version window) & \texttt{TestUpdateVersionTooLow}, \texttt{TestRollbackPrevention}, \texttt{TestRollbackCounterBoundary}, \texttt{TestSwapRollbackEnforcement}, \texttt{TestRollbackWithWindow} \\
+\hline
+SEC.07 & Secure Boot Failure Reporting & Every test in \texttt{test\_boot.py}, \texttt{test\_update.py} and \texttt{test\_swap.py} validates the REPORT flash record; outcome codes, step-flag bitmasks and slot identifiers are all checked \\
+\hline
+\end{tabular}
+\caption{Requirement coverage summary — security requirements (SAVOIR-GS-002S).}
+\label{tab:req-verification-sec}
+\end{table}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{|l|p{5cm}|p{5cm}|}
+\hline
+\textbf{Req.} & \textbf{Description} & \textbf{Evidence in PoC} \\
+\hline
+\multicolumn{3}{|l|}{\textit{Group 2 — Functional requirements (SAVOIR-derived)}} \\
+\hline
+POC-FUNC-INIT & Hardware initialisation, self-tests and WRP verification before Nominal Sequence & \texttt{TestBootUnprotectedMainSector}, \texttt{TestBootUnprotectedBSWStateSector}, \texttt{TestBootBothSectorsUnprotected}, \texttt{TestBootNominalAutoFix}; WRP state verified via SWD option-byte read after each reset \\
+\hline
+POC-FUNC-NOMINAL & Full nominal sequence: image selection, CRC integrity check, signature verification, RAM copy, execution transfer & \texttt{TestBootValidImage} (happy path); \texttt{TestBootCorruptCRC}, \texttt{TestBootBadMagic}, \texttt{TestBootNoImage} (integrity failures); \texttt{TestBootInvalidSignature} (authentication failure) \\
+\hline
+POC-FUNC-STANDBY & Standby mode: ground-triggered entry, memory inspection, firmware upload via ECSS packet protocol & \texttt{TestUpdateHappyPath}, \texttt{TestUpdateStateAfterSuccess}; upload-to-swap lifecycle verified in \texttt{TestFullUpdateCycle} and \texttt{TestConsecutiveSwaps} \\
+\hline
+POC-FUNC-REPORT & Boot Report written progressively to protected flash after every significant operation & All tests in \texttt{test\_boot.py}, \texttt{test\_update.py} and \texttt{test\_swap.py} read and validate the REPORT sector after each run; magic, type, outcome, step-flag bitmask, slot and counter fields are all checked \\
+\hline
+\multicolumn{3}{|l|}{\textit{Group 3 — Memory architecture requirements (SAVOIR-derived)}} \\
+\hline
+POC-MEM-LAYOUT & BSW and public key in write-protected Boot Memory; ASW, update, swap, COMM and state regions in separately allocated flash sectors & Verified by inspection of the linker script (\texttt{.ld}) and STM32CubeIDE Build Analyser output; sector assignments confirmed via SWD flash map read \\
+\hline
+\multicolumn{3}{|l|}{\textit{Group 4 — Design and performance constraints}} \\
+\hline
+POC-IMPL-DESIGN & Sequential bare-metal execution; no OS or runtime dependency; minimum resource usage & Verified by code review: no RTOS calls, no dynamic allocation in the boot path, single-threaded control flow throughout \\
+\hline
+POC-PERF-WCET & Worst-case verification time measured per signature scheme & Benchmark results reported in \autoref{tab:sig_verification}; four schemes measured at 1\,kB and 128\,kB image sizes with and without hardware SHA-2 acceleration \\
+\hline
+\end{tabular}
+\caption{Requirement coverage summary — functional, memory and design requirements (SAVOIR-derived).}
+\label{tab:req-verification-func}
+\end{table}
+
+
+
+\section{Performance benchmarks}
+\label{section:eval-benchmarks}
+
+\subsection{Benchmark setup - hardware, toolchain, methodology}
+\label{subsection:eval-benchmarks-setup}
+
+Benchmarks were performed on the same NUCLEO-F439ZI hardware used in the proof of concept. The main clock was configured to 168~MHz to match the deployment setup. For benchmarking purposes, only the relevant code was extracted, namely the image digital signature verification logic, which remained identical to the implementation used in the PoC. Four signature schemes were evaluated: ECDSA, RSA, ML-DSA, and LMS, selected based on the recommendations described in \autoref{subsection:bg-space-cryptoReccs}. Any of these implementations can be integrated at build time. For a hybrid deployment, the total verification time is the sum of the individual scheme verification times, while the working memory requirement corresponds to the larger of the two memory footprints.
+
+These benchmarks are dependent on the cryptography library that is being used. Even within a single library, there are many ways to change how the computations are done based on whether you want to optimise for memory, speed, or other criteria. The specific wolfSSL configuration used for all benchmarks is listed in full in \autoref{appendix:wolfssl-config}. Any changes that were made between runs are clearly stated below. Unnecessary wolfCrypt features~--- key generation, signing and key export~--- were disabled at compile time to reduce the code footprint to the verification path only.
+
+For each signature scheme, three runs were performed and the result reported is the average of the measurements. There was negligible variation between runs when the same data was used. 
+
+The relationship between image size and verification time differs across schemes. ECDSA and RSA are hash-then-sign schemes: they first compute a SHA-2 digest of the entire image and then perform the signature operation on that fixed-length hash. For these schemes, only the hashing step scales with image size; the signature operation itself is constant-cost. LMS verification involves three steps: a randomised message hash (H\_msg applied over the full image, which scales linearly with image size), followed by constant-cost Winternitz one-time signature chain traversal, and a constant-cost Merkle authentication path check. The Winternitz chain operations dominate LMS verification time and are fixed for a given parameter set; the image-dependent H\_msg step is a comparatively small addition. ML-DSA is fundamentally different: it uses SHAKE-256 (a XOF from the SHA-3 family, as specified in FIPS~204 \cite{nist_ml_dsa}) internally and absorbs the full message directly into the sponge rather than pre-hashing it, so its cost grows proportionally with message length with no separation between the hashing and signature steps.
+
+For ECDSA, RSA, and LMS, each benchmark was run with two SHA-2 configurations: one using the STM32 hardware hash accelerator (HASH peripheral, referred to as HW SHA) and one using a software SHA-2 implementation (SW SHA). The STM32 HASH peripheral accelerates only SHA-2 (and MD5); it has no support for SHAKE-256. Because ML-DSA uses SHAKE-256 internally rather than SHA-2, the hardware accelerator offers no benefit and ML-DSA was only measured in the software configuration. Image sizes of 1~kB and 128~kB were used, where 128~kB is the maximum ASW image size in the PoC. The 1~kB case approximates a minimal image and exposes the fixed overhead of the signature scheme, while the 128~kB case reveals how much the cost grows with image size.
+
+\subsection{Signature verification latency}
+\label{subsection:eval-benchmarks-latency}
+
+\autoref{tab:sig_verification} reports the average signature verification time for each scheme across three identical runs (variation was negligible). All results are specific to this wolfSSL configuration on the STM32F439ZI running at 168~MHz; a different library, a different set of compile-time flags, or a different processor could shift the absolute numbers significantly. What matters for hardware selection is therefore the relative ordering between schemes, which is more stable, provided that the same degree of hardware acceleration is available on the target platform.
+
+\textbf{With hardware SHA-2 acceleration (HW SHA).} When the STM32 HASH peripheral is enabled, RSA is the fastest classical scheme by a considerable margin: RSA-3072 completes in only 38~ms for a 1~kB image and 46~ms for 128~kB, outperforming ECDSA-P256 (177~ms / 184~ms) by a factor of approximately four to five. ECDSA's verification time is dominated by the elliptic-curve scalar multiplication, so the SHA-2 acceleration has almost no effect on it; indeed, the 1~kB and 128~kB times are nearly identical, with the 7~ms difference coming entirely from the image hash. For RSA, in contrast, HW SHA provides a meaningful reduction on large images (e.g., RSA-3072 drops from 101~ms to 46~ms at 128~kB compared to the software path). LMS with HW SHA takes 144~ms for 1~kB and 179~ms for 128~kB; notably, LMS with HW SHA is slower than LMS with SW SHA on small images (144~ms vs 132~ms), suggesting that the per-call overhead of the hardware peripheral is significant relative to the short SHA-2 computations inside the Winternitz chains. ML-DSA is not applicable in this column because it uses SHAKE-256 internally, which is not supported by the STM32 HASH peripheral.
+
+\textbf{Without hardware SHA-2 acceleration (SW SHA).} When all hashing runs in software, ML-DSA becomes the fastest scheme overall. ML-DSA-44 verifies a 1~kB image in just 22~ms and ML-DSA-65 in 32~ms, both well ahead of RSA-3072 (39~ms). However, because ML-DSA's cost scales linearly with message length (it absorbs the full image into a SHAKE-256 sponge), the 128~kB times are considerably higher: 137~ms for ML-DSA-44 and 148~ms for ML-DSA-65. At this image size RSA-3072 (101~ms) and RSA-4096 (129~ms) are actually faster. ECDSA with SW SHA (177~ms / 241~ms) is the slowest classical scheme and degrades more at large images because the software SHA-2 path is slow relative to the hardware path. LMS with SW SHA is 132~ms for 1~kB (faster than HW SHA due to lower per-call overhead) but 220~ms for 128~kB, where the software SHA-2 path for H\_msg becomes the bottleneck.
+
+For a hybridised deployment (e.g., ECDSA + LMS), the total latency is the sum of the two individual times, since both verifications must pass. On the 128~kB image with HW SHA this gives approximately $184 + 179 = 363$~ms, which is still well within a single-second boot budget.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{|l|r|r|}
+\hline
+\textbf{Algorithm} & \textbf{Time with HW SHA (ms)} & \textbf{Time with SW SHA (ms)} \\
+\hline
+ECDSA-P256 & 1kB: 177, 128kB: 184   & 1kB: 177, 128kB: 241 \\
+% RSA-2048   & 1kB: 18, 128kB: 25     & 1kB: 21, 128kB: 83  \\
+RSA-3072   & 1kB: 38, 128kB: 46     & 1kB: 39, 128kB: 101  \\
+RSA-4096   & 1kB: 65, 128kB: 73     & 1kB: 66, 128kB: 129  \\
+ML-DSA-44  & N/A                    & 1kB: 22, 128kB: 137  \\
+ML-DSA-65  & N/A                    & 1kB: 32, 128kB: 148  \\
+LMS        & 1kB: 144, 128kB: 179   & 1kB: 132, 128kB: 220 \\
+
+\hline
+\end{tabular}
+\caption{Digital Signature Verification Times}
+\label{tab:sig_verification}
+\end{table}
+
+LMS verification is faster without hardware-accelerated SHA-2 on small images, where the per-call overhead of the HASH peripheral outweighs the benefit, but hardware acceleration is advantageous on larger images. LMS is also the only post-quantum scheme that BSI and ANSSI currently recommend for standalone use without hybridisation, which gives it a regulatory advantage that the latency numbers alone do not capture.
+
+\subsection{Classical vs PQ comparison and boot time impact}
+\label{subsection:eval-benchmarks-classicVSpq}
+
+Contrary to common expectation, some post-quantum algorithms perform better than their classical counterparts on this platform. As shown in \autoref{tab:sig_verification}, both LMS and ML-DSA outperform ECDSA. For small images (1~kB) and without hardware SHA acceleration, the stronger ML-DSA-65 also outperforms RSA-3072.
+
+\subsection{Code size and memory footprint}
+\label{subsection:eval-benchmarks-memory}
+
+The static code size can be measured precisely from the build output. Most of the binary resides in flash, with a small initialised-data section placed in RAM. At runtime, the BSW also uses RAM to hold all five \texttt{bsw\_report\_t} records ($5 \times 20$~bytes~$= 100$~bytes) simultaneously. Because flash must be erased at sector granularity before new data can be written, all existing reports must first be read into RAM, the sector erased, and then all reports (including the new one) written back. Keeping the full circular buffer in RAM throughout the operation ensures that no existing reports are lost during the erase cycle.
+
+The wolfCrypt library can be configured to use no dynamic allocation, which means the heap footprint is minimal and the dominant runtime cost is stack usage. As the ASW takes up at most 128~kB, it leaves the system with half of the available RAM for the bootloader. The numbers below are specific to the wolfSSL configuration used for these benchmarks. Compile-time flags allow trading memory for speed (e.g., precomputed tables) or vice versa, so different configurations could shift the footprint numbers noticeably. 
+
+These approximate measurements in \autoref{tab:sig_verification_memory} describe how much memory each signature scheme requires with the cryptographic library used. The main components are the public key size (stored in protected flash), the signature size (embedded in the image header), the key structure held in RAM, and the working memory (stack and heap, placed in CCMRAM) used during the verification call.
+
+Static memory details can be obtained from the STM32CubeIDE Build Analyser and Static Stack Analyser tools. The memory structure is defined in the linker script (LD file), which specifies where each section of the binary is placed. This makes it straightforward to read how much flash, RAM and CCMRAM the BSW occupies. Stack and heap usage is not easy to bound statically, so the minimum working memory size for each verification algorithm was determined at runtime by running each scheme with progressively smaller CCMRAM allocations until a memory fault occurred.
+
+\autoref{tab:sig_verification_memory} shows the memory cost of each algorithm's verification path. The public key (stored in protected flash) and the signature (embedded in the image header) contribute to the static flash footprint, while the key structure held in RAM and the working memory used during verification define the dynamic cost.
+
+LMS has by far the smallest flash and RAM footprint: 60~bytes for the public key, 128~bytes for the key structure, and only 3~kB of CCMRAM during verification. This makes it the most attractive option when memory is severely constrained, for example on a dedicated stage-one bootloader residing in a small PROM. ML-DSA requires 11--12~kB of CCMRAM during verification, but its RAM key structure is modest at 512~bytes. ECDSA has a small public key (91~bytes) but a relatively large RAM structure (4~kB). RSA-4096 requires 8~kB of CCMRAM with a 550~byte public key.
+
+For missions with extremely limited RAM, LMS is the only option that fits in 4~kB. All other schemes require at least 5~kB of working memory. If memory is plentiful, any scheme is viable and the choice should be made on the basis of regulatory requirements and expected cryptographic lifetime.
+
+It is also worth noting that the public key need not be stored in its raw form in immutable memory; the trade-off between storing the full key and storing only a hash is discussed in \autoref{subsection:implementation-crypto-api}.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{|l|r|r|r|r|}
+\hline
+\textbf{Algorithm} & \textbf{PubKey (FLASH)} & \textbf{RAM} & \textbf{Signature}  & \textbf{CCMRAM (stack + heap)} \\
+\hline
+ECDSA-P256  & 91B   & 4kB   & 72B   & 5kB \\
+% RSA-2048   & 1kB: 18, 128kB: 25     & 1kB: 21, 128kB: 83  \\
+RSA-3072    & 2kB   & ~425B & 384B  & 7kB \\
+RSA-4096    & ~550B & 2kB   & 512B  & 8kB \\
+ML-DSA-44   & 1312B & 512B  & 2420B & 11kB \\
+ML-DSA-65   & 1952B & 512B  & 3309B & 12kB \\
+LMS         & 60B   & 128B  & 1296B & 3kB \\
+
+\hline
+\end{tabular}
+\caption{Digital Signature Memory Footprint}
+\label{tab:sig_verification_memory}
+\end{table}
+
+
+\section{Limitations and threats to validity}
+\label{section:eval-limitations}
+
+Several limitations reduce the strength of the conclusions that can be drawn from the evaluation.
+
+\paragraph{BSW not in ROM.}
+To allow for rapid development iteration, the BSW is stored in regular flash rather than a true boot ROM. This means that an attacker with physical access to the board can erase and replace the BSW without requiring a valid signature, undermining the hardware Root of Trust. In a production system, the bootloader would reside in the device boot ROM or in a write-once PROM that cannot be reprogrammed after manufacture. Additionally, the STM32F439ZI exposes a factory bootloader through its BOOT0 pin; with physical access, this allows the device to be returned to a factory-clean state regardless of the option-byte configuration. Replacing the built-in bootloader with the custom BSW and permanently disabling the BOOT0 path would eliminate this vector in a production deployment.
+
+\paragraph{Informal verification.}
+All requirement verification was performed through automated end-to-end tests and code review rather than through the formal review, inspection and test methods defined by ECSS. The automated tests cover the complete set of nominal and failure paths defined in the state machine, but they cannot substitute for the rigour of a formally controlled qualification campaign. Edge cases in the flash programming logic, race conditions during option-byte application, or subtle state corruption in the COMM partition under adversarial timing are examples of failure modes that behavioural tests may not detect.
+
+\paragraph{Single hardware platform.}
+All benchmarks and functional tests were conducted exclusively on the STM32F439ZI running at 168~MHz. Absolute verification times and memory footprints are specific to this processor, its Flash controller, its HASH peripheral and the wolfSSL compile-time configuration used. Results may differ significantly on other microcontrollers with different CPU architectures, cache sizes, or hardware acceleration capabilities. The relative ordering between schemes is more stable, but should still be validated on the target platform before a deployment decision is made.
+
+\paragraph{Subset of the attack surface.}
+The test suite focuses on the BSW state machine and the cryptographic verification path. It does not test the underlying wolfCrypt library for correctness, cover timing side-channels in the signature verification routines, or address fault-injection attacks that could flip a branch outcome or corrupt a register during verification. These are relevant concerns for production deployments on platforms without dedicated fault countermeasures.
+
+\section{Evaluation summary}
+\label{section:eval-summary}
+
+The evaluation results taken together provide a consistent picture. The automated test suite demonstrates that the BSW state machine behaves correctly across all nominal and failure scenarios, and that each of the seven SEC requirements is satisfied by the implementation. The requirement traceability tables in \autoref{tab:req-verification-sec} and \autoref{tab:req-verification-func} show that every requirement is covered by at least one concrete test or inspection artefact. The performance benchmarks show that the security overhead added by digital signature verification is modest on representative COTS hardware: even the slowest scheme (ECDSA-P256 with software SHA at 128~kB) completes in well under one second, and a hybrid ECDSA plus LMS deployment stays below 400~ms with hardware acceleration. The memory footprint analysis confirms that all evaluated schemes fit within the resource envelope of the target platform, with LMS standing out as the best option for extremely constrained deployments. In combination, these results support the thesis claim that Secure Boot is feasible on space-representative COTS hardware without imposing unacceptable reliability or performance penalties.
+

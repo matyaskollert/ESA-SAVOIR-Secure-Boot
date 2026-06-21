@@ -1,0 +1,253 @@
+\chapter{Background}
+\label{chapter:bg}
+
+\section{Bootloaders}
+\label{section:bg-bootloader}
+
+A bootloader is a set of software that is executed as the first thing following a reset/power-on. It is responsible for setting up the hardware, performing tests to ensure everything is in order, preparing the system to launch the main application, and finally transferring control to the main application \cite{lohr_patterns_2010, beningo_2015, SAVOIR, wolfBoot}.
+
+A system with a bootloader typically contains at least two coexisting software images: the bootloader itself and the main application \cite{beningo_2015, SAVOIR, wolfBoot}. On every startup, the bootloader first decides which image to load, checking conditions such as whether an update has been requested or whether a valid application image is present at all.
+
+\subsection{Bootloader Types}
+\label{subsection:bg-bootloader-types}
+
+There are many types of bootloaders. They range from simple versions used for constrained embedded devices, where resources are limited and setting up the system might be straightforward, all the way to complex solutions used in consumer computers running operating systems such as Windows, Linux, or macOS. 
+
+Complex systems require a complex bootloader, which is why they are often split into multiple stages run one after another. The first stage~--- called BIOS or UEFI~--- is responsible for setting up the hardware and low-level peripheral drivers, while the second stage (e.g.\ GRUB) launches the operating system itself. Both stages may offer a comprehensive graphical user interface (GUI) for system configuration, but this complexity greatly enlarges the attack surface.
+
+An intermediate case is a mobile operating system such as Android, which runs a full OS on constrained hardware using a single-stage bootloader \cite{android_bootloader_2026}. Beyond loading the kernel, such a bootloader is also responsible for initialising the Trusted Execution Environment (TEE), binding the hardware root of trust, and verifying the integrity of all boot partitions before handing over control. When multiple firmware slots are present, it additionally selects the correct slot to boot. This tight integration of security responsibilities into the bootloader itself is a pattern applicable well beyond mobile devices.
+
+Embedded computers are typically simpler, with a single-stage bootloader being common. While these systems can still run operating systems, they are usually much easier to set up, include fewer peripherals and support less functionality. Given than program space is scarce, the bootloader must be kept as small as possible to maximise the flash space available to the main application \cite{beningo_2015, wolfBoot}.
+
+\subsection{A/B partitioning and OTA updates}
+\label{subsection:bg-bootloader-ABandOTA}
+
+One of the common functionalities of modern bootloaders is the ability to perform software updates while an older version is running \cite{android_ota_updating_2026, rfc9019, wolfBoot}. By storing two copies of the application in separate partitions, often called slots~A and~B, one copy can be updated while the other continues to run. On the next boot, the bootloader selects the updated slot, with an automatic fallback to the previous version if the new image fails to start correctly. This self-healing mechanism is particularly important in remote or unattended deployments where manual recovery is impossible. The A/B partitioning pattern is widely used in mobile devices and IoT firmware update frameworks \cite{android_ota_updating_2026, rfc9019, beningo_2015} and is also applicable to space systems, where the ability to recover from a failed update is critical given the impossibility of physical intervention.
+
+\section{Secure boot fundamentals}
+\label{section:bg-secureboot}
+
+Secure Boot~--- also referred to as verified boot, authenticated boot, or trusted boot depending on the implementation context~--- is a security mechanism that ensures only authorised, unmodified software executes on a device. The terms are broadly synonymous: the essential property is that before transferring control to the next software stage, the currently executing stage cryptographically verifies its successor's integrity and authenticity.
+
+The mechanism operates as a chain: each verified stage in turn verifies the next one, extending a continuous chain of trust from an initial hardware root of trust all the way to the final application. Crucially, every link in this chain must be verified before execution; a single unverified transition breaks the security guarantee for all subsequent stages.
+
+NIST SP~800-193 \cite{NIST-sp-800-193} frames platform firmware resiliency around three complementary principles: \emph{Protection} (authenticated update mechanisms and write-protected storage preventing unauthorised modifications), \emph{Detection} (integrity checks before code execution), and \emph{Recovery} (restoring firmware to a known-good state after corruption is detected). Secure boot primarily addresses the Protection and Detection pillars, providing assurance that only authentic, unmodified firmware executes at each stage of the boot sequence.
+
+\subsection{Root of trust}
+\label{subsection:bg-secureboot-root}
+
+In order to establish a secure chain of trust, each software component must verify the integrity and authenticity of the next component before transferring execution to it. While this is straightforward once trusted software is running, a different mechanism is required for the first stage bootloader, as it is the first software executed on the device. The verification cannot be performed by the bootloader itself, since an attacker could modify its initial instructions to bypass the verification process entirely.
+
+NIST SP~800-193 \cite{NIST-sp-800-193} defines a \emph{Root of Trust} (RoT) as ``an element that forms the basis of providing one or more security-specific functions``, and requires that it ``always behaves in the expected manner because its misbehaviour cannot be detected``. The standard further specifies that RoTs must either be immutable or be protected such that their integrity and authenticity are verified before any modification is applied. Building on a hardware RoT, a \emph{Chain of Trust} (CoT) can be established by having each element cryptographically verify the next before transferring control, extending the trustworthy boundary all the way to the final application software.
+
+This requirement means that trust in the initial boot stage must ultimately be established through hardware mechanisms. One approach is to use a dedicated hardware module that verifies the first-stage bootloader immediately before execution. Another approach is to place the initial boot code in read-only memory, ensuring that it cannot be modified after manufacturing. Once a trusted initial stage has been established, it can be used to verify all subsequent software components, thereby extending the chain of trust throughout the boot process.
+
+\subsection{Data verification}
+\label{subsection:bg-secureboot-verification}
+
+Establishing a root of trust alone is insufficient to secure the boot process. The trusted initial stage must also be capable of determining whether subsequent software components can be trusted before they are executed. This requires a mechanism for verifying both the integrity and authenticity of firmware images.
+
+Data verification aims to ensure both the integrity and authenticity of received data \cite{digital_signature_standard, ccsds_crypto_algorithms}. Integrity ensures that any modification of a firmware image can be detected, while authenticity provides assurance that the image originates from a trusted source and was generated by the entity it claims to represent. Together, these properties prevent an attacker from executing either modified firmware or firmware produced by an unauthorized party.
+
+Both properties are essential for maintaining the security of software executing on a device \cite{NIST-sp-800-193}. In the context of Secure Boot, this means verifying that a firmware image has not been modified since it was produced and that it originates from an authorized manufacturer. This requires a cryptographic verification mechanism that enables the bootloader to determine whether an image can be trusted before transferring execution to it. The following subsections discuss common approaches for providing these integrity and authenticity guarantees.
+
+\subsubsection{Message Authentication Codes}
+\label{subsubsection:bg-secureboot-verification-mac}
+
+One approach to providing integrity and authenticity guarantees is through message authentication codes (MACs), which are based on symmetric-key cryptography. A single shared secret key is used both to generate and verify the authentication tag. The HMAC construction \cite{nist_hmac} combines a cryptographic hash function with a shared secret, providing integrity through the hash function and authenticity through possession of the secret key.
+
+Applied to secure boot, this requires that the bootloader and the manufacturer share the same secret key, which must therefore be stored on the device. If an adversary gains read access to the device memory and extracts the key, they can forge valid signatures for any firmware image~--- not only for that device but for any other device provisioned with the same key. While hardware read protection can partially mitigate this risk, symmetric schemes introduce a key-distribution and key-storage problem that makes them less suitable for secure boot than asymmetric alternatives.
+
+\subsubsection{Digital Signatures}
+\label{subsubsection:bg-secureboot-verification-signature}
+
+Unlike symmetric MACs, digital signature schemes are based on asymmetric public-key cryptography. A \emph{private key}, held exclusively by the firmware signer, is used to produce the signature. A corresponding \emph{public key}, embedded in the bootloader at manufacturing time, is used to verify it. The two keys are mathematically linked, but the private key cannot be reconstructed from the public key alone \cite{digital_signature_standard}.
+
+In a secure boot context, the manufacturer retains the private key and ships each device with only the public key, stored in write-protected memory. Even if an adversary reads out the public key, they gain nothing useful: it cannot be used to sign new firmware images. The only way to produce a valid signature that the bootloader will accept is to possess the manufacturer's private key \cite{digital_signature_standard, ccsds_crypto_algorithms}.
+
+Classical digital signature schemes are standardised in NIST FIPS 186 \cite{digital_signature_standard}. The foundational DSA algorithm has largely been superseded by elliptic-curve variants (ECDSA and EdDSA), which offer equivalent security at shorter key lengths. RSA-based schemes such as RSA-PSS are also standardised. Post-quantum digital signature schemes, which resist attacks by quantum computers, are discussed in \autoref{section:bg-pq}.
+
+\subsection{Secure firmware updates}
+\label{subsection:bg-secureboot-manifest}
+
+The mechanisms described above can be combined to build a secure firmware update process. By extending the A/B partitioning model from \autoref{subsection:bg-bootloader-ABandOTA} with digital signature verification, updates can be delivered to the inactive slot and authenticated before the bootloader commits to booting from it. This ensures that a failed or tampered update is rejected and the device falls back to the previously running image.
+
+Standardised approaches to this problem exist for constrained embedded systems. RFC~9019 \cite{rfc9019} defines the Firmware Update Architecture for Internet of Things, specifying requirements for secure, authenticated updates including the use of asymmetric digital signatures, a signed manifest carrying image metadata, and support for post-quantum algorithms. RFC~9124 \cite{rfc9124} complements it with a detailed Manifest Information Model, defining the structure and semantics of the manifest artefact. While these documents target IoT deployments, the underlying principles are broadly applicable to any embedded system where remote, unattended updates must be both reliable and trustworthy.
+
+\subsection{Rollback protection}
+\label{subsection:bg-secureboot-rollback}
+
+Having a secure update mechanism not only allows installing new firmware, but also makes it possible to fall back to a previously running version if the new image fails to operate correctly. While this recovery capability is valuable, it also introduces an attack vector. If a critical vulnerability has been patched in a new firmware release, an attacker who can force a downgrade effectively re-exposes the system to an already-known and exploitable flaw.
+
+Rollback protection closes this gap by ensuring that the bootloader refuses to execute any firmware image whose version number falls below a stored minimum acceptable version. This minimum acts as a floor: images above it remain eligible for execution, including a fallback to a recent previous version, while anything below it is rejected unconditionally. The floor is typically maintained as a \emph{monotonic counter} in a protected memory region that can only be incremented, never decremented. When a new firmware image is successfully booted and declared healthy, the counter is advanced to match the new version; all images bearing an older version field are subsequently rejected, regardless of their signature validity.
+
+In the A/B partitioning model, rollback protection interacts directly with slot selection: the bootloader must not fall back to the inactive slot if doing so would violate the monotonic counter constraint. NIST SP~800-193 \cite{NIST-sp-800-193} formally identifies this as a \emph{non-bypassability} requirement, noting that ``unauthorized rollback could allow an attacker to restore a vulnerable firmware image, which in turn could allow the attacker to damage the device or inject malware'' and that devices supporting rollback must include appropriate security controls to prevent exploitation by unauthorised parties.
+
+\section{Post-quantum cryptography}
+\label{section:bg-pq}
+
+The secure boot mechanisms described in the previous section rely on digital signatures, which are built on classical public-key cryptography. The security of these schemes rests on mathematical problems that are believed to be hard for classical computers, but would be efficiently solvable by a sufficiently large quantum computer. For space systems, where a mission may span a decade or more and in-field algorithm replacement is impractical, this creates a concrete risk: a bootloader designed today may be protecting a spacecraft that is still operational when such a machine becomes available. Post-quantum cryptography (PQC) addresses this by providing signature schemes that remain secure even against adversaries equipped with large-scale quantum computers.
+
+\subsection{Motivation and timeline}
+\label{subsection:bg-pq-motivation}
+
+Public-key cryptography underpins the security of digital services ranging from financial transactions and contract signing to firmware authentication. In the context of secure boot, a break in the underlying signature scheme would mean that an attacker could sign arbitrary firmware images and have them accepted by any device trusting the compromised key. Should the currently deployed schemes be broken, the consequences for digital infrastructure would be devastating \cite{EU_post_quantum_transition, bsi_crypto_key_length}. The principal threat is the development of a large-scale fault-tolerant quantum computer capable of running Shor's algorithm, which renders classical public-key schemes such as RSA and ECDSA insecure. The state of quantum computer development is described in detail in \cite{state_of_quantum}.
+
+Although no cryptographically relevant quantum computer (CRQC) exists today, its development is progressing rapidly. The 2023 Quantum Threat Timeline survey \cite{EU_post_quantum_transition} polled 37 international experts from academia and industry: 17 estimated the probability of a CRQC appearing within a 10-year time frame to be above 5\% and 10 indicated a likelihood of approximately 50\% or more. These figures represent expert consensus that the quantum threat is not merely theoretical.
+
+Two distinct threat scenarios motivate an early transition \cite{EU_post_quantum_transition, bsi_crypto_key_length}:
+\begin{itemize}
+    \item \textbf{Store-now, decrypt-later}: Adversaries can record and store encrypted data today and decrypt it retroactively once a CRQC becomes available. Any data whose confidentiality must be maintained beyond the anticipated emergence of a CRQC is already at risk.
+    \item \textbf{Long migration periods}: Complex systems such as spacecraft, public-key infrastructures (PKI) and devices with decade-long operational lifetimes require years to migrate. Even in the absence of ongoing attacks, there is a risk that the transition to quantum-safe cryptography may not be completed in time, endangering the authenticity of all future communication.
+\end{itemize}
+
+The urgency of the transition is underscored by a joint statement signed by cybersecurity agencies from 21 European nations \cite{EU_post_quantum_transition}, which calls on public administrations, critical infrastructure providers and industry to make the transition to PQC a top priority. Systems handling sensitive data should be protected against store-now, decrypt-later attacks no later than the end of 2030 and detailed transition plans for PKI systems should be developed within the same time frame \cite{EU_post_quantum_transition, anssi_post_quantum_crypto}. The full migration away from classical public-key schemes is expected to be completed by 2035 \cite{bsi_crypto_key_length}.
+
+\section{The space environment and its constraints}
+\label{section:bg-space}
+
+Designing a secure bootloader for terrestrial embedded systems is already challenging; deploying one in space introduces additional constraints that fundamentally shape every architectural decision. Unlike ground-based platforms, a spacecraft cannot be physically accessed after launch, making repairs and manual recovery impossible. At the same time, the radiation environment degrades hardware in ways that have no terrestrial equivalent, and mission lifetimes measured in years or decades require cryptographic choices that remain secure and maintainable for the entire operational period. Additionally, every aspect of a space system~--- from hardware selection to software engineering practices~--- is governed by a body of international standards that constrain what is permissible and how it must be validated. Among these, the ECSS standards define engineering, quality and security requirements across the mission lifecycle, and the SAVOIR (Space Avionics Open Interface Architecture) initiative specifies open functional interfaces for space avionics, including the On-Board Computer. Understanding these constraints is essential context for the secure boot design developed in the following chapters.
+
+\subsection{Radiation tolerance}
+\label{section:bg-space-radtol}
+
+Space exposes electronics to radiation effects that have no meaningful terrestrial equivalent. The principal concerns are Total Ionising Dose (TID), which causes cumulative degradation of semiconductor properties over time, and single-event effects such as Single Event Upsets (SEUs), which cause transient bit-flips in memory or logic, and Single Event Latch-up (SEL), which can permanently destroy a component if left unchecked \cite{microchip_rad_tolerant}.
+
+Processors and memories are classified according to how well they tolerate these effects. Radiation-hardened (rad-hard) devices are designed from the ground up to withstand high TID levels and are qualified to stringent standards (QML, ESCC). They are the choice for long-duration missions in harsh orbits such as Geostationary Earth Orbit (GEO) or deep space, where accumulated dose and mission lifetime both demand the highest reliability guarantees \cite{microchip_rad_tolerant}.
+
+Radiation-tolerant (rad-tol) devices occupy a middle ground. They are typically derived from proven Commercial Off-The-Shelf (COTS) architectures but are enhanced with space-grade quality flows, latch-up immunity and improved TID characterisation. They are well suited to Low Earth Orbit (LEO) missions, where the radiation environment is less severe, operational lifetimes are shorter and cost is a primary driver \cite{microchip_rad_tolerant}. The growing NewSpace sector, driven by private investment in LEO constellations, has significantly increased demand for such cost-effective solutions.
+
+Plain COTS devices generally cannot meet space radiation requirements without additional mitigation such as shielding or latch-up detectors, which add mass and cost \cite{microchip_rad_tolerant}. However, since rad-tolerant and rad-hard processors are typically derived from the same commercial architecture, software developed and tested on a COTS development board can be directly transferred to the space-grade variant, making COTS hardware a practical platform for BSW development and validation.
+
+This extends to storage as well. Space-grade NOR flash memory supports a limited number of write-erase cycles, and radiation-hardened variants impose stricter constraints than commercial equivalents \cite{infineon_space_memories}. This limits how many firmware updates can be applied over a mission lifetime and must be accounted for in the update strategy. The more expensive and less dense ferroelectric RAM (F-RAM), also available in radiation-hardened form, offers effectively unlimited write endurance and is used in space applications precisely to avoid this constraint \cite{infineon_space_memories}.
+
+\subsection{Resource constraints - compute, power, memory}
+\label{subsection:bg-space-resources}
+
+Space-grade processors are generally slower than their terrestrial counterparts, a consequence of the conservative fabrication processes required for radiation hardness. Combined with strict power budgets driven by the limited energy available from solar panels and batteries, this means that computationally expensive operations~--- such as verifying a large digital signature~--- must be carefully considered in the context of the overall boot-time budget. During a system restart, both processing modules need to return to an operational state as quickly as possible, since the redundant copy provides the only fail-safe if the active one encounters a problem. Boot time is therefore a design constraint that directly interacts with the choice of cryptographic algorithms.
+
+\subsection{SAVOIR - Generic OBC specification}
+\label{subsection:bg-space-genericOBC}
+
+The SAVOIR Generic OBC Specification \cite{SAVOIR} (SAVOIR-GS-001) specifies the functional requirements for the On-Board Computer used in space missions, covering telecommand and telemetry handling, on-board time management, data storage, fault detection and reconfiguration, and processing.
+
+The architecture mandates two Processor Modules (PMs) operating in warm or cold redundancy, following an active/inactive scheme \cite{SAVOIR}. The active PM executes the Application Software (ASW) and has full access to avionics interfaces; the inactive PM operates in a limited functionality mode used for testing, reprogramming, or fast switchover. Ground has no direct communication path to the inactive PM: all commands are relayed through the active PM via the inter-PM link, and the active PM is responsible for reading and writing the software storage memory of the inactive PM to perform ASW updates.
+
+Memory organisation is explicitly addressed by the specification \cite{SAVOIR}. Each PM must have a write-protected boot memory for its Boot Software, ensuring that the first code executed after reset cannot be overwritten in normal operation. Software images reside in a separate non-volatile storage area. The number of times this storage can be reprogrammed over the OBC lifetime is bounded by the endurance of the underlying non-volatile memory technology — the specification notes a typical value of 1000 cycles, which may be reduced to 200 for long-life missions.
+
+\subsection{SAVOIR - Flight Computer Initialisation Sequence}
+\label{subsection:bg-space-flightComputerInitialisationSequence}
+
+The SAVOIR Flight Computer Initialisation Sequence specification \cite{SAVOIR} (SAVOIR-GS-002) defines the required behaviour of the Boot Software (Boot SW) for OBC and Payload Computers. The Boot SW is the first code executed on every processor reset or power-on. It is intentionally agnostic to the unit's nominal function, meaning the same boot process applies equally to an OBC, a payload computer, or an instrument processor. The Boot SW is stored in dedicated read-only memory~--- either a PROM or a write-protected EEPROM~--- making it the immutable starting point from which all software recovery begins.
+
+The specification defines three operating modes: Nominal Sequence, Standby, and Monitor. The Nominal Sequence is the primary boot path and is the first code executed after reset. It follows a fixed seven-step procedure:
+
+\begin{enumerate}
+    \item Perform processor module initialisations
+    \item Perform processor module Self-Tests
+    \item Select the active Application Software (ASW) image
+    \item Test the integrity of the selected ASW image in Application storage memory
+    \item Copy the selected ASW image from Application storage memory to working memory
+    \item Test the integrity of the copied ASW image in working memory
+    \item Execute the ASW from working memory
+\end{enumerate}
+
+At least two ASW images must be maintained in Application storage memory to allow fallback to a previously known-good version. On multi-core processors, only one core executes the Boot SW; secondary cores remain disabled throughout the boot sequence and are initialised by the ASW once it takes control. The Boot SW produces a Boot Report after the Self-Tests, recording their outcome in Safeguard Memory so that the result is available for ground analysis even after subsequent resets.
+
+The Boot SW is deliberately kept simple in terms of fault handling: it must continue the boot sequence even if Self-Tests fail, leaving FDIR to the ASW. If meeting the worst-case execution time (WCET) budget for a given reconfiguration scenario requires skipping steps, a Fast Boot Path allows bypassing Self-Tests or integrity checks; this decision is configured before the reset by the system manager.
+
+Standby mode is used by an inactive processor module to remain reachable for maintenance while the active PM holds operational control, as described in Section~\ref{subsection:bg-space-genericOBC}. Monitor mode is a ground-only debug facility that must be disabled before flight.
+
+Of particular relevance to this thesis is Section~5.8 of SAVOIR-GS-002, which explicitly marks security as ``Not applicable.'' The integrity checks in steps~4 and~6 compute a CRC or checksum over the ASW image and compare it against a stored reference value, providing protection against random bit corruption but no protection against deliberate modification. An attacker with write access to Application storage memory could update both the image and its stored checksum, rendering the integrity check ineffective. The SAVOIR specification imposes no authentication or cryptographic verification requirements on the boot process, leaving secure boot entirely outside the standardised interface.
+
+\subsection{ECSS Standards}
+\label{subsection:bg-space-ecss} 
+
+\textbf{ECSS-E-ST-40C: Software Engineering} \cite{ECSS-E-ST-40C} defines the general software engineering requirements for space systems. Its purpose is to ensure that software developed for space missions follows a structured, well-documented and verifiable engineering process throughout the entire lifecycle.
+
+The standard covers activities such as requirements definition, architectural design, implementation, verification, validation, configuration management and maintenance. It is intended to improve software reliability, maintainability and correctness in the context of highly critical space systems.
+
+
+\textbf{ECSS-Q-ST-80C: Software Product Assurance} \cite{ECSS-Q-ST-80C} specifies software product assurance requirements for space projects. Its main objective is to ensure that software products achieve the required levels of quality, dependability and safety.
+
+The standard introduces requirements related to software planning, risk management, verification independence, problem reporting and quality metrics. It also defines how software assurance activities should be tailored based on software criticality and project constraints.
+
+
+\textbf{ECSS-E-ST-80C: Security in Space Systems} \cite{ECSS-E-ST-80C} addresses security aspects across the lifecycle of space systems. Its purpose is to ensure that security is considered systematically during system design, development, operation and disposal.
+
+The standard covers topics such as threat analysis, secure design principles, protection of sensitive assets and implementation of security mechanisms. For software systems, it emphasises the establishment of trust, protection against unauthorised modification and mitigation of cyber threats.
+
+
+\textbf{ECSS-E-ST-70-41C: Telemetry and Telecommand Packet Utilization} \cite{ECSS-E-ST-70-41C} defines the Packet Utilization Standard (PUS). PUS specifies the application-layer interface between ground systems and spacecraft by standardising how telecommand (TC) and telemetry (TM) packets are structured and interpreted at the mission application level. It builds on the CCSDS Space Packet Protocol and introduces a service-oriented model in which related on-board functions are grouped into numbered service types (ST[xx]). Communication follows a request-report pattern: a ground station issues a TC request, and the onboard software responds with one or more TM reports. PUS defines 23 standard service types covering functions such as telecommand verification (ST[01]), housekeeping reporting (ST[03]), event reporting (ST[05]), on-board scheduling (ST[11]) and memory management (ST[06]), among others.
+
+Service~6 (ST[06]) is the PUS service for on-board memory management \cite{ECSS-E-ST-70-41C}. It provides ground operators with a standardised interface for reading, writing and verifying spacecraft memory contents. It is organised into four subservices. The \emph{raw data} subservice operates on untyped byte sequences using absolute addresses, supporting load (TC[6,2], TC[6,11]), dump (TC[6,5]) and checksum verification (TC[6,9]) operations. The \emph{structured data} subservice uses a base-plus-offset addressing scheme for named, typed memory objects, with equivalent load (TC[6,1]), dump (TC[6,3]) and check (TC[6,7]) operations. The \emph{common} subservice allows aborting all in-progress dumps (TC[6,12]). The \emph{memory configuration} subservice controls hardware write protection (TC[6,15] enable, TC[6,16] disable) and memory scrubbing (TC[6,13] enable, TC[6,14] disable).
+
+ST[06] is directly relevant to the secure boot context of this thesis. The memory load and write-protection telecommands provide the standard mechanism by which ground operators upload and protect ASW images~--- the same images whose integrity the Boot Software must verify before execution. If these telecommands are not properly authenticated, they represent a direct attack vector against the boot chain, as discussed in Section~\ref{subsection:conclusion-futureWork-standards}.
+
+\subsection{Cryptographic recommendations for space}
+\label{subsection:bg-space-cryptoReccs}
+
+Space systems present unique challenges for cryptographic design. Long mission lifetimes, constrained hardware resources and the absence of on-site maintenance mean that cryptographic choices made at design time must remain secure and maintainable for a decade or more. Several national and international bodies publish cryptographic recommendations relevant to such systems, including the German BSI \cite{bsi_crypto_key_length}, the French ANSSI \cite{anssi_post_quantum_crypto} and the space-specific CCSDS Cryptographic Algorithms Recommended Standard \cite{ccsds_crypto_algorithms}. While each authority has its own scope and focus, they broadly converge on a common set of algorithm families and migration timelines driven by the threat of quantum computers. This convergence is further reinforced by a joint statement from cybersecurity agencies across 21 European states \cite{EU_post_quantum_transition}, which calls for urgent and coordinated transition to PQC.
+
+\paragraph{Key lengths for classical signature algorithms.}
+Table~\ref{tab:classical-key-lengths} summarises the minimum key lengths recommended for classical digital signature mechanisms. These correspond to a security level of at least 120 bits against classical adversaries \cite{bsi_crypto_key_length}. CCSDS \cite{ccsds_crypto_algorithms} specifies stricter requirements for new space implementations: an RSA key length of at least 4096 bits.
+
+\begin{table}[h]
+    \centering
+    \caption{Recommended minimum key lengths for classical digital signature mechanisms.}
+    \label{tab:classical-key-lengths}
+    \begin{tabular}{llcc}
+        \hline
+        \textbf{Authority} & \textbf{RSA-PSS (modulus)} & \textbf{ECDSA (order $q$)} & \textbf{Hash function output} \\
+        \hline
+        BSI \cite{bsi_crypto_key_length}             & 3000 bits & 250 bits & SHA-256 minimum \\
+        CCSDS \cite{ccsds_crypto_algorithms}          & 4096 bits & permitted & SHA-256 minimum \\
+        \hline
+    \end{tabular}
+\end{table}
+
+\paragraph{Migration timeline.}
+Classical signature schemes will not remain recommended indefinitely. Table~\ref{tab:migration-timeline} summarises the migration deadlines for digital signatures as defined by BSI \cite{bsi_crypto_key_length}, the EU PQC roadmap \cite{EU_post_quantum_transition} and ANSSI \cite{anssi_post_quantum_crypto}, which are broadly aligned with NIST guidance.
+
+\begin{table}[h]
+    \centering
+    \caption{Migration deadlines for classical digital signature schemes.}
+    \label{tab:migration-timeline}
+    \begin{tabular}{lp{9cm}}
+        \hline
+        \textbf{Deadline} & \textbf{Requirement} \\
+        \hline
+        2024--2025 & Products with firmware that must remain trustworthy beyond 2030 should begin hybrid signature deployment immediately \cite{anssi_post_quantum_crypto}. \\
+        End of 2030 & Systems handling sensitive long-lived data must be protected against store-now, decrypt-later attacks. Detailed transition plans for PKI systems and long-lived devices should also be completed within this timeframe \cite{EU_post_quantum_transition}. \\
+        End of 2035 & Classical signature schemes (RSA, ECDSA) recommended only until this date; full transition to quantum-safe or hybrid signatures required \cite{bsi_crypto_key_length}. \\
+        \hline
+    \end{tabular}
+\end{table}
+
+\paragraph{Recommended quantum-safe signature algorithms.}
+Table~\ref{tab:pqc-signatures} summarises the quantum-safe signature schemes recommended for data authentication and secure boot by the authorities surveyed. All are standardised by NIST. A notable remark from BSI is that stateful hash-based schemes (LMS/HSS, XMSS) are explicitly endorsed for \emph{"the signing of software and firmware updates"} as a scenario in which error-free state management can be guaranteed \cite{bsi_crypto_key_length}.
+
+\begin{table}[h]
+    \centering
+    \caption{Recommended quantum-safe signature schemes for firmware authentication.}
+    \label{tab:pqc-signatures}
+    \begin{tabular}{llp{6.5cm}}
+        \hline
+        \textbf{Scheme} & \textbf{Standard} & \textbf{Notes} \\
+        \hline
+        ML-DSA  & FIPS 204 \cite{nist_ml_dsa}          & Lattice-based (MLWE/MSIS). Hedged variant; parameter sets 65 and 87 (NIST Categories 3 and 5). Pure-message variant preferred over pre-hash variant \cite{bsi_crypto_key_length}. ANSSI recommends avoiding parameter modification and prefers levels 5 or 3 \cite{anssi_post_quantum_crypto}. \\
+        SLH-DSA & FIPS 205 \cite{nist_slh_dsa}          & Stateless hash-based. Hedged variant; Categories 3 and 5. Pure-message variant preferred over pre-hash variant \cite{bsi_crypto_key_length}. Security based on preimage resistance only~--- most conservative assumption. Hybridisation optional per ANSSI and BSI \cite{anssi_post_quantum_crypto, bsi_crypto_key_length}. \\
+        LMS/HSS & NIST SP 800-208 \cite{nist_lms_xmss_recc} & Stateful hash-based. All parameter sets recommended. Requires monotonic state counter; endorsed for firmware signing. Hybridisation optional \cite{anssi_post_quantum_crypto}. \\
+        XMSS    & NIST SP 800-208 \cite{nist_lms_xmss_recc} & Stateful hash-based. All parameter sets recommended. Same state-management caveat as LMS/HSS. Hybridisation optional \cite{anssi_post_quantum_crypto}. \\
+        \hline
+    \end{tabular}
+\end{table}
+
+\paragraph{CCSDS space-specific cryptographic recommendations.}
+CCSDS 352.0-B-2 \cite{ccsds_crypto_algorithms} is the Consultative Committee for Space Data Systems recommended standard for cryptographic algorithms, specifically targeted at civilian space missions. For digital signatures, it mandates the Digital Signature Standard (DSS, FIPS 186-3) \cite{ccsds_crypto_algorithms}; RSA at 4096 bits is required for new implementations, while ECDSA is also permitted. The hash function used with these signatures must be SHA-256 or stronger; SHA-1 is explicitly prohibited. Note that CCSDS 352.0-B-2 predates the NIST PQC standardisation effort; post-quantum algorithm recommendations for space are expected to follow in a future revision, but the general requirements already align with the broader migration guidance discussed above.
+
+\paragraph{ANSSI-specific guidance.}
+ANSSI \cite{anssi_post_quantum_crypto} places particular emphasis on hybridisation: for any final product that includes post-quantum mitigation, hybridisation is \emph{mandatory} unless the quantum mitigation relies solely on hash-based signatures (LMS, XMSS, SLH-DSA), for which it is optional. This position is shared by BSI \cite{bsi_crypto_key_length}. ANSSI also advises preferring the highest available NIST security level~--- level~5 (equivalent to AES-256 classical security) or at minimum level~3 (equivalent to AES-192)~--- for all deployed PQC signature schemes and discourages any modification of standardised parameter sets \cite{anssi_post_quantum_crypto}.
+
+\paragraph{Hybridisation combiners.}
+Current guidance recommends deploying quantum-safe signature schemes in a \emph{hybrid} configuration alongside a classical scheme (e.g. ECDSA + ML-DSA), accepting the combined signature only if both components are valid. This combiner is proved secure under the standard EUF-CMA model: security is retained as long as at least one constituent scheme remains unbroken \cite{anssi_post_quantum_crypto}. This hedges against implementation weaknesses in the newer PQC algorithms while the classical component continues to provide well-understood protection \cite{bsi_crypto_key_length}.

@@ -1,0 +1,80 @@
+\documentclass{tudelft-report}
+
+%% Set up the bibliography
+\usepackage{biblatex}
+\addbibresource{report.bib}
+% \addbibresource{zotero-references.bib}
+
+%% Additional packages and commands
+\usepackage{parskip}
+\setlist{itemsep=-2pt} % Reducing white space in lists slightly
+\renewcommand{\deg}{\si{\degree}\xspace} % Use \deg easily, everywhere
+
+%% ----------------------------------------------------------------------
+%%    Begin of document + Frontmatter (Roman page numbering)
+%% ----------------------------------------------------------------------
+
+\renewcommand{\chapterautorefname}{Chapter}
+\renewcommand{\sectionautorefname}{Section}
+\renewcommand{\subsectionautorefname}{Subsection}
+
+\begin{document}
+
+\frontmatter
+
+%% Define the main parameters
+\title{Designing Secure Boot for Space Missions}
+\subtitle{Integrating Security into Spacecraft Bootloaders}
+\author{Matyas Kollert}
+
+% \subject{AB1234: Optional Course Name} % Cover only
+\affiliation{Delft University of Technology} % Cover only
+\coverimage{figures/cover.jpg} % Aspect ratio of 2:3 (portrait) recommended
+\definecolor{title}{HTML}{4884d6} % Color for cover title
+
+\makecover
+
+\input{frontmatter/title-thesis}
+\input{frontmatter/abstract}
+
+\tableofcontents
+%\listoffigures
+%\listoftables
+
+\input{frontmatter/nomenclature}
+
+%% ----------------------------------------------------------------------
+%%    Mainmatter (Arabic page numbering)
+%% ----------------------------------------------------------------------
+
+\mainmatter
+
+\input{mainmatter/1-introduction}
+\input{mainmatter/2-background}
+\input{mainmatter/3-threat-model}
+\input{mainmatter/4-design}
+\input{mainmatter/5-poc-scope-and-hw}
+\input{mainmatter/6-implementation}
+\input{mainmatter/7-evaluation}
+\input{mainmatter/8-related-work}
+\input{mainmatter/9-conclusion}
+
+%% Prevent urls running into margins in bibliography
+\setcounter{biburlnumpenalty}{7000}
+\setcounter{biburllcpenalty}{7000}
+\setcounter{biburlucpenalty}{7000}
+
+%% Add bibliography
+\printbibliography[heading=bibintoc,title=References]
+
+%% ----------------------------------------------------------------------
+%%    Appendix (Letters for chapters)
+%% ----------------------------------------------------------------------
+
+\appendix
+
+\input{appendix/appendix-SAVOIR}
+\input{appendix/appendix-wolfssl-config}
+%\input{appendix/appendix-c} % Create file to add
+
+\end{document}
